@@ -1,0 +1,48 @@
+version: '3.8'
+
+services:
+  backend:
+    build: ./backend
+    container_name: nexora-backend
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://saas:saas123@db:5432/nexora
+      - SECRET_KEY=${SECRET_KEY:-production-secret-key-change-me}
+      - ENVIRONMENT=production
+      - DEBUG=false
+      - CORS_ORIGINS=["http://localhost:8080","http://localhost:8000"]
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - backend_uploads:/app/uploads
+
+  frontend:
+    build: ./frontend
+    container_name: nexora-frontend
+    ports:
+      - "8080:80"
+    depends_on:
+      - backend
+
+  db:
+    image: postgres:16-alpine
+    container_name: nexora-db
+    environment:
+      POSTGRES_USER: saas
+      POSTGRES_PASSWORD: saas123
+      POSTGRES_DB: nexora
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U saas -d nexora"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_data:
+  backend_uploads:

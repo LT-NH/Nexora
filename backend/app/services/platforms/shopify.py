@@ -1,0 +1,593 @@
+"""Nexora - Shopify Platform Integration.
+
+Connects to a Shopify store via the Admin REST API and syncs products,
+orders, and customers into the local workspace.
+
+Credentials:
+  - store_url: e.g. https://my-store.myshopify.com
+  - api_key: Admin API access token (shpat_xxx or shpca_xxx)
+  - api_secret: (unused for REST API custom apps, kept for compatibility)
+
+Setup guide for merchants:
+  1. Go to Shopify Admin → Settings → Apps and sales channels
+  2. Click "Develop apps" → "Create an app"
+  3. Configure Admin API scopes: read_products, read_orders, read_customers
+  4. Install the app and copy the Admin API access token
+  5. Paste the token and your .myshopify.com URL into Nexora
+"""
+
+import uuid
+from datetime import datetime, timezone
+from typing import Any
+
+import httpx
+from sqlalchemy import delete, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.models.customer import Customer
+from app.models.order import Order, OrderItem, OrderStatus
+from app.models.product import Product, ProductStatus
+from app.database import async_session_factory
+from app.services.platforms.base import PlatformIntegration, SyncResult
+from app.utils.logging import get_logger
+
+logger = get_logger(__name__)
+
+SHOPIFY_API_VERSION = "2024-01"
+
+
+class ShopifyIntegration(PlatformIntegration):
+    """Shopify Admin REST API integration."""
+
+    platform_name = "shopify"
+
+    # ------------------------------------------------------------------
+    # Credential validation
+    # ------------------------------------------------------------------
+
+    async def validate_credentials(self, config: dict[str, Any]) -> bool:
+        """Ping the Shopify shop endpoint to verify the token."""
+        store_url = (config.get("store_url") or "").rstrip("/")
+        access_token = config.get("api_key") or ""
+
+        if not store_url or not access_token:
+            return False
+
+        url = f"{store_url}/admin/api/{SHOPIFY_API_VERSION}/shop.json"
+        headers = {
+            "X-Shopify-Access-Token": access_token,
+            "Content-Type": "application/json",
+        }
+        try:
+            async with httpx.AsyncClient(timeout=15) as client:
+                resp = await client.get(url, headers=headers)
+                return resp.status_code == 200
+        except Exception as exc:
+            logger.warning("Shopify credential validation failed: %s", exc)
+            return False
+
+    # ------------------------------------------------------------------
+    # Products
+    # ------------------------------------------------------------------
+
+    async def sync_products(
+        self,
+        config: dict[str, Any],
+        workspace_id: str,
+    ) -> SyncResult:
+        """Sync products from Shopify into the workspace."""
+        result = SyncResult()
+        store_url = (config.get("store_url") or "").rstrip("/")
+        access_token = config.get("api_key") or ""
+
+        if not store_url or not access_token:
+            result.errors.append("Missing store_url or api_key in store config")
+            return result
+
+        headers = {
+            "X-Shopify-Access-Token": access_token,
+            "Content-Type": "application/json",
+        }
+
+        async with async_session_factory() as db:
+            try:
+                products = await self._fetch_all_pages(
+                    f"{store_url}/admin/api/{SHOPIFY_API_VERSION}/products.json",
+                    headers,
+                    "products",
+                )
+
+                for shopify_product in products:
+                    try:
+                        is_new = await self._upsert_product(db, workspace_id, shopify_product)
+                        if is_new:
+                            result.created += 1
+                        else:
+                            result.updated += 1
+                    except Exception as exc:
+                        result.errors.append(
+                            f"Product '{shopify_product.get('title', '?')}': {exc}"
+                        )
+
+                await db.commit()
+                logger.info(
+                    "Shopify products synced: %d created, %d updated, %d errors",
+                    result.created,
+                    result.updated,
+                    len(result.errors),
+                )
+            except Exception as exc:
+                result.errors.append(f"Sync failed: {exc}")
+                logger.error("Shopify products sync failed: %s", exc)
+
+        return result
+
+    # ------------------------------------------------------------------
+    # Orders
+    # ------------------------------------------------------------------
+
+    async def sync_orders(
+        self,
+        config: dict[str, Any],
+        workspace_id: str,
+    ) -> SyncResult:
+        """Sync orders from Shopify into the workspace."""
+        result = SyncResult()
+        store_url = (config.get("store_url") or "").rstrip("/")
+        access_token = config.get("api_key") or ""
+
+        if not store_url or not access_token:
+            result.errors.append("Missing store_url or api_key")
+            return result
+
+        headers = {
+            "X-Shopify-Access-Token": access_token,
+            "Content-Type": "application/json",
+        }
+
+        async with async_session_factory() as db:
+            try:
+                orders = await self._fetch_all_pages(
+                    f"{store_url}/admin/api/{SHOPIFY_API_VERSION}/orders.json",
+                    headers,
+                    "orders",
+                    params={"status": "any", "limit": 250},
+                )
+
+                for shopify_order in orders:
+                    try:
+                        is_new = await self._upsert_order(db, workspace_id, shopify_order)
+                        if is_new:
+                            result.created += 1
+                        else:
+                            result.updated += 1
+                    except Exception as exc:
+                        result.errors.append(
+                            f"Order '{shopify_order.get('name', '?')}': {exc}"
+                        )
+
+                await db.commit()
+                logger.info(
+                    "Shopify orders synced: %d created, %d updated, %d errors",
+                    result.created,
+                    result.updated,
+                    len(result.errors),
+                )
+            except Exception as exc:
+                result.errors.append(f"Sync failed: {exc}")
+                logger.error("Shopify orders sync failed: %s", exc)
+
+        return result
+
+    # ------------------------------------------------------------------
+    # Customers
+    # ------------------------------------------------------------------
+
+    async def sync_customers(
+        self,
+        config: dict[str, Any],
+        workspace_id: str,
+    ) -> SyncResult:
+        """Sync customers from Shopify into the workspace."""
+        result = SyncResult()
+        store_url = (config.get("store_url") or "").rstrip("/")
+        access_token = config.get("api_key") or ""
+
+        if not store_url or not access_token:
+            result.errors.append("Missing store_url or api_key")
+            return result
+
+        headers = {
+            "X-Shopify-Access-Token": access_token,
+            "Content-Type": "application/json",
+        }
+
+        async with async_session_factory() as db:
+            try:
+                customers = await self._fetch_all_pages(
+                    f"{store_url}/admin/api/{SHOPIFY_API_VERSION}/customers.json",
+                    headers,
+                    "customers",
+                )
+
+                for shopify_customer in customers:
+                    try:
+                        is_new = await self._upsert_customer(db, workspace_id, shopify_customer)
+                        if is_new:
+                            result.created += 1
+                        else:
+                            result.updated += 1
+                    except Exception as exc:
+                        result.errors.append(
+                            f"Customer '{shopify_customer.get('email', '?')}': {exc}"
+                        )
+
+                await db.commit()
+                logger.info(
+                    "Shopify customers synced: %d created, %d updated, %d errors",
+                    result.created,
+                    result.updated,
+                    len(result.errors),
+                )
+            except Exception as exc:
+                result.errors.append(f"Sync failed: {exc}")
+                logger.error("Shopify customers sync failed: %s", exc)
+
+        return result
+
+    # ------------------------------------------------------------------
+    # Webhook support — upsert a single order from a webhook payload
+    # ------------------------------------------------------------------
+
+    async def upsert_order_from_payload(
+        self,
+        config: dict[str, Any],
+        workspace_id: str,
+        payload: dict[str, Any],
+        db: AsyncSession | None = None,
+    ) -> SyncResult:
+        """Upsert a single order received via a Shopify webhook.
+
+        Used by the inbound webhook receiver so order changes pushed by
+        Shopify are reflected in the workspace in (near) real time.
+
+        If ``db`` is provided it is reused (avoids opening a nested session,
+        which matters for single-connection SQLite setups); otherwise a new
+        session is opened and committed.
+        """
+        if db is None:
+            async with async_session_factory() as session:
+                return await self._upsert_order_payload(session, workspace_id, payload)
+        return await self._upsert_order_payload(db, workspace_id, payload)
+
+    async def _upsert_order_payload(
+        self,
+        db: AsyncSession,
+        workspace_id: str,
+        payload: dict[str, Any],
+    ) -> SyncResult:
+        result = SyncResult()
+        try:
+            is_new = await self._upsert_order(db, workspace_id, payload)
+            if is_new:
+                result.created += 1
+            else:
+                result.updated += 1
+            await db.flush()
+            await db.commit()
+        except Exception as exc:
+            result.errors.append(f"Webhook order upsert failed: {exc}")
+            logger.error("Shopify webhook order upsert failed: %s", exc)
+        return result
+
+    # ==================================================================
+    # Internal helpers
+    # ==================================================================
+
+    async def _fetch_all_pages(
+        self,
+        base_url: str,
+        headers: dict,
+        list_key: str,
+        params: dict | None = None,
+    ) -> list[dict]:
+        """Fetch all pages of a paginated Shopify REST endpoint."""
+        items: list[dict] = []
+        url = base_url
+        default_params = {"limit": 250, **(params or {})}
+
+        async with httpx.AsyncClient(timeout=30) as client:
+            while url:
+                resp = await client.get(
+                    url,
+                    headers=headers,
+                    params=default_params if url == base_url else None,
+                )
+                if resp.status_code != 200:
+                    logger.error("Shopify API error %d: %s", resp.status_code, resp.text[:500])
+                    break
+
+                data = resp.json()
+                batch = data.get(list_key, [])
+                items.extend(batch)
+
+                # Shopify pagination: check Link header for next page
+                link_header = resp.headers.get("Link", "")
+                url = ""
+                if 'rel="next"' in link_header:
+                    for part in link_header.split(","):
+                        if 'rel="next"' in part:
+                            url = part.split(";")[0].strip("<> ")
+                            break
+
+                # Stop early if the platform returned a short final page.
+                if len(batch) < default_params["limit"]:
+                    break
+
+        return items
+
+    async def _upsert_product(
+        self,
+        db: AsyncSession,
+        workspace_id: str,
+        sp: dict,
+    ) -> bool:
+        """Create or update a local Product from Shopify data.
+
+        Returns True if a new product was created, False if an existing
+        one was updated.
+        """
+        shopify_id = str(sp.get("id", ""))
+        title = sp.get("title", "") or "Untitled"
+        slug = _slugify(title)
+
+        existing = await db.execute(
+            select(Product).where(
+                Product.workspace_id == workspace_id,
+                Product.sku == f"shopify-{shopify_id}",
+            )
+        )
+        product = existing.scalar_one_or_none()
+        is_new = product is None
+
+        # Extract variants
+        variants = sp.get("variants", [])
+        first_variant = variants[0] if variants else {}
+
+        price = float(first_variant.get("price", 0) or 0)
+        compare_at = first_variant.get("compare_at_price")
+        compare_at = float(compare_at) if compare_at else None
+
+        # Extract images
+        images = [img.get("src", "") for img in sp.get("images", []) if img.get("src")]
+
+        # Extract tags
+        raw_tags = sp.get("tags", "")
+        tags = [t.strip() for t in raw_tags.split(",") if t.strip()] if raw_tags else []
+
+        if product is None:
+            product = Product(
+                id=str(uuid.uuid4()),
+                workspace_id=workspace_id,
+                name=title,
+                slug=slug,
+                description=sp.get("body_html") or "",
+                category=sp.get("product_type") or "",
+                brand=sp.get("vendor") or "",
+                price=price,
+                compare_at_price=compare_at,
+                cost_price=None,
+                sku=f"shopify-{shopify_id}",
+                barcode=first_variant.get("barcode") or "",
+                weight=float(first_variant.get("weight", 0) or 0),
+                status=ProductStatus.ACTIVE,
+                images=images,
+                tags=tags,
+                has_variants=len(variants) > 1,
+            )
+            db.add(product)
+        else:
+            product.name = title
+            product.slug = slug
+            product.description = sp.get("body_html") or ""
+            product.category = sp.get("product_type") or ""
+            product.brand = sp.get("vendor") or ""
+            product.price = price
+            product.compare_at_price = compare_at
+            product.images = images
+            product.tags = tags
+            product.weight = float(first_variant.get("weight", 0) or 0)
+            product.barcode = first_variant.get("barcode") or ""
+
+        return is_new
+
+    async def _upsert_order(
+        self,
+        db: AsyncSession,
+        workspace_id: str,
+        so: dict,
+    ) -> bool:
+        """Create or update a local Order from Shopify data.
+
+        Returns True if a new order was created, False if an existing one
+        was updated.
+
+        IMPORTANT: on update, existing line items are replaced (not
+        appended) so re-syncing the same order never duplicates items.
+        """
+        order_number = str(so.get("order_number", so.get("name", "")))
+        shopify_order_id = str(so.get("id", ""))
+
+        # Load the order together with its line items so we can replace them.
+        existing = await db.execute(
+            select(Order).where(
+                Order.workspace_id == workspace_id,
+                Order.order_number == f"SP-{order_number}",
+            )
+        )
+        order = existing.scalar_one_or_none()
+        is_new = order is None
+
+        # Map status
+        financial_status = so.get("financial_status", "")
+        fulfillment_status = so.get("fulfillment_status") or ""
+        status_map = {
+            "pending": OrderStatus.PENDING,
+            "authorized": OrderStatus.PENDING,
+            "paid": OrderStatus.CONFIRMED,
+            "partially_paid": OrderStatus.CONFIRMED,
+            "refunded": OrderStatus.REFUNDED,
+            "partially_refunded": OrderStatus.REFUNDED,
+            "voided": OrderStatus.CANCELLED,
+        }
+        status = status_map.get(financial_status, OrderStatus.PENDING)
+        if fulfillment_status == "fulfilled" and status == OrderStatus.CONFIRMED:
+            status = OrderStatus.DELIVERED
+
+        # Customer info
+        customer_data = so.get("customer", {}) or {}
+        customer_name = (
+            f"{customer_data.get('first_name', '')} {customer_data.get('last_name', '')}"
+        ).strip()
+
+        shipping_addr = so.get("shipping_address", {}) or {}
+        shipping_address = {
+            "name": shipping_addr.get("name", ""),
+            "phone": shipping_addr.get("phone", ""),
+            "province": shipping_addr.get("province", ""),
+            "city": shipping_addr.get("city", ""),
+            "district": shipping_addr.get("address2", ""),
+            "detail": shipping_addr.get("address1", ""),
+            "zip_code": shipping_addr.get("zip", ""),
+        } if shipping_addr else None
+
+        total = float(so.get("total_price", 0) or 0)
+        subtotal = float(so.get("subtotal_price", 0) or 0)
+        shipping = float(so.get("total_shipping_price_set", {}).get("shop_money", {}).get("amount", 0) or 0)
+        tax = float(so.get("total_tax", 0) or 0)
+        discount = float(so.get("total_discounts", 0) or 0)
+
+        if order is None:
+            order = Order(
+                id=str(uuid.uuid4()),
+                workspace_id=workspace_id,
+                order_number=f"SP-{order_number}",
+                status=status,
+                customer_name=customer_name or None,
+                customer_email=customer_data.get("email") or None,
+                subtotal=subtotal,
+                tax=tax,
+                shipping=shipping,
+                discount=discount,
+                total=total,
+                payment_status="paid" if financial_status == "paid" else "unpaid",
+                platform="shopify",
+                shipping_address=shipping_address,
+                notes=so.get("note") or None,
+                created_at=datetime.fromisoformat(
+                    so.get("created_at", datetime.now(timezone.utc).isoformat()).replace("Z", "+00:00")
+                ),
+            )
+            db.add(order)
+            await db.flush()
+        else:
+            order.status = status
+            order.total = total
+            order.subtotal = subtotal
+            order.shipping = shipping
+            order.tax = tax
+            order.discount = discount
+            order.customer_name = customer_name or order.customer_name
+            order.customer_email = customer_data.get("email") or order.customer_email
+            order.shipping_address = shipping_address
+            order.notes = so.get("note") or order.notes
+            await db.flush()
+            # Replace line items to keep the order idempotent on re-sync.
+            await db.execute(delete(OrderItem).where(OrderItem.order_id == order.id))
+
+        # Insert (or re-insert) line items
+        line_items = so.get("line_items", [])
+        for li in line_items:
+            item = OrderItem(
+                id=str(uuid.uuid4()),
+                order_id=order.id,
+                product_name=li.get("title", "") or li.get("name", ""),
+                sku=li.get("sku") or None,
+                quantity=int(li.get("quantity", 1)),
+                unit_price=float(li.get("price", 0) or 0),
+                total_price=float(li.get("price", 0) or 0) * int(li.get("quantity", 1)),
+            )
+            db.add(item)
+
+        return is_new
+
+    async def _upsert_customer(
+        self,
+        db: AsyncSession,
+        workspace_id: str,
+        sc: dict,
+    ) -> bool:
+        """Create or update a local Customer from Shopify data.
+
+        Returns True if a new customer was created, False if an existing
+        one was updated.
+        """
+        email = sc.get("email") or ""
+        shopify_customer_id = str(sc.get("id", ""))
+
+        existing = await db.execute(
+            select(Customer).where(
+                Customer.workspace_id == workspace_id,
+                Customer.email == email,
+            )
+        )
+        customer = existing.scalar_one_or_none()
+        is_new = customer is None
+
+        first_name = sc.get("first_name", "") or ""
+        last_name = sc.get("last_name", "") or ""
+        name = f"{first_name} {last_name}".strip() or email
+
+        phone = sc.get("phone") or sc.get("default_address", {}).get("phone") or ""
+
+        tags = []
+        raw_tags = sc.get("tags", "")
+        if raw_tags:
+            tags = [t.strip() for t in raw_tags.split(",") if t.strip()]
+
+        total_orders = int(sc.get("orders_count", 0) or 0)
+        total_spent = float(sc.get("total_spent", 0) or 0)
+
+        if customer is None:
+            customer = Customer(
+                id=str(uuid.uuid4()),
+                workspace_id=workspace_id,
+                name=name,
+                email=email or None,
+                phone=phone or None,
+                tags=tags,
+                total_orders=total_orders,
+                total_spent=total_spent,
+                source="shopify",
+                notes=f"Shopify ID: {shopify_customer_id}",
+            )
+            db.add(customer)
+        else:
+            customer.name = name
+            customer.phone = phone or customer.phone
+            customer.tags = tags
+            customer.total_orders = total_orders
+            customer.total_spent = total_spent
+            customer.notes = f"Shopify ID: {shopify_customer_id}"
+
+        return is_new
+
+
+def _slugify(text: str) -> str:
+    """Simple slug generator."""
+    import re
+    slug = text.lower().strip()
+    slug = re.sub(r"[^\w\s-]", "", slug)
+    slug = re.sub(r"[\s_]+", "-", slug)
+    slug = re.sub(r"-+", "-", slug)
+    return slug[:200] or "product"

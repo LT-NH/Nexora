@@ -1,0 +1,14 @@
+fastapi>=0.100
+uvicorn[standard]
+sqlalchemy>=2.0
+aiosqlite
+asyncpg
+psycopg2-binary
+pydantic>=2.0
+pydantic-settings
+python-jose[cryptography]
+passlib[bcrypt]
+email-validator
+python-multipart
+aiofiles
+httpx
