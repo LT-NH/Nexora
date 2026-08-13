@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Mail, Lock, Eye, EyeOff } from 'lucide-react';
+import { Mail, Lock, Eye, EyeOff, Shield } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
@@ -19,6 +19,8 @@ export const LoginForm: React.FC = () => {
   const [errors, setErrors] = useState<{ email?: string; password?: string }>(
     {}
   );
+  const [requires2FA, setRequires2FA] = useState(false);
+  const [totpCode, setTotpCode] = useState('');
 
   const validate = (): boolean => {
     const newErrors: { email?: string; password?: string } = {};
@@ -42,15 +44,65 @@ export const LoginForm: React.FC = () => {
 
     setIsLoading(true);
     try {
-      await login({ email, password, remember_me: rememberMe });
+      const result = await login({ email, password, remember_me: rememberMe, totp_code: totpCode || undefined });
+      if (result && (result as any).requires_2fa) {
+        setRequires2FA(true);
+        setIsLoading(false);
+        return;
+      }
       addToast('success', '欢迎回来！', '您已成功登录。');
       navigate('/dashboard', { replace: true });
     } catch (err: any) {
       addToast('error', '登录失败', extractErrorMessage(err));
+      setRequires2FA(false);
     } finally {
       setIsLoading(false);
     }
   };
+
+  // 2FA step
+  if (requires2FA) {
+    return (
+      <div className="space-y-5">
+        <div className="text-center">
+          <div className="mx-auto w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center mb-3">
+            <Shield size={24} className="text-primary-600" />
+          </div>
+          <h3 className="text-lg font-semibold text-slate-900">双重认证</h3>
+          <p className="text-sm text-gray-500 mt-1">
+            请输入您的验证器应用中的 6 位验证码
+          </p>
+        </div>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <Input
+            label="验证码"
+            type="text"
+            placeholder="000000"
+            value={totpCode}
+            onChange={(e) => setTotpCode(e.target.value)}
+            maxLength={6}
+            autoComplete="one-time-code"
+          />
+          <Button
+            type="submit"
+            variant="primary"
+            size="lg"
+            isLoading={isLoading}
+            className="w-full"
+          >
+            验证
+          </Button>
+          <button
+            type="button"
+            onClick={() => setRequires2FA(false)}
+            className="w-full text-center text-sm text-primary-600 hover:text-primary-500 transition-colors"
+          >
+            返回登录
+          </button>
+        </form>
+      </div>
+    );
+  }
 
   return (
     <form onSubmit={handleSubmit} className="space-y-5">

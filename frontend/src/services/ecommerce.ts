@@ -19,6 +19,20 @@ import type {
   StoreUpdateRequest,
   AIGenerateRequest,
   AIGenerateResponse,
+  Coupon,
+  CouponCreateRequest,
+  CouponValidateRequest,
+  CouponValidateResponse,
+  Review,
+  ReviewCreateRequest,
+  ReviewReplyRequest,
+  ReviewStats,
+  Refund,
+  RefundCreateRequest,
+  RefundUpdateRequest,
+  RefundStats,
+  MembershipSummary,
+  CustomerMembership,
 } from '@/types/ecommerce';
 
 /** Extract items from paginated response, or return data as-is if already an array.
@@ -283,6 +297,126 @@ export const aiService = {
 
   async generateMarketingCopy(workspaceSlug: string, data: { product_name: string; category: string; price?: number; features?: string[]; channel?: string }): Promise<{ channel: string; copy: string }> {
     const response = await api.post(`/workspaces/${workspaceSlug}/ai/marketing-copy`, data);
+    return response.data;
+  },
+};
+
+// ============================================================
+// 优惠券服务
+// ============================================================
+export const couponService = {
+  async getCoupons(workspaceSlug: string): Promise<Coupon[]> {
+    const response = await api.get<Coupon[]>(`/workspaces/${workspaceSlug}/coupons`);
+    return extractItems<Coupon[]>(response.data);
+  },
+
+  async createCoupon(workspaceSlug: string, data: CouponCreateRequest): Promise<Coupon> {
+    const response = await api.post<Coupon>(`/workspaces/${workspaceSlug}/coupons`, data);
+    return response.data;
+  },
+
+  async toggleCoupon(workspaceSlug: string, couponId: string): Promise<Coupon> {
+    const response = await api.patch<Coupon>(`/workspaces/${workspaceSlug}/coupons/${couponId}`);
+    return response.data;
+  },
+
+  async deleteCoupon(workspaceSlug: string, couponId: string): Promise<void> {
+    await api.delete(`/workspaces/${workspaceSlug}/coupons/${couponId}`);
+  },
+
+  async validateCoupon(workspaceSlug: string, data: CouponValidateRequest): Promise<CouponValidateResponse> {
+    const response = await api.post<CouponValidateResponse>(`/workspaces/${workspaceSlug}/coupons/validate`, data);
+    return response.data;
+  },
+};
+
+// ============================================================
+// 评价服务
+// ============================================================
+export const reviewService = {
+  async getReviews(workspaceSlug: string, productId: string): Promise<Review[]> {
+    const response = await api.get<Review[]>(`/workspaces/${workspaceSlug}/products/${productId}/reviews`);
+    return extractItems<Review[]>(response.data);
+  },
+
+  async createReview(workspaceSlug: string, productId: string, data: ReviewCreateRequest): Promise<Review> {
+    const response = await api.post<Review>(`/workspaces/${workspaceSlug}/products/${productId}/reviews`, data);
+    return response.data;
+  },
+
+  async replyReview(workspaceSlug: string, reviewId: string, data: ReviewReplyRequest): Promise<Review> {
+    const response = await api.patch<Review>(`/workspaces/${workspaceSlug}/reviews/${reviewId}/reply`, data);
+    return response.data;
+  },
+
+  async toggleApproval(workspaceSlug: string, reviewId: string): Promise<Review> {
+    const response = await api.patch<Review>(`/workspaces/${workspaceSlug}/reviews/${reviewId}/toggle-approval`);
+    return response.data;
+  },
+
+  async uploadReviewImage(workspaceSlug: string, reviewId: string, file: File): Promise<Review> {
+    const formData = new FormData();
+    formData.append('file', file);
+    const response = await api.post<Review>(`/workspaces/${workspaceSlug}/reviews/${reviewId}/image`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+    return response.data;
+  },
+
+  async getWorkspaceReviewStats(workspaceSlug: string): Promise<ReviewStats> {
+    const response = await api.get<ReviewStats>(`/workspaces/${workspaceSlug}/reviews/stats`);
+    return response.data;
+  },
+
+  async getProductReviewStats(workspaceSlug: string, productId: string): Promise<ReviewStats> {
+    const response = await api.get<ReviewStats>(`/workspaces/${workspaceSlug}/products/${productId}/reviews/stats`);
+    return response.data;
+  },
+};
+
+// ============================================================
+// 退款/售后服务
+// ============================================================
+export const refundService = {
+  async getRefunds(workspaceSlug: string, params?: Record<string, string>): Promise<Refund[]> {
+    const response = await api.get<Refund[]>(`/workspaces/${workspaceSlug}/refunds`, { params });
+    return extractItems<Refund[]>(response.data);
+  },
+
+  async getRefundsPaginated(workspaceSlug: string, params?: Record<string, string>): Promise<PaginatedResult<Refund>> {
+    const response = await api.get(`/workspaces/${workspaceSlug}/refunds`, { params });
+    return extractPaginated<Refund>(response.data);
+  },
+
+  async createRefund(workspaceSlug: string, data: RefundCreateRequest): Promise<Refund> {
+    const response = await api.post<Refund>(`/workspaces/${workspaceSlug}/refunds`, data);
+    return response.data;
+  },
+
+  async processRefund(workspaceSlug: string, refundId: string, data: RefundUpdateRequest): Promise<Refund> {
+    const response = await api.patch<Refund>(`/workspaces/${workspaceSlug}/refunds/${refundId}`, data);
+    return response.data;
+  },
+
+  async getRefundStats(workspaceSlug: string): Promise<RefundStats> {
+    const response = await api.get<RefundStats>(`/workspaces/${workspaceSlug}/refunds/stats`);
+    return response.data;
+  },
+};
+
+// ============================================================
+// 会员等级服务
+// ============================================================
+export const membershipService = {
+  async getSummary(workspaceSlug: string): Promise<MembershipSummary> {
+    const response = await api.get<MembershipSummary>(`/workspaces/${workspaceSlug}/membership`);
+    return response.data;
+  },
+
+  async getCustomerMembership(workspaceSlug: string, customerId: string): Promise<CustomerMembership> {
+    const response = await api.get<CustomerMembership>(
+      `/workspaces/${workspaceSlug}/customers/${customerId}/membership`,
+    );
     return response.data;
   },
 };

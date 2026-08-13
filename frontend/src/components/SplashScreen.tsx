@@ -12,11 +12,12 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({ onFinish }) => {
   const [phase, setPhase] = useState<Phase>('logoIn');
 
   useEffect(() => {
-    const t1 = setTimeout(() => setPhase('letters'), 600);      // logo done
-    const t2 = setTimeout(() => setPhase('hold'), 2000);        // last letter settled
-    const t3 = setTimeout(() => setPhase('exitLetters'), 4000); // start reverse dismantle
-    const t4 = setTimeout(() => setPhase('exitLogo'), 5000);    // letters gone, logo starts fading
-    const t5 = setTimeout(() => onFinish(), 7000);              // all done, show page
+    // 紧凑节奏：总时长 ~1.9s（原 7s），保证首屏快速可见
+    const t1 = setTimeout(() => setPhase('letters'), 260);       // logo done
+    const t2 = setTimeout(() => setPhase('hold'), 700);          // last letter settled
+    const t3 = setTimeout(() => setPhase('exitLetters'), 1200);  // start reverse dismantle
+    const t4 = setTimeout(() => setPhase('exitLogo'), 1550);     // letters gone, logo starts fading
+    const t5 = setTimeout(() => onFinish(), 1900);               // all done, show page
 
     return () => {
       clearTimeout(t1); clearTimeout(t2); clearTimeout(t3);

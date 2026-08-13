@@ -1,0 +1,23 @@
+# Nexora backend image.
+# Build from the repository root:  docker build -f Dockerfile.backend -t nexora-backend .
+FROM python:3.13-slim
+
+WORKDIR /app
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
+
+# Install Python dependencies first for better layer caching.
+COPY backend/requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy the backend application.
+COPY backend/ .
+
+# The `data` and `uploads` directories are created at runtime if missing.
+RUN mkdir -p /app/data /app/uploads && chmod +x /app/entrypoint.sh
+
+EXPOSE 8000
+
+# 启动前：Alembic 迁移（幂等）→ 空库自动播种 90 天演示数据 → 启动 API
+CMD ["sh", "/app/entrypoint.sh"]

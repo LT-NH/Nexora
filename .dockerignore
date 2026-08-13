@@ -1,8 +1,28 @@
+# Build context exclusions — keep image builds fast and clean.
+
+# Dependencies
 **/node_modules
+**/.venv
+
+# Python caches
 **/__pycache__
-**/.git
-**/data
-**/uploads
-**/dist
-*.pyc
+**/*.py[cod]
+**/.pytest_cache
+
+# Databases / local data
+**/*.db
+**/*.sqlite
+backend/data/*
+uploads/*
+
+# VCS
+.git
+.gitignore
+.github
+
+# Frontend build output (rebuilt inside the Dockerfile)
+frontend/dist
+
+# Local env / logs
 .env
+**/*.log

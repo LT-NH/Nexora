@@ -4,8 +4,15 @@ import enum
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import DateTime, Enum, ForeignKey, String, UniqueConstraint, func
-from sqlalchemy.dialects.sqlite import CHAR
+from sqlalchemy import (
+    Boolean,
+    DateTime,
+    Enum,
+    ForeignKey,
+    String,
+    UniqueConstraint,
+    func,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -26,7 +33,7 @@ class Workspace(Base):
     __tablename__ = "workspaces"
 
     id: Mapped[str] = mapped_column(
-        CHAR(36),
+        String(36),
         primary_key=True,
         default=lambda: str(uuid.uuid4()),
     )
@@ -44,6 +51,26 @@ class Workspace(Base):
         String(512),
         nullable=True,
         default=None,
+    )
+    brand_name: Mapped[str | None] = mapped_column(
+        String(255),
+        nullable=True,
+        default=None,
+    )
+    brand_logo_url: Mapped[str | None] = mapped_column(
+        String(512),
+        nullable=True,
+        default=None,
+    )
+    brand_color: Mapped[str | None] = mapped_column(
+        String(20),
+        nullable=True,
+        default="#0071E3",
+    )
+    brand_dark_mode: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False,
+        nullable=False,
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
@@ -90,17 +117,17 @@ class WorkspaceMember(Base):
     )
 
     id: Mapped[str] = mapped_column(
-        CHAR(36),
+        String(36),
         primary_key=True,
         default=lambda: str(uuid.uuid4()),
     )
     workspace_id: Mapped[str] = mapped_column(
-        CHAR(36),
+        String(36),
         ForeignKey("workspaces.id", ondelete="CASCADE"),
         nullable=False,
     )
     user_id: Mapped[str] = mapped_column(
-        CHAR(36),
+        String(36),
         ForeignKey("users.id", ondelete="CASCADE"),
         nullable=False,
     )

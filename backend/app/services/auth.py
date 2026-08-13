@@ -4,6 +4,7 @@ Handles user registration, login, token refresh, and profile management.
 """
 
 from datetime import datetime, timedelta, timezone
+from typing import Union
 
 from fastapi import HTTPException, status
 from sqlalchemy import select
@@ -13,6 +14,7 @@ from app.config import settings
 from app.models.user import User
 from app.models.workspace import Workspace, WorkspaceMember, WorkspaceRole
 from app.schemas.user import UserCreate, UserLogin, UserResponse, UserUpdate, TokenResponse
+from app.services.totp import verify_totp
 from app.utils.logging import get_logger
 from app.utils.security import (
     create_access_token,
@@ -118,7 +120,7 @@ class AuthService:
     async def authenticate_user(
         db: AsyncSession,
         login_data: UserLogin,
-    ) -> TokenResponse:
+    ) -> Union[TokenResponse, dict]:
         """Authenticate a user with email and password.
 
         Args:
@@ -126,7 +128,7 @@ class AuthService:
             login_data: Login credentials.
 
         Returns:
-            TokenResponse with access and refresh tokens.
+            TokenResponse with access and refresh tokens, or dict with requires_2fa.
 
         Raises:
             HTTPException 401: If credentials are invalid.
@@ -147,6 +149,16 @@ class AuthService:
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="User account is deactivated.",
             )
+
+        # 2FA check: if enabled and no totp_code provided, require 2FA
+        if user.totp_enabled:
+            if not login_data.totp_code:
+                return {"requires_2fa": True, "user_id": user.id}
+            if not verify_totp(user, login_data.totp_code):
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Invalid verification code.",
+                )
 
         # Update last_login_at
         user.last_login_at = datetime.now(timezone.utc)

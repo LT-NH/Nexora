@@ -37,6 +37,12 @@ export const WorkspaceProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
   const setWorkspace = useCallback((workspace: Workspace) => {
     setCurrentWorkspace(workspace);
+    // 同步更新 workspaces 数组，保证侧边栏/选择器等读数组的地方立即反映改名/改 Logo
+    setWorkspaces((prev) => {
+      const exists = prev.some((w) => w.id === workspace.id);
+      if (!exists) return [...prev, workspace];
+      return prev.map((w) => (w.id === workspace.id ? workspace : w));
+    });
     localStorage.setItem('current_workspace_id', workspace.id);
   }, []);
 

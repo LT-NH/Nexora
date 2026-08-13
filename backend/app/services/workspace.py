@@ -169,6 +169,16 @@ class WorkspaceService:
         if update_data.logo_url is not None:
             workspace.logo_url = update_data.logo_url
 
+        # White-label brand customization
+        if update_data.brand_name is not None:
+            workspace.brand_name = update_data.brand_name.strip()
+        if update_data.brand_logo_url is not None:
+            workspace.brand_logo_url = update_data.brand_logo_url
+        if update_data.brand_color is not None:
+            workspace.brand_color = update_data.brand_color
+        if update_data.brand_dark_mode is not None:
+            workspace.brand_dark_mode = update_data.brand_dark_mode
+
         workspace.updated_at = datetime.now(timezone.utc)
         await db.flush()
         await db.refresh(workspace)

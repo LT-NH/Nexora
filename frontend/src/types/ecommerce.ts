@@ -15,6 +15,8 @@ export interface Product {
   compare_at_price: number | null;
   cost_price: number | null;
   sku: string | null;
+  stock: number;
+  low_stock_threshold: number;
   barcode: string | null;
   weight: number | null;
   status: 'draft' | 'active' | 'archived';
@@ -107,6 +109,8 @@ export interface Order {
   shipping_address: Record<string, string> | null;
   shipped_at: string | null;
   delivered_at: string | null;
+  tracking_number: string | null;
+  carrier: string | null;
   notes: string | null;
   payment_status: PaymentStatus;
   platform: string | null;
@@ -181,6 +185,8 @@ export interface Customer {
   total_orders: number;
   total_spent: number;
   last_order_at: string | null;
+  membership_level: string | null;
+  membership_points: number;
   notes: string | null;
   source: string | null;
   created_at: string;
@@ -260,4 +266,146 @@ export interface AIGenerateResponse {
   description: string;
   highlights: string[];
   tags: string[];
+}
+
+// --- 优惠券 ---
+export type CouponType = 'percent' | 'fixed' | 'free_shipping';
+
+export interface Coupon {
+  id: string;
+  workspace_id: string;
+  code: string;
+  type: CouponType;
+  value: number;
+  min_order_amount: number;
+  max_uses: number;
+  used_count: number;
+  is_active: boolean;
+  starts_at: string;
+  expires_at: string;
+  created_at: string;
+}
+
+export interface CouponCreateRequest {
+  code: string;
+  type: CouponType;
+  value: number;
+  min_order_amount?: number;
+  max_uses?: number;
+  expires_at: string;
+}
+
+export interface CouponValidateRequest {
+  code: string;
+  order_amount: number;
+}
+
+export interface CouponValidateResponse {
+  valid: boolean;
+  coupon_id: string | null;
+  code: string | null;
+  type: CouponType | null;
+  discount_amount: number;
+  message: string | null;
+}
+
+// --- 商品评价 ---
+export interface Review {
+  id: string;
+  workspace_id: string;
+  product_id: string;
+  customer_name: string;
+  rating: number;
+  content: string | null;
+  image_urls: string[] | null;
+  reply: string | null;
+  replied_at: string | null;
+  is_approved: boolean;
+  is_verified: boolean;
+  created_at: string;
+}
+
+export interface ReviewCreateRequest {
+  customer_name: string;
+  rating: number;
+  content?: string;
+  image_urls?: string[];
+  is_verified?: boolean;
+}
+
+export interface ReviewReplyRequest {
+  reply: string;
+}
+
+export interface ReviewStats {
+  average_rating: number;
+  total_reviews: number;
+  rating_distribution: Record<string, number>;
+}
+
+// --- 退款/售后 ---
+export type RefundStatus = 'pending' | 'approved' | 'rejected' | 'processing' | 'completed';
+export type RefundReason = 'quality' | 'wrong_item' | 'damaged' | 'not_as_described' | 'other';
+
+export interface Refund {
+  id: string;
+  workspace_id: string;
+  order_id: string;
+  amount: number;
+  reason: string;
+  reason_detail: string | null;
+  status: RefundStatus;
+  reviewer_note: string | null;
+  reviewed_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface RefundCreateRequest {
+  order_id: string;
+  amount: number;
+  reason: string;
+  reason_detail?: string;
+}
+
+export interface RefundUpdateRequest {
+  status?: string;
+  reviewer_note?: string;
+}
+
+export interface RefundStats {
+  pending: number;
+  approved: number;
+  rejected: number;
+  processing: number;
+  completed: number;
+  total: number;
+  total_refunded: number;
+}
+
+// --- 会员等级 ---
+export interface MembershipLevelData {
+  level: string;
+  label: string;
+  min_spent: number;
+  discount: number;
+  count: number;
+}
+
+export interface MembershipSummary {
+  levels: MembershipLevelData[];
+  total_customers: number;
+}
+
+export interface CustomerMembership {
+  customer_id: string;
+  customer_name: string;
+  current_level: string;
+  current_label: string;
+  current_discount: number;
+  total_spent: number;
+  membership_points: number;
+  next_level: string | null;
+  next_label: string | null;
+  spent_needed_for_next: number | null;
 }

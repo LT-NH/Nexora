@@ -1,7 +1,14 @@
 import axios, { AxiosError, InternalAxiosRequestConfig } from 'axios';
 import type { ApiError } from '@/types';
 
-const API_BASE_URL = '/api/v1';
+/**
+ * API base URL 解析顺序：
+ * 1. 构建时注入的 VITE_API_BASE（生产环境指向 Render 后端，如 https://nexora-api.onrender.com/api/v1）
+ * 2. 默认相对路径 /api/v1（本地开发走 Vite 代理）
+ */
+const API_BASE_URL =
+  (import.meta.env?.VITE_API_BASE as string | undefined)?.replace(/\/$/, '') ??
+  '/api/v1';
 
 /**
  * Extract a human-readable error message from various API error response formats.
@@ -40,6 +47,17 @@ const api = axios.create({
   timeout: 15000,
 });
 
+// =========================================================================
+// GET 短期缓存（2s TTL）
+// -------------------------------------------------------------------------
+// 痛点：进入工作台时多个组件会并发/重复拉取同一接口（如 /workspaces/:slug
+// 曾被重复请求 9 次，拖慢加载）。对 GET 结果做 2s TTL 缓存：
+// 首次真实请求后，同 2s 内的重复请求由 request interceptor 短路返回缓存。
+// 需要强制刷新时可在请求头加 X-Skip-Cache: '1'。
+// =========================================================================
+const getCache = new Map<string, { exp: number; data: unknown }>();
+const GET_TTL = 10000;
+
 // Track if we are currently refreshing the token
 let isRefreshing = false;
 let failedQueue: Array<{
@@ -58,14 +76,47 @@ const processQueue = (error: unknown, token: string | null = null) => {
   failedQueue = [];
 };
 
-// Request interceptor: attach JWT token
+// Request interceptor: attach JWT token + GET 短期缓存短路
 api.interceptors.request.use(
   (config: InternalAxiosRequestConfig) => {
     const token = localStorage.getItem('access_token');
     if (token && config.headers) {
       config.headers.Authorization = `Bearer ${token}`;
     }
+
+    // GET 缓存命中：给该请求注入一个直接返回缓存结果的 adapter（标准 axios 机制）
+    const method = (config.method || 'get').toUpperCase();
+    const skipCache = (config.headers as Record<string, unknown> | undefined)?.['X-Skip-Cache'] === '1';
+    if (method === 'GET' && !skipCache) {
+      const url = `${config.baseURL ?? ''}${config.url ?? ''}`;
+      const hit = getCache.get(url);
+      if (hit && Date.now() < hit.exp) {
+        config.adapter = async (cfg) => ({
+          data: hit.data,
+          status: 200,
+          statusText: 'OK',
+          headers: {},
+          config: cfg,
+          request: {},
+        });
+      }
+    }
     return config;
+  },
+  (error) => Promise.reject(error)
+);
+
+// 成功响应：写入 GET 缓存（TTL 内重复请求直接命中）
+api.interceptors.response.use(
+  (response) => {
+    const cfg = response.config;
+    const method = (cfg.method || 'get').toUpperCase();
+    const skipCache = (cfg.headers as Record<string, unknown> | undefined)?.['X-Skip-Cache'] === '1';
+    if (method === 'GET' && !skipCache) {
+      const url = `${cfg.baseURL ?? ''}${cfg.url ?? ''}`;
+      getCache.set(url, { exp: Date.now() + GET_TTL, data: response.data });
+    }
+    return response;
   },
   (error) => Promise.reject(error)
 );
@@ -182,4 +233,5 @@ api.interceptors.response.use(
   }
 );
 
+export { api };
 export default api;

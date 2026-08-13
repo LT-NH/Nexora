@@ -7,7 +7,7 @@ interface AuthContextType {
   token: string | null;
   isAuthenticated: boolean;
   isLoading: boolean;
-  login: (data: LoginRequest) => Promise<void>;
+  login: (data: LoginRequest) => Promise<AuthResponse | { requires_2fa: boolean; user_id: string }>;
   register: (data: RegisterRequest) => Promise<void>;
   logout: () => void;
   setUser: (user: User) => void;
@@ -52,10 +52,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     initAuth();
   }, []);
 
-  const login = useCallback(async (data: LoginRequest): Promise<void> => {
-    const response: AuthResponse = await authService.login(data);
-    setToken(response.access_token);
-    setUser(response.user);
+  const login = useCallback(async (data: LoginRequest): Promise<AuthResponse | { requires_2fa: boolean; user_id: string }> => {
+    const response = await authService.login(data);
+    // Handle 2FA required
+    if ('requires_2fa' in response && response.requires_2fa) {
+      return response;
+    }
+    const authResponse = response as AuthResponse;
+    setToken(authResponse.access_token);
+    setUser(authResponse.user);
+    return authResponse;
   }, []);
 
   const register = useCallback(async (data: RegisterRequest): Promise<void> => {

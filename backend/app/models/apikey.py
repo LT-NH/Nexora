@@ -3,7 +3,7 @@
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, JSON, String, func
+from sqlalchemy import Boolean, DateTime, ForeignKey, String, Text, func
 from sqlalchemy.dialects.sqlite import CHAR
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -48,10 +48,11 @@ class ApiKey(Base):
         String(4),
         nullable=False,
     )
-    scopes: Mapped[dict] = mapped_column(
-        JSON,
-        default=dict,
-        nullable=False,
+    scopes: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+        default='["read"]',
+        comment="JSON array of scope strings",
     )
     is_active: Mapped[bool] = mapped_column(
         Boolean,

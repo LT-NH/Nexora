@@ -32,8 +32,8 @@ class PaginationParams(BaseModel):
     page_size: int = Field(
         default=20,
         ge=1,
-        le=100,
-        description="Number of items per page (max 100).",
+        le=500,
+        description="Number of items per page (max 500).",
     )
 
     @property

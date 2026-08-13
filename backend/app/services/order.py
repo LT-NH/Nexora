@@ -5,6 +5,7 @@ statistics — all scoped to a workspace.  Every write method accepts a
 ``user_id`` parameter for audit logging.
 """
 
+import os
 import random
 from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Optional, Tuple
@@ -17,7 +18,8 @@ from app.utils.audit import create_audit_log
 from app.models.customer import Customer
 from app.models.order import Order, OrderItem, OrderStatus, PaymentStatus
 from app.models.product import Product, ProductVariant
-from app.models.workspace import Workspace
+from app.models.user import User
+from app.models.workspace import Workspace, WorkspaceMember, WorkspaceRole
 from app.schemas.order import (
     OrderCreate,
     OrderDetailResponse,
@@ -26,11 +28,34 @@ from app.schemas.order import (
     OrderResponse,
     OrderUpdate,
 )
+from app.services.events import publish
+from app.services.queue import enqueue
+# Importing the webhook service registers its event-bus subscribers
+# (outbound webhooks + admin notifications) for the order.* events
+# published below.  The import itself is a no-op otherwise.
+import app.services.webhook as _webhook_module  # noqa: F401
 from app.utils.logging import get_logger
 
 logger = get_logger(__name__)
 
 EXCLUDED_STATUSES = [OrderStatus.CANCELLED, OrderStatus.REFUNDED]
+
+
+def _publish_order_event(event: str, workspace_id, data: dict) -> None:
+    """Publish an order event to the in-process event bus (fire-and-forget).
+
+    Subscribers registered in ``app.services.webhook`` forward the event
+    to outbound webhooks and in-app notifications without blocking the
+    request.
+    """
+    publish(
+        event,
+        {
+            "workspace_id": str(workspace_id),
+            "event": event,
+            "data": data,
+        },
+    )
 
 
 class OrderService:
@@ -138,6 +163,14 @@ class OrderService:
                 db, workspace, order_data.customer_id, float(order.total)
             )
 
+        # Deduct stock for each order item
+        for item_data in order_data.items:
+            if item_data.product_id:
+                product = await db.execute(select(Product).where(Product.id == item_data.product_id))
+                product = product.scalar_one_or_none()
+                if product:
+                    product.stock = max(0, product.stock - item_data.quantity)
+
         await db.flush()
         await db.refresh(order)
 
@@ -153,6 +186,58 @@ class OrderService:
                 "total": float(order.total),
             },
         )
+
+        # Publish order.created event — outbound webhooks and admin
+        # notifications are handled fire-and-forget by event-bus
+        # subscribers, so this does not block the request.
+        try:
+            _publish_order_event(
+                "order.created",
+                order.workspace_id,
+                {
+                    "order_id": order.id,
+                    "order_number": order.order_number,
+                    "total": float(order.total),
+                    "status": order.status.value,
+                    "customer_name": order.customer_name,
+                    "customer_email": order.customer_email,
+                },
+            )
+        except Exception as e:
+            logger.warning("Failed to publish order.created event: %s", e)
+
+        # Send email notification to workspace owner. The blocking SMTP
+        # send is offloaded to the background task queue (with error
+        # logging) so the API returns instantly.
+        try:
+            from app.services.email import send_new_order_notification_async
+
+            owner_result = await db.execute(
+                select(User)
+                .join(WorkspaceMember)
+                .where(
+                    WorkspaceMember.workspace_id == workspace.id,
+                    WorkspaceMember.role == WorkspaceRole.OWNER,
+                )
+                .limit(1)
+            )
+            owner = owner_result.scalar_one_or_none()
+            if owner:
+                email_data = {
+                    "order_number": order.order_number,
+                    "customer_name": order.customer_name,
+                    "total": f"{order.total:.2f}",
+                    "status": order.status.value,
+                    "site_url": os.getenv("SITE_URL", "http://localhost:3000"),
+                }
+                enqueue(
+                    lambda: send_new_order_notification_async(
+                        owner.email, email_data
+                    ),
+                    name="order-email",
+                )
+        except Exception as e:
+            logger.warning("Order notification email failed: %s", e)
 
         logger.info("Order created: %s (total=%.2f)", order.order_number, order.total)
 
@@ -172,6 +257,8 @@ class OrderService:
             shipping_address=order.shipping_address,
             shipped_at=order.shipped_at,
             delivered_at=order.delivered_at,
+            tracking_number=order.tracking_number,
+            carrier=order.carrier,
             notes=order.notes,
             payment_status=order.payment_status.value,
             platform=order.platform,
@@ -217,6 +304,8 @@ class OrderService:
             shipping_address=order.shipping_address,
             shipped_at=order.shipped_at,
             delivered_at=order.delivered_at,
+            tracking_number=order.tracking_number,
+            carrier=order.carrier,
             notes=order.notes,
             payment_status=order.payment_status.value,
             platform=order.platform,
@@ -356,6 +445,22 @@ class OrderService:
             details={"order_number": order.order_number},
         )
 
+        # Publish order.updated event (handled fire-and-forget by the
+        # event-bus subscribers registered in app.services.webhook).
+        try:
+            _publish_order_event(
+                "order.updated",
+                order.workspace_id,
+                {
+                    "order_id": order.id,
+                    "order_number": order.order_number,
+                    "total": float(order.total),
+                    "status": order.status.value,
+                },
+            )
+        except Exception as e:
+            logger.warning("Failed to publish order.updated event: %s", e)
+
         logger.info("Order updated: %s", order.order_number)
         return OrderResponse.model_validate(order)
 
@@ -421,6 +526,22 @@ class OrderService:
                 "new_status": order.status.value,
             },
         )
+
+        # Publish order.status_updated event (handled fire-and-forget by
+        # the event-bus subscribers registered in app.services.webhook).
+        try:
+            _publish_order_event(
+                "order.status_updated",
+                order.workspace_id,
+                {
+                    "order_id": order.id,
+                    "order_number": order.order_number,
+                    "previous_status": previous_status,
+                    "new_status": order.status.value,
+                },
+            )
+        except Exception as e:
+            logger.warning("Failed to publish order.status_updated event: %s", e)
 
         logger.info(
             "Order status updated: %s: %s -> %s",
@@ -591,4 +712,12 @@ class OrderService:
         customer.total_spent = float(customer.total_spent) + order_total
         customer.last_order_at = datetime.now(timezone.utc)
         customer.updated_at = datetime.now(timezone.utc)
+
+        # Auto-update membership level and points
+        from app.services.membership import update_customer_membership
+        # total_spent is already updated above, so just recalculate level and points
+        customer.membership_points = int(customer.membership_points or 0) + int(order_total)
+        from app.services.membership import calculate_level
+        customer.membership_level = calculate_level(float(customer.total_spent))
+
         await db.flush()

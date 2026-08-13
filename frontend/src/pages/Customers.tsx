@@ -25,22 +25,200 @@ import { Table } from '@/components/ui/Table';
 import { Modal, ModalFooter } from '@/components/ui/Modal';
 import { customerService } from '@/services/ecommerce';
 import type { Customer, CustomerTag, RFMAnalysis } from '@/types/ecommerce';
+import { usePageT, type Lang } from '@/i18n';
 
-const tagConfig: Record<CustomerTag, { label: string; variant: 'green' | 'blue' | 'yellow' | 'red' | 'gray' }> = {
-  vip: { label: 'VIP', variant: 'green' },
-  high_value: { label: '高价值', variant: 'green' },
-  regular: { label: '常客', variant: 'blue' },
-  new: { label: '新客', variant: 'yellow' },
-  at_risk: { label: '流失风险', variant: 'red' },
-};
+type T = (key: string, fallback?: string) => string;
+
+const D = {
+  zh: {
+    page_title: '客户管理',
+    err_load_customers: '加载客户列表失败',
+    err_required_name: '客户姓名不能为空',
+    err_required_email: '邮箱不能为空',
+    err_email_invalid: '请输入有效的邮箱地址',
+    err_op_failed: '操作失败',
+    pls_retry: '请稍后重试',
+    err_load_failed: '加载失败',
+    err_customer_detail: '无法获取客户详情',
+    ok_updated: '客户信息已更新',
+    ok_created: '客户已创建',
+    ok_deleted: '客户已删除',
+    err_delete_failed: '删除失败',
+    load_failed_title: '加载失败',
+    btn_retry: '重试',
+    col_customer: '客户',
+    col_phone: '电话',
+    col_tags: '标签',
+    col_orders: '订单',
+    col_membership: '会员等级',
+    col_last_order: '最近购买',
+    col_actions: '操作',
+    btn_edit: '编辑',
+    btn_detail: '详情',
+    aria_delete: '删除',
+    no_date: '暂无',
+    invalid_date: '无效日期',
+    crm_title: '客户 CRM',
+    crm_subtitle: '管理客户关系和 RFM 分析',
+    btn_refresh: '刷新',
+    btn_add_customer: '添加客户',
+    search_placeholder: '搜索客户名称或邮箱...',
+    filter_all: '全部',
+    btn_clear: '清除',
+    empty_title: '暂无客户',
+    empty_desc: '点击「添加客户」按钮创建你的第一个客户',
+    pager_total: '共 {total} 条记录，第 {page} / {pages} 页',
+    aria_prev: '上一页',
+    aria_next: '下一页',
+    detail_title: '客户详情',
+    aria_close: '关闭',
+    phone_empty: '未填写',
+    btn_view_orders: '查看订单',
+    stat_title: '消费统计',
+    stat_orders: '累计订单',
+    stat_spent: '累计消费',
+    stat_last_purchase: '最近购买',
+    label_source: '来源',
+    label_notes: '备注',
+    no_data: '暂无数据',
+    rfm_title: 'RFM 客户分层分析',
+    rfm_subtitle: '共 {count} 位客户',
+    rfm_segments_title: '客户分层分布',
+    rfm_segment_count: '{count} 人 ({pct}%)',
+    rfm_metrics_title: '各分层 RFM 指标',
+    rfm_composite: '综合',
+    rfm_avg_spend: '人均消费: {amount}',
+    modal_edit_title: '编辑客户',
+    modal_add_title: '添加客户',
+    label_name: '姓名',
+    label_email: '邮箱',
+    label_phone: '电话',
+    label_source_ph: '例如：门店、网站、抖音...',
+    label_tags: '标签',
+    label_notes_ph: '备注信息...',
+    placeholder_name: '客户姓名',
+    placeholder_phone: '手机号码',
+    btn_save_changes: '保存修改',
+    btn_create_customer: '创建客户',
+    delete_title: '确认删除',
+    delete_confirm: '确定要删除客户「{name}」吗？',
+    delete_desc: '此操作不可撤销，该客户的所有关联数据将被永久删除。',
+    btn_confirm_delete: '确认删除',
+    tag_vip: 'VIP',
+    tag_high_value: '高价值',
+    tag_regular: '常客',
+    tag_new: '新客',
+    tag_at_risk: '流失风险',
+    mb_bronze: '铜牌会员',
+    mb_silver: '银牌会员',
+    mb_gold: '金牌会员',
+    mb_diamond: '钻石会员',
+    orders_count: '{n} 笔',
+    count_people: '人',
+  },
+  en: {
+    page_title: 'Customers',
+    err_load_customers: 'Failed to load customers',
+    err_required_name: 'Customer name is required',
+    err_required_email: 'Email is required',
+    err_email_invalid: 'Please enter a valid email address',
+    err_op_failed: 'Operation failed',
+    pls_retry: 'Please try again later',
+    err_load_failed: 'Load failed',
+    err_customer_detail: 'Could not load customer details',
+    ok_updated: 'Customer updated',
+    ok_created: 'Customer created',
+    ok_deleted: 'Customer deleted',
+    err_delete_failed: 'Delete failed',
+    load_failed_title: 'Load failed',
+    btn_retry: 'Retry',
+    col_customer: 'Customer',
+    col_phone: 'Phone',
+    col_tags: 'Tags',
+    col_orders: 'Orders',
+    col_membership: 'Membership',
+    col_last_order: 'Last purchase',
+    col_actions: 'Actions',
+    btn_edit: 'Edit',
+    btn_detail: 'Details',
+    aria_delete: 'Delete',
+    no_date: 'N/A',
+    invalid_date: 'Invalid date',
+    crm_title: 'Customer CRM',
+    crm_subtitle: 'Manage customer relationships and RFM analysis',
+    btn_refresh: 'Refresh',
+    btn_add_customer: 'Add customer',
+    search_placeholder: 'Search customer name or email...',
+    filter_all: 'All',
+    btn_clear: 'Clear',
+    empty_title: 'No customers',
+    empty_desc: 'Click "Add customer" to create your first customer',
+    pager_total: '{total} records, page {page} / {pages}',
+    aria_prev: 'Previous page',
+    aria_next: 'Next page',
+    detail_title: 'Customer details',
+    aria_close: 'Close',
+    phone_empty: 'Not provided',
+    btn_view_orders: 'View orders',
+    stat_title: 'Purchase stats',
+    stat_orders: 'Total orders',
+    stat_spent: 'Total spent',
+    stat_last_purchase: 'Last purchase',
+    label_source: 'Source',
+    label_notes: 'Notes',
+    no_data: 'No data',
+    rfm_title: 'RFM Customer Segmentation',
+    rfm_subtitle: '{count} customers in total',
+    rfm_segments_title: 'Segment distribution',
+    rfm_segment_count: '{count} people ({pct}%)',
+    rfm_metrics_title: 'RFM metrics by segment',
+    rfm_composite: 'Overall',
+    rfm_avg_spend: 'Avg spend: {amount}',
+    modal_edit_title: 'Edit customer',
+    modal_add_title: 'Add customer',
+    label_name: 'Name',
+    label_email: 'Email',
+    label_phone: 'Phone',
+    label_source_ph: 'e.g. store, website, Douyin...',
+    label_tags: 'Tags',
+    label_notes_ph: 'Notes...',
+    placeholder_name: 'Customer name',
+    placeholder_phone: 'Phone number',
+    btn_save_changes: 'Save changes',
+    btn_create_customer: 'Create customer',
+    delete_title: 'Confirm delete',
+    delete_confirm: 'Delete customer "{name}"?',
+    delete_desc: 'This cannot be undone. All related data of this customer will be permanently deleted.',
+    btn_confirm_delete: 'Delete',
+    tag_vip: 'VIP',
+    tag_high_value: 'High value',
+    tag_regular: 'Regular',
+    tag_new: 'New',
+    tag_at_risk: 'At risk',
+    mb_bronze: 'Bronze',
+    mb_silver: 'Silver',
+    mb_gold: 'Gold',
+    mb_diamond: 'Diamond',
+    orders_count: '{n} orders',
+    count_people: 'people',
+  },
+} as Record<Lang, Record<string, string>>;
+
+const getTagConfig = (t: T): Record<CustomerTag, { label: string; variant: 'success' | 'primary' | 'warning' | 'danger' | 'neutral' }> => ({
+  vip: { label: t('tag_vip'), variant: 'success' },
+  high_value: { label: t('tag_high_value'), variant: 'success' },
+  regular: { label: t('tag_regular'), variant: 'primary' },
+  new: { label: t('tag_new'), variant: 'warning' },
+  at_risk: { label: t('tag_at_risk'), variant: 'danger' },
+});
 
 const allTags: CustomerTag[] = ['vip', 'high_value', 'regular', 'new', 'at_risk'];
 
 const formatPrice = (price: number) => `¥${price.toFixed(2)}`;
-const formatDate = (dateStr: string | null) => {
-  if (!dateStr) return '暂无';
+const formatDate = (dateStr: string | null, t: T) => {
+  if (!dateStr) return t('no_date');
   const d = new Date(dateStr);
-  if (isNaN(d.getTime())) return '无效日期';
+  if (isNaN(d.getTime())) return t('invalid_date');
   return d.toLocaleDateString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit' });
 };
 
@@ -54,10 +232,20 @@ const rfmSegmentColors: Record<string, string> = {
   '一般客户': '#6b7280',
 };
 
+const getMembershipConfig = (t: T): Record<string, { label: string; variant: 'neutral' | 'warning' | 'primary' }> => ({
+  bronze: { label: t('mb_bronze'), variant: 'warning' as const },
+  silver: { label: t('mb_silver'), variant: 'neutral' as const },
+  gold: { label: t('mb_gold'), variant: 'warning' as const },
+  diamond: { label: t('mb_diamond'), variant: 'primary' as const },
+});
+
 const PAGE_SIZE = 10;
 
 export const Customers: React.FC = () => {
-  usePageTitle('客户管理');
+  const t = usePageT(D);
+  usePageTitle(t('page_title'));
+  const tagCfg = getTagConfig(t);
+  const mbCfg = getMembershipConfig(t);
   const { currentWorkspace } = useWorkspace();
   const { addToast } = useToast();
   const { errors: formErrors, setFieldError, clearErrors: clearFormErrors } = useFormErrors();
@@ -144,7 +332,7 @@ export const Customers: React.FC = () => {
       setTotal(data.total);
       setTotalPages(data.total_pages);
     } catch (err: any) {
-      setError(err?.response?.data?.detail || '加载客户列表失败');
+      setError(err?.response?.data?.detail || t('err_load_customers'));
     } finally {
       setIsLoading(false);
     }
@@ -201,16 +389,16 @@ export const Customers: React.FC = () => {
     clearFormErrors();
     let hasError = false;
     if (!formName.trim()) {
-      setFieldError('name', '客户姓名不能为空');
+      setFieldError('name', t('err_required_name'));
       hasError = true;
     }
     if (!formEmail.trim()) {
-      setFieldError('email', '邮箱不能为空');
+      setFieldError('email', t('err_required_email'));
       hasError = true;
     } else {
       const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
       if (!emailRegex.test(formEmail.trim())) {
-        setFieldError('email', '请输入有效的邮箱地址');
+        setFieldError('email', t('err_email_invalid'));
         hasError = true;
       }
     }
@@ -228,15 +416,15 @@ export const Customers: React.FC = () => {
 
       if (editingCustomer) {
         await customerService.updateCustomer(currentWorkspace.slug, { id: editingCustomer.id, ...payload });
-        addToast('success', '客户信息已更新');
+        addToast('success', t('ok_updated'));
       } else {
         await customerService.createCustomer(currentWorkspace.slug, payload as any);
-        addToast('success', '客户已创建');
+        addToast('success', t('ok_created'));
       }
       setShowFormModal(false);
       fetchCustomers();
     } catch (err: any) {
-      addToast('error', '操作失败', err?.response?.data?.detail || '请稍后重试');
+      addToast('error', t('err_op_failed'), err?.response?.data?.detail || t('pls_retry'));
     } finally {
       setFormSubmitting(false);
     }
@@ -244,7 +432,7 @@ export const Customers: React.FC = () => {
 
   const toggleFormTag = (tag: CustomerTag) => {
     setFormTags((prev) =>
-      prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag]
+      prev.includes(tag) ? prev.filter((tt) => tt !== tag) : [...prev, tag]
     );
   };
 
@@ -259,7 +447,7 @@ export const Customers: React.FC = () => {
       const fullData = await customerService.getCustomer(currentWorkspace.slug, customer.id);
       setSelectedCustomer(fullData);
     } catch (err: any) {
-      addToast('error', '加载失败', '无法获取客户详情');
+      addToast('error', t('err_load_failed'), t('err_customer_detail'));
       setSelectedCustomer(customer); // fallback to list data
     } finally {
       setDetailLoading(false);
@@ -279,7 +467,7 @@ export const Customers: React.FC = () => {
     setDeleteLoading(true);
     try {
       await customerService.deleteCustomer(currentWorkspace.slug, deletingCustomer.id);
-      addToast('success', '客户已删除');
+      addToast('success', t('ok_deleted'));
       setShowDeleteModal(false);
       setDeletingCustomer(null);
       // If the deleted customer was shown in detail, close the panel
@@ -289,7 +477,7 @@ export const Customers: React.FC = () => {
       }
       fetchCustomers();
     } catch (err: any) {
-      addToast('error', '删除失败', err?.response?.data?.detail || '请稍后重试');
+      addToast('error', t('err_delete_failed'), err?.response?.data?.detail || t('pls_retry'));
     } finally {
       setDeleteLoading(false);
     }
@@ -316,12 +504,12 @@ export const Customers: React.FC = () => {
   if (error) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[400px] text-center animate-fade-in">
-        <div className="w-12 h-12 rounded-full bg-red-100 flex items-center justify-center mb-4">
-          <AlertTriangle size={24} className="text-red-500" />
+        <div className="w-12 h-12 rounded-full bg-red-100 dark:bg-red-900/30 flex items-center justify-center mb-4">
+          <AlertTriangle size={24} className="text-red-500 dark:text-red-400" />
         </div>
-        <h3 className="text-lg font-semibold text-slate-900">加载失败</h3>
-        <p className="text-sm text-gray-500 mt-1">{error}</p>
-        <Button variant="outline" className="mt-4" onClick={handleRefresh}>重试</Button>
+        <h3 className="text-lg font-semibold text-slate-900 dark:text-gray-100">{t('load_failed_title')}</h3>
+        <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">{error}</p>
+        <Button variant="outline" className="mt-4" onClick={handleRefresh}>{t('btn_retry')}</Button>
       </div>
     );
   }
@@ -330,7 +518,7 @@ export const Customers: React.FC = () => {
   // Table columns
   // ============================================================
   const columns = [
-    { key: 'name', header: '客户', render: (c: Customer) => (
+    { key: 'name', header: t('col_customer'), render: (c: Customer) => (
       <div className="flex items-center gap-3">
         {c.avatar_url ? (
           <img
@@ -344,38 +532,43 @@ export const Customers: React.FC = () => {
           </div>
         )}
         <div className="min-w-0">
-          <p className="text-sm font-medium text-slate-900 truncate">{c.name}</p>
-          <p className="text-xs text-gray-500">{c.email}</p>
+          <p className="text-sm font-medium text-slate-900 dark:text-gray-100 truncate">{c.name}</p>
+          <p className="text-xs text-gray-500 dark:text-gray-400">{c.email}</p>
         </div>
       </div>
     )},
-    { key: 'phone', header: '电话', render: (c: Customer) => (
-      <span className="text-sm text-gray-600">{c.phone || '-'}</span>
+    { key: 'phone', header: t('col_phone'), render: (c: Customer) => (
+      <span className="text-sm text-gray-600 dark:text-gray-400">{c.phone || '-'}</span>
     )},
-    { key: 'tags', header: '标签', render: (c: Customer) => (
+    { key: 'tags', header: t('col_tags'), render: (c: Customer) => (
       <div className="flex flex-wrap gap-1">
         {c.tags.map((tag) => {
-          const t = tagConfig[tag] || { label: tag, variant: 'gray' as const };
-          return <Badge key={tag} variant={t.variant}>{t.label}</Badge>;
+          const cfg = tagCfg[tag] || { label: tag, variant: 'neutral' as const };
+          return <Badge key={tag} variant={cfg.variant}>{cfg.label}</Badge>;
         })}
-        {c.tags.length === 0 && <span className="text-xs text-gray-500">-</span>}
+        {c.tags.length === 0 && <span className="text-xs text-gray-500 dark:text-gray-400">-</span>}
       </div>
     )},
-    { key: 'orders', header: '订单', render: (c: Customer) => (
+    { key: 'orders', header: t('col_orders'), render: (c: Customer) => (
       <div>
-        <p className="text-sm font-medium text-slate-900">{c.total_orders} 笔</p>
-        <p className="text-xs text-gray-500">{formatPrice(c.total_spent)}</p>
+        <p className="text-sm font-medium text-slate-900 dark:text-gray-100">{t('orders_count').replace('{n}', String(c.total_orders))}</p>
+        <p className="text-xs text-gray-500 dark:text-gray-400">{formatPrice(c.total_spent)}</p>
       </div>
     )},
-    { key: 'last_order', header: '最近购买', render: (c: Customer) => (
-      <span className="text-sm text-gray-600">{formatDate(c.last_order_at)}</span>
+    { key: 'membership', header: t('col_membership'), render: (c: Customer) => {
+      const level = c.membership_level || 'bronze';
+      const cfg = mbCfg[level] || { label: level, variant: 'neutral' as const };
+      return <Badge variant={cfg.variant}>{cfg.label}</Badge>;
+    }},
+    { key: 'last_order', header: t('col_last_order'), render: (c: Customer) => (
+      <span className="text-sm text-gray-600 dark:text-gray-400">{formatDate(c.last_order_at, t)}</span>
     )},
-    { key: 'actions', header: '操作', className: 'text-right', render: (c: Customer) => (
+    { key: 'actions', header: t('col_actions'), className: 'text-right', render: (c: Customer) => (
       <div className="flex items-center justify-end gap-1">
-        <Button variant="ghost" size="sm" onClick={() => openEditModal(c)}>编辑</Button>
-        <Button variant="ghost" size="sm" onClick={() => openDetail(c)}>详情</Button>
-        <Button variant="ghost" size="sm" onClick={() => openDeleteModal(c)}>
-          <Trash2 size={14} className="text-red-500" />
+        <Button variant="ghost" size="sm" onClick={() => openEditModal(c)}>{t('btn_edit')}</Button>
+        <Button variant="ghost" size="sm" onClick={() => openDetail(c)}>{t('btn_detail')}</Button>
+        <Button variant="ghost" size="sm" onClick={() => openDeleteModal(c)} aria-label={t('aria_delete')}>
+          <Trash2 size={14} className="text-red-500 dark:text-red-400" />
         </Button>
       </div>
     )},
@@ -389,8 +582,8 @@ export const Customers: React.FC = () => {
       {/* 页面标题 */}
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-2xl font-bold text-slate-900">客户 CRM</h2>
-          <p className="mt-1 text-sm text-gray-500">管理客户关系和 RFM 分析</p>
+          <h2 className="text-2xl font-bold text-slate-900 dark:text-gray-100">{t('crm_title')}</h2>
+          <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">{t('crm_subtitle')}</p>
         </div>
         <div className="flex items-center gap-2">
           <Button
@@ -399,10 +592,10 @@ export const Customers: React.FC = () => {
             onClick={handleRefresh}
             leftIcon={<RefreshCw size={16} />}
           >
-            刷新
+            {t('btn_refresh')}
           </Button>
           <Button variant="primary" size="sm" onClick={openCreateModal} leftIcon={<User size={16} />}>
-            添加客户
+            {t('btn_add_customer')}
           </Button>
         </div>
       </div>
@@ -412,7 +605,7 @@ export const Customers: React.FC = () => {
         <div className="flex flex-wrap items-center gap-3">
           <div className="flex-1 min-w-[200px]">
             <Input
-              placeholder="搜索客户名称或邮箱..."
+              placeholder={t('search_placeholder')}
               value={searchQuery}
               onChange={(e) => handleSearchChange(e.target.value)}
               leftIcon={<Search size={16} />}
@@ -422,13 +615,13 @@ export const Customers: React.FC = () => {
             <button
               onClick={() => { setTagFilter(''); setPage(1); }}
               className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all duration-200 ${
-                tagFilter === '' ? 'bg-gray-800 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                tagFilter === '' ? 'bg-gray-800 text-white' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700'
               }`}
             >
-              全部
+              {t('filter_all')}
             </button>
             {allTags.map((tag) => {
-              const t = tagConfig[tag];
+              const cfg = tagCfg[tag];
               return (
                 <button
                   key={tag}
@@ -436,17 +629,17 @@ export const Customers: React.FC = () => {
                   className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all duration-200 ${
                     tagFilter === tag
                       ? 'bg-primary-600 text-white'
-                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                      : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700'
                   }`}
                 >
-                  {t.label}
+                  {cfg.label}
                 </button>
               );
             })}
           </div>
           {(searchQuery || tagFilter) && (
             <Button variant="ghost" size="sm" onClick={() => { setSearchQuery(''); setDebouncedSearchQuery(''); setTagFilter(''); setPage(1); }}>
-              <X size={14} /> 清除
+              <X size={14} /> {t('btn_clear')}
             </Button>
           )}
         </div>
@@ -461,14 +654,14 @@ export const Customers: React.FC = () => {
               data={customers}
               keyExtractor={(c) => c.id}
               isLoading={isLoading}
-              emptyTitle="暂无客户"
-              emptyDescription="点击「添加客户」按钮创建你的第一个客户"
+              emptyTitle={t('empty_title')}
+              emptyDescription={t('empty_desc')}
             />
             {/* Pagination */}
             {totalPages > 1 && (
-              <div className="flex items-center justify-between px-4 py-3 border-t border-gray-300">
-                <span className="text-sm text-gray-500">
-                  共 {total} 条记录，第 {page} / {totalPages} 页
+              <div className="flex items-center justify-between px-4 py-3 border-t border-gray-300 dark:border-gray-600">
+                <span className="text-sm text-gray-500 dark:text-gray-400">
+                  {t('pager_total').replace('{total}', String(total)).replace('{page}', String(page)).replace('{pages}', String(totalPages))}
                 </span>
                 <div className="flex items-center gap-1">
                   <Button
@@ -476,6 +669,7 @@ export const Customers: React.FC = () => {
                     size="sm"
                     disabled={page <= 1}
                     onClick={() => setPage((p) => Math.max(1, p - 1))}
+                    aria-label={t('aria_prev')}
                   >
                     <ChevronLeft size={16} />
                   </Button>
@@ -494,6 +688,7 @@ export const Customers: React.FC = () => {
                     size="sm"
                     disabled={page >= totalPages}
                     onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                    aria-label={t('aria_next')}
                   >
                     <ChevronRight size={16} />
                   </Button>
@@ -507,16 +702,16 @@ export const Customers: React.FC = () => {
         {showDetail && (
           <div className="lg:col-span-1">
             <Card
-              title="客户详情"
+              title={t('detail_title')}
               actions={
-                <Button variant="ghost" size="sm" onClick={() => { setShowDetail(false); setSelectedCustomer(null); }}>
+                <Button variant="ghost" size="sm" onClick={() => { setShowDetail(false); setSelectedCustomer(null); }} aria-label={t('aria_close')}>
                   <X size={16} />
                 </Button>
               }
             >
               {detailLoading ? (
                 <div className="flex items-center justify-center py-12">
-                  <RefreshCw size={24} className="text-gray-500 animate-spin" />
+                  <RefreshCw size={24} className="text-gray-500 dark:text-gray-400 animate-spin" />
                 </div>
               ) : selectedCustomer ? (
                 <div className="space-y-4">
@@ -533,24 +728,24 @@ export const Customers: React.FC = () => {
                       </div>
                     )}
                     <div>
-                      <p className="text-lg font-semibold text-slate-900">{selectedCustomer.name}</p>
+                      <p className="text-lg font-semibold text-slate-900 dark:text-gray-100">{selectedCustomer.name}</p>
                       <div className="flex flex-wrap gap-1 mt-1">
                         {selectedCustomer.tags.map((tag) => {
-                          const t = tagConfig[tag] || { label: tag, variant: 'gray' as const };
-                          return <Badge key={tag} variant={t.variant}>{t.label}</Badge>;
+                          const cfg = tagCfg[tag] || { label: tag, variant: 'neutral' as const };
+                          return <Badge key={tag} variant={cfg.variant}>{cfg.label}</Badge>;
                         })}
                       </div>
                     </div>
                   </div>
 
                   <div className="space-y-2">
-                    <div className="flex items-center gap-2 text-sm text-gray-600">
-                      <Mail size={14} className="text-gray-500" />
+                    <div className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
+                      <Mail size={14} className="text-gray-500 dark:text-gray-400" />
                       {selectedCustomer.email}
                     </div>
-                    <div className="flex items-center gap-2 text-sm text-gray-600">
-                      <Phone size={14} className="text-gray-500" />
-                      {selectedCustomer.phone || '未填写'}
+                    <div className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
+                      <Phone size={14} className="text-gray-500 dark:text-gray-400" />
+                      {selectedCustomer.phone || t('phone_empty')}
                     </div>
                   </div>
 
@@ -562,44 +757,44 @@ export const Customers: React.FC = () => {
                     onClick={() => goToOrders(selectedCustomer)}
                     leftIcon={<ExternalLink size={14} />}
                   >
-                    查看订单
+                    {t('btn_view_orders')}
                   </Button>
 
                   {/* 消费统计 */}
-                  <div className="bg-gray-50 rounded-lg p-3 space-y-2">
-                    <p className="text-xs font-medium text-gray-500 uppercase">消费统计</p>
+                  <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-3 space-y-2">
+                    <p className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">{t('stat_title')}</p>
                     <div className="grid grid-cols-2 gap-2">
                       <div>
-                        <p className="text-xs text-gray-500">累计订单</p>
-                        <p className="text-lg font-bold text-slate-900">{selectedCustomer.total_orders}</p>
+                        <p className="text-xs text-gray-500 dark:text-gray-400">{t('stat_orders')}</p>
+                        <p className="text-lg font-bold text-slate-900 dark:text-gray-100">{selectedCustomer.total_orders}</p>
                       </div>
                       <div>
-                        <p className="text-xs text-gray-500">累计消费</p>
-                        <p className="text-lg font-bold text-slate-900">{formatPrice(selectedCustomer.total_spent)}</p>
+                        <p className="text-xs text-gray-500 dark:text-gray-400">{t('stat_spent')}</p>
+                        <p className="text-lg font-bold text-slate-900 dark:text-gray-100">{formatPrice(selectedCustomer.total_spent)}</p>
                       </div>
                     </div>
                     <div>
-                      <p className="text-xs text-gray-500">最近购买</p>
-                      <p className="text-sm text-slate-900">{formatDate(selectedCustomer.last_order_at)}</p>
+                      <p className="text-xs text-gray-500 dark:text-gray-400">{t('stat_last_purchase')}</p>
+                      <p className="text-sm text-slate-900 dark:text-gray-100">{formatDate(selectedCustomer.last_order_at, t)}</p>
                     </div>
                   </div>
 
                   {selectedCustomer.source && (
                     <div>
-                      <p className="text-xs font-medium text-gray-500 uppercase mb-1">来源</p>
-                      <p className="text-sm text-gray-600">{selectedCustomer.source}</p>
+                      <p className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase mb-1">{t('label_source')}</p>
+                      <p className="text-sm text-gray-600 dark:text-gray-400">{selectedCustomer.source}</p>
                     </div>
                   )}
 
                   {selectedCustomer.notes && (
                     <div>
-                      <p className="text-xs font-medium text-gray-500 uppercase mb-1">备注</p>
-                      <p className="text-sm text-gray-600">{selectedCustomer.notes}</p>
+                      <p className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase mb-1">{t('label_notes')}</p>
+                      <p className="text-sm text-gray-600 dark:text-gray-400">{selectedCustomer.notes}</p>
                     </div>
                   )}
                 </div>
               ) : (
-                <div className="text-center py-8 text-sm text-gray-500">暂无数据</div>
+                <div className="text-center py-8 text-sm text-gray-500 dark:text-gray-400">{t('no_data')}</div>
               )}
             </Card>
           </div>
@@ -608,11 +803,11 @@ export const Customers: React.FC = () => {
 
       {/* RFM 分析面板 */}
       {rfmAnalysis && (
-        <Card title="RFM 客户分层分析" subtitle={`共 ${rfmAnalysis.total_customers} 位客户`}>
+        <Card title={t('rfm_title')} subtitle={t('rfm_subtitle').replace('{count}', String(rfmAnalysis.total_customers))}>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             {/* 分层分布 */}
             <div>
-              <p className="text-sm font-medium text-gray-700 mb-3">客户分层分布</p>
+              <p className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">{t('rfm_segments_title')}</p>
               <div className="space-y-3">
                 {rfmAnalysis.segments.map((seg) => {
                   const pct = rfmAnalysis.total_customers > 0
@@ -627,13 +822,13 @@ export const Customers: React.FC = () => {
                             className="w-3 h-3 rounded-full"
                             style={{ backgroundColor: segColor }}
                           />
-                          <span className="text-sm text-gray-700">{seg.segment}</span>
+                          <span className="text-sm text-gray-700 dark:text-gray-300">{seg.segment}</span>
                         </div>
-                        <span className="text-sm text-gray-500">
-                          {seg.customer_count} 人 ({pct}%)
+                        <span className="text-sm text-gray-500 dark:text-gray-400">
+                          {t('rfm_segment_count').replace('{count}', String(seg.customer_count)).replace('{pct}', String(pct))}
                         </span>
                       </div>
-                      <div className="w-full bg-gray-100 rounded-full h-2">
+                      <div className="w-full bg-gray-100 dark:bg-gray-700 rounded-full h-2">
                         <div
                           className="h-2 rounded-full transition-all duration-500"
                           style={{
@@ -650,40 +845,40 @@ export const Customers: React.FC = () => {
 
             {/* 各分层 RFM 指标 */}
             <div>
-              <p className="text-sm font-medium text-gray-700 mb-3">各分层 RFM 指标</p>
+              <p className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">{t('rfm_metrics_title')}</p>
               <div className="space-y-2">
                 {rfmAnalysis.segments.map((seg) => {
                   const segColor = rfmSegmentColors[seg.segment] || '#6b7280';
                   return (
-                    <div key={seg.segment} className="bg-gray-50 rounded-lg p-3">
+                    <div key={seg.segment} className="bg-gray-50 dark:bg-gray-800 rounded-lg p-3">
                       <div className="flex items-center gap-2 mb-2">
                         <div
                           className="w-2.5 h-2.5 rounded-full flex-shrink-0"
                           style={{ backgroundColor: segColor }}
                         />
                         <span className="text-sm font-medium text-gray-800">{seg.segment}</span>
-                        <span className="text-xs text-gray-500 ml-auto">{seg.customer_count} 人</span>
+                        <span className="text-xs text-gray-500 dark:text-gray-400 ml-auto">{seg.customer_count} {t('count_people')}</span>
                       </div>
                       <div className="grid grid-cols-4 gap-2 text-center">
                         <div>
-                          <p className="text-xs text-gray-500">R</p>
+                          <p className="text-xs text-gray-500 dark:text-gray-400">R</p>
                           <p className="text-sm font-bold text-blue-600">{seg.r_score}</p>
                         </div>
                         <div>
-                          <p className="text-xs text-gray-500">F</p>
+                          <p className="text-xs text-gray-500 dark:text-gray-400">F</p>
                           <p className="text-sm font-bold text-indigo-600">{seg.f_score}</p>
                         </div>
                         <div>
-                          <p className="text-xs text-gray-500">M</p>
+                          <p className="text-xs text-gray-500 dark:text-gray-400">M</p>
                           <p className="text-sm font-bold text-purple-600">{seg.m_score}</p>
                         </div>
                         <div>
-                          <p className="text-xs text-gray-500">综合</p>
+                          <p className="text-xs text-gray-500 dark:text-gray-400">{t('rfm_composite')}</p>
                           <p className="text-sm font-bold text-gray-800">{seg.rfm_score}</p>
                         </div>
                       </div>
-                      <div className="mt-2 text-xs text-gray-500 text-right">
-                        人均消费: {formatPrice(seg.average_total_spent)}
+                      <div className="mt-2 text-xs text-gray-500 dark:text-gray-400 text-right">
+                        {t('rfm_avg_spend').replace('{amount}', formatPrice(seg.average_total_spent))}
                       </div>
                     </div>
                   );
@@ -700,26 +895,26 @@ export const Customers: React.FC = () => {
       <Modal
         isOpen={showFormModal}
         onClose={() => setShowFormModal(false)}
-        title={editingCustomer ? '编辑客户' : '添加客户'}
+        title={editingCustomer ? t('modal_edit_title') : t('modal_add_title')}
         size="md"
       >
         <div className="space-y-4">
           <div className="grid grid-cols-2 gap-3">
-            <Input label="姓名" placeholder="客户姓名" value={formName} onChange={(e) => setFormName(e.target.value)} error={formErrors.name} />
-            <Input label="邮箱" placeholder="customer@example.com" value={formEmail} onChange={(e) => setFormEmail(e.target.value)} error={formErrors.email} />
+            <Input label={t('label_name')} placeholder={t('placeholder_name')} value={formName} onChange={(e) => setFormName(e.target.value)} error={formErrors.name} />
+            <Input label={t('label_email')} placeholder="customer@example.com" value={formEmail} onChange={(e) => setFormEmail(e.target.value)} error={formErrors.email} />
           </div>
-          <Input label="电话" placeholder="手机号码" value={formPhone} onChange={(e) => setFormPhone(e.target.value)} />
+          <Input label={t('label_phone')} placeholder={t('placeholder_phone')} value={formPhone} onChange={(e) => setFormPhone(e.target.value)} />
           <Input
-            label="来源"
-            placeholder="例如：门店、网站、抖音..."
+            label={t('label_source')}
+            placeholder={t('label_source_ph')}
             value={formSource}
             onChange={(e) => setFormSource(e.target.value)}
           />
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1.5">标签</label>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">{t('label_tags')}</label>
             <div className="flex flex-wrap gap-2">
               {allTags.map((tag) => {
-                const t = tagConfig[tag];
+                const cfg = tagCfg[tag];
                 const isSelected = formTags.includes(tag);
                 return (
                   <button
@@ -728,21 +923,21 @@ export const Customers: React.FC = () => {
                     className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all duration-200 ${
                       isSelected
                         ? 'bg-primary-600 text-white'
-                        : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                        : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700'
                     }`}
                   >
-                    {t.label}
+                    {cfg.label}
                   </button>
                 );
               })}
             </div>
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1.5">备注</label>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">{t('label_notes')}</label>
             <textarea
-              className="block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-primary-200 focus:border-primary-500 transition-colors duration-200 resize-none"
+              className="block w-full rounded-lg border border-gray-300 dark:border-gray-600 px-3 py-2 text-sm placeholder:text-gray-500 dark:placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-primary-200 focus:border-primary-500 transition-colors duration-200 resize-none"
               rows={3}
-              placeholder="备注信息..."
+              placeholder={t('label_notes_ph')}
               value={formNotes}
               onChange={(e) => setFormNotes(e.target.value)}
             />
@@ -750,7 +945,7 @@ export const Customers: React.FC = () => {
           <ModalFooter
             onCancel={() => setShowFormModal(false)}
             onConfirm={handleFormSubmit}
-            confirmText={editingCustomer ? '保存修改' : '创建客户'}
+            confirmText={editingCustomer ? t('btn_save_changes') : t('btn_create_customer')}
             isLoading={formSubmitting}
           />
         </div>
@@ -762,27 +957,27 @@ export const Customers: React.FC = () => {
       <Modal
         isOpen={showDeleteModal}
         onClose={() => { setShowDeleteModal(false); setDeletingCustomer(null); }}
-        title="确认删除"
+        title={t('delete_title')}
         size="sm"
       >
         <div className="space-y-4">
-          <div className="flex items-center gap-3 p-3 bg-red-50 rounded-lg">
-            <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center flex-shrink-0">
-              <AlertTriangle size={20} className="text-red-500" />
+          <div className="flex items-center gap-3 p-3 bg-red-50 dark:bg-red-900/20 rounded-lg">
+            <div className="w-10 h-10 rounded-full bg-red-100 dark:bg-red-900/30 flex items-center justify-center flex-shrink-0">
+              <AlertTriangle size={20} className="text-red-500 dark:text-red-400" />
             </div>
             <div>
-              <p className="text-sm font-medium text-slate-900">
-                确定要删除客户「{deletingCustomer?.name}」吗？
+              <p className="text-sm font-medium text-slate-900 dark:text-gray-100">
+                {t('delete_confirm').replace('{name}', deletingCustomer?.name || '')}
               </p>
-              <p className="text-xs text-gray-500 mt-0.5">
-                此操作不可撤销，该客户的所有关联数据将被永久删除。
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                {t('delete_desc')}
               </p>
             </div>
           </div>
           <ModalFooter
             onCancel={() => { setShowDeleteModal(false); setDeletingCustomer(null); }}
             onConfirm={handleDeleteConfirm}
-            confirmText="确认删除"
+            confirmText={t('btn_confirm_delete')}
             confirmVariant="danger"
             isLoading={deleteLoading}
           />

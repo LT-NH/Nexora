@@ -9,7 +9,7 @@ Every route follows the same pattern:
 
 from typing import Annotated, Optional
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import _require_member
@@ -156,7 +156,11 @@ async def delete_order(
     principal: Annotated[AuthContext, Depends(get_principal)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> None:
-    workspace, _ = await _require_member(slug, principal, db, WorkspaceRole.MEMBER)
+    workspace, membership = await _require_member(slug, principal, db, WorkspaceRole.MEMBER)
+    from app.services.permission import check_permission
+    can_manage = await check_permission(db, workspace.id, principal.user_id, "manage_orders", member=membership)
+    if not can_manage:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "无权限管理订单")
     await OrderService.delete_order(
         db, workspace, order_id, user_id=principal.user_id,
     )

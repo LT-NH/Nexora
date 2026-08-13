@@ -10,17 +10,27 @@ interface TokenOnlyResponse {
 }
 
 export const authService = {
-  async login(data: LoginRequest): Promise<AuthResponse> {
-    // Step 1: Get tokens from login endpoint
-    const loginRes = await api.post<TokenOnlyResponse>('/auth/login', {
+  async login(data: LoginRequest): Promise<AuthResponse | { requires_2fa: boolean; user_id: string }> {
+    // Step 1: Get tokens from login endpoint (may return requires_2fa)
+    const loginRes = await api.post<TokenOnlyResponse | { requires_2fa: boolean; user_id: string }>('/auth/login', {
       email: data.email,
       password: data.password,
       remember_me: data.remember_me,
+      totp_code: data.totp_code,
     });
 
-    const { access_token, refresh_token, token_type } = loginRes.data;
+    // Handle 2FA required
+    if ((loginRes.data as any).requires_2fa) {
+      return loginRes.data as { requires_2fa: boolean; user_id: string };
+    }
+
+    const tokenData = loginRes.data as TokenOnlyResponse;
+    const { access_token, refresh_token, token_type } = tokenData;
     localStorage.setItem('access_token', access_token);
     localStorage.setItem('refresh_token', refresh_token);
+    if (data.remember_me) {
+      localStorage.setItem('remember_me', 'true');
+    }
 
     // Step 2: Fetch user data with the new token
     const userRes = await api.get<User>('/auth/me');
@@ -80,8 +90,13 @@ export const authService = {
   },
 
   logout(): void {
-    localStorage.removeItem('access_token');
-    localStorage.removeItem('refresh_token');
-    localStorage.removeItem('user');
+    const rememberMe = localStorage.getItem('remember_me') === 'true';
+    if (!rememberMe) {
+      localStorage.removeItem('access_token');
+      localStorage.removeItem('refresh_token');
+      localStorage.removeItem('user');
+    }
+    // If remember_me is true, keep credentials for next login
+    localStorage.removeItem('remember_me');
   },
 };

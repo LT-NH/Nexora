@@ -66,6 +66,8 @@ class OrderUpdate(BaseModel):
     discount: Optional[float] = Field(None, ge=0)
     total: Optional[float] = Field(None, ge=0)
     shipping_address: Optional[dict[str, Any]] = None
+    tracking_number: Optional[str] = Field(None, max_length=100)
+    carrier: Optional[str] = Field(None, max_length=50)
     notes: Optional[str] = Field(None, max_length=2000)
     payment_status: Optional[str] = Field(None, pattern=r"^(unpaid|paid|partially_refunded|refunded)$")
     platform: Optional[str] = Field(None, max_length=50)
@@ -88,6 +90,8 @@ class OrderResponse(BaseModel):
     shipping_address: Optional[dict[str, Any]] = None
     shipped_at: Optional[datetime] = None
     delivered_at: Optional[datetime] = None
+    tracking_number: Optional[str] = None
+    carrier: Optional[str] = None
     notes: Optional[str] = None
     payment_status: str
     platform: Optional[str] = None

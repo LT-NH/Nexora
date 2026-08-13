@@ -10,6 +10,7 @@ Every route follows the same pattern:
 from typing import Annotated, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import _require_member
@@ -154,6 +155,25 @@ async def delete_category(
     )
 
 
+# ===========================================================================
+# Recommendations
+# ===========================================================================
+
+
+@router.get(
+    "/recommendations",
+    summary="Get product recommendations based on order history",
+)
+async def get_recommendations(
+    slug: str,
+    principal: Annotated[AuthContext, Depends(get_principal)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> list[dict]:
+    workspace, _ = await _require_member(slug, principal, db, WorkspaceRole.VIEWER)
+    from app.services.recommendation import get_recommendations as _get_recs
+    return await _get_recs(db, workspace.id)
+
+
 @router.get(
     "/{product_id}",
     response_model=ProductResponse,
@@ -198,10 +218,74 @@ async def delete_product(
     principal: Annotated[AuthContext, Depends(get_principal)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> None:
-    workspace, _ = await _require_member(slug, principal, db, WorkspaceRole.MEMBER)
+    workspace, membership = await _require_member(slug, principal, db, WorkspaceRole.MEMBER)
+    from app.services.permission import check_permission
+    can_delete = await check_permission(db, workspace.id, principal.user_id, "delete_products", member=membership)
+    if not can_delete:
+        raise HTTPException(403, "无权限删除商品")
     await ProductService.delete_product(
         db, workspace, product_id, user_id=principal.user_id,
     )
+
+
+# ===========================================================================
+# Inventory Management (stock query & adjustment)
+# ===========================================================================
+
+
+@router.get(
+    "/{product_id}/inventory",
+    summary="Get product inventory status",
+)
+async def get_product_inventory(
+    slug: str,
+    product_id: str,
+    principal: Annotated[AuthContext, Depends(get_principal)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> dict:
+    workspace, _ = await _require_member(slug, principal, db, WorkspaceRole.VIEWER)
+    product = await ProductService.get_product(db, workspace, product_id)
+    return {
+        "stock": product.stock,
+        "low_stock_threshold": product.low_stock_threshold,
+        "is_low": product.stock <= product.low_stock_threshold,
+    }
+
+
+@router.patch(
+    "/{product_id}/stock",
+    summary="Adjust product stock",
+)
+async def adjust_stock(
+    slug: str,
+    product_id: str,
+    body: dict,
+    principal: Annotated[AuthContext, Depends(get_principal)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> dict:
+    """Adjust stock quantity. ``quantity`` positive = restock, negative = deduct."""
+    workspace, _ = await _require_member(slug, principal, db, WorkspaceRole.MEMBER)
+    from app.models.product import Product
+
+    result = await db.execute(
+        select(Product).where(
+            Product.id == product_id,
+            Product.workspace_id == workspace.id,
+        )
+    )
+    product = result.scalar_one_or_none()
+    if product is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Product not found.",
+        )
+    product.stock = max(0, product.stock + body.get("quantity", 0))
+    await db.flush()
+    return {
+        "stock": product.stock,
+        "low_stock_threshold": product.low_stock_threshold,
+        "is_low": product.stock <= product.low_stock_threshold,
+    }
 
 
 # ===========================================================================

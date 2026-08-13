@@ -1,0 +1,26 @@
+name: Bug Report
+description: 发现了一个 Bug？请在此报告
+title: "[Bug] "
+labels: [bug]
+body:
+  - type: textarea
+    attributes:
+      label: 描述问题
+      description: 清晰描述你遇到了什么问题
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: 复现步骤
+      description: 如何触发这个 Bug？
+      placeholder: |
+        1. 打开...
+        2. 点击...
+        3. 出现错误
+  - type: dropdown
+    attributes:
+      label: 浏览器
+      options: [Chrome, Edge, Firefox, Safari, 其他]
+  - type: textarea
+    attributes:
+      label: 截图（可选）

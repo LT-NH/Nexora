@@ -11,7 +11,7 @@ function getStoredTheme(): Theme {
       return stored;
     }
   } catch {}
-  return 'system';
+  return 'light'; // 默认浅色调
 }
 
 function getResolvedTheme(theme: Theme): 'light' | 'dark' {

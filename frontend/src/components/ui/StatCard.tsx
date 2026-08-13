@@ -23,7 +23,7 @@ export const StatCard: React.FC<StatCardProps> = ({
   gradientIcon = true,
 }) => (
   <div
-    className={`bg-white dark:bg-gray-800 rounded-xl border border-gray-300 dark:border-gray-700 shadow-sm p-6 hover:shadow-md hover:border-primary-200 dark:hover:border-primary-700 transition-all duration-300 ${className}`}
+    className={`group bg-white dark:bg-gray-800 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm p-6 hover:shadow-md hover:border-primary-200 dark:hover:border-primary-700 transition-all duration-200 card-lift ${className}`}
   >
     <div className="flex items-center justify-between">
       <div>

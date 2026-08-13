@@ -10,6 +10,13 @@ from app.models.order import Order, OrderItem
 from app.models.customer import Customer
 from app.models.store import Store
 from app.models.notification import Notification
+from app.models.coupon import Coupon
+from app.models.review import Review
+from app.models.feedback import Feedback
+from app.models.webhook import Webhook
+from app.models.permission import PermissionGroup, PermissionGroupMember, WorkspacePermission
+from app.models.refund import Refund
+from app.models.payment import Payment
 
 __all__ = [
     "User",
@@ -27,4 +34,13 @@ __all__ = [
     "Customer",
     "Store",
     "Notification",
+    "Coupon",
+    "Review",
+    "Feedback",
+    "Webhook",
+    "PermissionGroup",
+    "PermissionGroupMember",
+    "WorkspacePermission",
+    "Refund",
+    "Payment",
 ]

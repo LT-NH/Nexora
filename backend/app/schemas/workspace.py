@@ -30,6 +30,10 @@ class WorkspaceUpdate(BaseModel):
 
     name: Optional[str] = Field(None, min_length=1, max_length=255)
     logo_url: Optional[str] = Field(None, max_length=512)
+    brand_name: Optional[str] = Field(None, min_length=1, max_length=255)
+    brand_logo_url: Optional[str] = Field(None, max_length=512)
+    brand_color: Optional[str] = Field(None, max_length=20)
+    brand_dark_mode: Optional[bool] = None
 
 
 class WorkspaceResponse(BaseModel):
@@ -39,6 +43,10 @@ class WorkspaceResponse(BaseModel):
     name: str
     slug: str
     logo_url: Optional[str] = None
+    brand_name: Optional[str] = None
+    brand_logo_url: Optional[str] = None
+    brand_color: Optional[str] = "#0071E3"
+    brand_dark_mode: bool = True
     created_at: datetime
     updated_at: datetime
 

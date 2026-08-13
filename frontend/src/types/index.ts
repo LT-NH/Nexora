@@ -14,6 +14,7 @@ export interface User {
   is_active: boolean;
   is_superadmin: boolean;
   email_verified: boolean;
+  totp_enabled: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -24,6 +25,10 @@ export interface Workspace {
   name: string;
   slug: string;
   logo_url: string | null;
+  brand_name?: string | null;
+  brand_logo_url?: string | null;
+  brand_color?: string | null;
+  brand_dark_mode?: boolean;
   created_at: string;
   updated_at: string;
   member_count?: number;
@@ -83,7 +88,7 @@ export interface ApiKey {
   name: string;
   key_prefix: string;
   last_4: string;
-  scopes: Record<string, any>;
+  scopes: string[];
   is_active: boolean;
   last_used_at: string | null;
   expires_at: string | null;
@@ -118,6 +123,7 @@ export interface LoginRequest {
   email: string;
   password: string;
   remember_me?: boolean;
+  totp_code?: string;
 }
 
 export interface RegisterRequest {
@@ -185,4 +191,21 @@ export interface InviteRequest {
 export interface WorkspaceUpdateRequest {
   name?: string;
   logo_url?: string | null;
+  brand_name?: string | null;
+  brand_logo_url?: string | null;
+  brand_color?: string | null;
+  brand_dark_mode?: boolean;
+}
+
+// --- Webhook ---
+export interface Webhook {
+  id: string;
+  workspace_id: string;
+  name: string;
+  url: string;
+  events: string[];
+  secret: string | null;
+  is_active: boolean;
+  last_triggered_at: string | null;
+  created_at: string;
 }

@@ -4,6 +4,7 @@ Primary: Qwen (通义千问) via OpenAI-compatible API (set QWEN_API_KEY in .env
 Fallback: Rule-based engines and templates when API key is not configured.
 """
 
+import asyncio
 import json
 import math
 import os
@@ -11,14 +12,60 @@ import random
 import re
 from collections import Counter
 from datetime import datetime, timedelta, timezone
-from typing import Any, Optional
+from typing import Any, AsyncGenerator, Optional
 
 import httpx
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.utils.logging import get_logger
+
+logger = get_logger(__name__)
+
 
 def _get_qwen_config():
     """Lazy-load Qwen config from pydantic settings (reads .env at runtime)."""
     from app.config import settings
     return settings.QWEN_API_KEY, settings.QWEN_MODEL, settings.QWEN_BASE_URL
+
+
+def _extract_json(text: str) -> dict | list | None:
+    """Robustly extract a JSON object or array from an LLM response.
+
+    Tries, in order: a direct ``json.loads``, a markdown fenced code block,
+    the substring from the first ``{`` to the last ``}``, and finally the
+    substring from the first ``[`` to the last ``]`` (for JSON arrays).
+
+    Returns the parsed structure, or ``None`` when no valid JSON is found.
+    """
+    # Try direct parse
+    try:
+        return json.loads(text)
+    except (json.JSONDecodeError, TypeError):
+        pass
+    # Try extracting from markdown code blocks
+    match = re.search(r'```(?:json)?\s*([\s\S]*?)```', text)
+    if match:
+        try:
+            return json.loads(match.group(1))
+        except (json.JSONDecodeError, TypeError):
+            pass
+    # Try finding first { to last }
+    first = text.find('{')
+    last = text.rfind('}')
+    if first != -1 and last != -1 and last > first:
+        try:
+            return json.loads(text[first:last + 1])
+        except (json.JSONDecodeError, TypeError):
+            pass
+    # Try finding first [ to last ] (JSON arrays)
+    first = text.find('[')
+    last = text.rfind(']')
+    if first != -1 and last != -1 and last > first:
+        try:
+            return json.loads(text[first:last + 1])
+        except (json.JSONDecodeError, TypeError):
+            pass
+    return None
 
 
 async def _qwen_chat(messages: list[dict], temperature: float = 0.7) -> str:
@@ -27,7 +74,7 @@ async def _qwen_chat(messages: list[dict], temperature: float = 0.7) -> str:
     if not key:
         raise RuntimeError("No QWEN_API_KEY configured")
 
-    async with httpx.AsyncClient(timeout=30) as client:
+    async with httpx.AsyncClient(timeout=6) as client:
         resp = await client.post(
             f"{base_url}/chat/completions",
             headers={
@@ -188,10 +235,8 @@ class AIService:
                     ],
                     temperature=0.7,
                 )
-                json_start = result.find("{")
-                json_end = result.rfind("}") + 1
-                if json_start >= 0 and json_end > json_start:
-                    ai_result = json.loads(result[json_start:json_end])
+                ai_result = _extract_json(result)
+                if ai_result and isinstance(ai_result, dict):
                     return {
                         "title": ai_result.get("title", name),
                         "short_desc": ai_result.get("short_desc", f"{name}，优质之选。"),
@@ -200,7 +245,9 @@ class AIService:
                         "platform_tips": ai_result.get("platform_tips", platform_tip),
                     }
             except Exception as e:
-                print(f"[AI] Qwen product description failed, using rule-based fallback: {e}")
+                logger.warning(
+                    "Qwen product description failed, using rule-based fallback: %s", e
+                )
 
         return await AIService._legacy_generate_product_description(
             name, category, features, target_platform, tone
@@ -293,17 +340,16 @@ class AIService:
                     ],
                     temperature=0.5,
                 )
-                json_start = result.find("[")
-                json_end = result.rfind("]") + 1
-                if json_start >= 0 and json_end > json_start:
-                    ai_keywords = json.loads(result[json_start:json_end])
-                    if isinstance(ai_keywords, list):
-                        # Merge with rule-based for comprehensive coverage
-                        legacy_keywords = await AIService._legacy_generate_seo_keywords(name, category, description)
-                        merged = list(dict.fromkeys(ai_keywords + legacy_keywords))
-                        return merged[:30]
+                ai_keywords = _extract_json(result)
+                if isinstance(ai_keywords, list):
+                    # Merge with rule-based for comprehensive coverage
+                    legacy_keywords = await AIService._legacy_generate_seo_keywords(name, category, description)
+                    merged = list(dict.fromkeys(ai_keywords + legacy_keywords))
+                    return merged[:30]
             except Exception as e:
-                print(f"[AI] Qwen SEO keywords failed, using rule-based fallback: {e}")
+                logger.warning(
+                    "Qwen SEO keywords failed, using rule-based fallback: %s", e
+                )
 
         return await AIService._legacy_generate_seo_keywords(name, category, description)
 
@@ -437,10 +483,8 @@ class AIService:
                     ],
                     temperature=0.3,
                 )
-                json_start = result.find("{")
-                json_end = result.rfind("}") + 1
-                if json_start >= 0 and json_end > json_start:
-                    ai_result = json.loads(result[json_start:json_end])
+                ai_result = _extract_json(result)
+                if ai_result and isinstance(ai_result, dict):
                     return {
                         "trend": ai_result.get("trend", "stable"),
                         "forecast": {
@@ -451,7 +495,9 @@ class AIService:
                         "recommendations": ai_result.get("recommendations", [])[:3],
                     }
             except Exception as e:
-                print(f"[AI] Qwen analysis failed, using rule-based fallback: {e}")
+                logger.warning(
+                    "Qwen analysis failed, using rule-based fallback: %s", e
+                )
 
         return await AIService._legacy_analyze_sales_trend(orders)
 
@@ -584,16 +630,16 @@ class AIService:
                     ],
                     temperature=0.4,
                 )
-                json_start = result.find("{")
-                json_end = result.rfind("}") + 1
-                if json_start >= 0 and json_end > json_start:
-                    ai_result = json.loads(result[json_start:json_end])
+                ai_result = _extract_json(result)
+                if ai_result and isinstance(ai_result, dict):
                     return {
                         "segments": ai_result.get("segments", []),
                         "total_customers": ai_result.get("total_customers", total),
                     }
             except Exception as e:
-                print(f"[AI] Qwen customer insights failed, using rule-based fallback: {e}")
+                logger.warning(
+                    "Qwen customer insights failed, using rule-based fallback: %s", e
+                )
 
         return await AIService._legacy_customer_insights(customers)
 
@@ -772,6 +818,165 @@ class AIService:
                 )
                 return result.strip()
             except Exception as e:
-                print(f"[AI] Qwen marketing copy failed, using rule-based fallback: {e}")
+                logger.warning(
+                    "Qwen marketing copy failed, using rule-based fallback: %s", e
+                )
 
         return await AIService._legacy_generate_marketing_copy(product, channel)
+
+    # =========================================================================
+    # Streaming Chat (SSE)
+    # =========================================================================
+
+    @staticmethod
+    def _generate_fallback(prompt: str, context: dict = None) -> str:
+        """Generate a simple rule-based response when the AI API is unavailable.
+
+        Used as a streaming fallback when no QWEN_API_KEY is configured.
+        """
+        context = context or {}
+        return (
+            "您好！我是 Nexora 智能助手。\n\n"
+            f"关于您的问题「{prompt}」，由于当前未配置 AI 服务（Qwen API），"
+            "暂时无法提供深度分析。\n\n"
+            "建议您：\n"
+            "1. 在系统设置中配置 QWEN_API_KEY 以启用完整的 AI 能力；\n"
+            "2. 我可以为您提供基础的电商运营建议和数据分析。\n\n"
+            "如果您有其他问题，欢迎随时提问！"
+        )
+
+    @staticmethod
+    async def stream_chat(
+        prompt: str,
+        context: dict = None,
+        db: AsyncSession = None,
+        history: list[dict] | None = None,
+    ) -> AsyncGenerator[str, None]:
+        """Stream AI response via SSE, grounded in the workspace's REAL data.
+
+        The assistant first detects the intent of the question, queries the
+        workspace's actual database (orders / products / refunds / customers),
+        and feeds the real numbers into the LLM system prompt — so the chat
+        can answer "哪个商品卖得最好" with the true top-seller instead of
+        generic advice.
+
+        When the Qwen API key is configured, streams the response
+        token-by-token from the OpenAI-compatible chat completions
+        endpoint. Otherwise falls back to a rule-based response (also built
+        from the real data), yielding it in small chunks to simulate
+        streaming.
+
+        Args:
+            prompt: The user's chat prompt.
+            context: Optional context dict (e.g. workspace_id).
+            db: Optional async DB session; when provided the assistant is
+                grounded in real workspace data.
+
+        Yields:
+            str: Chunks of the AI response text.
+        """
+        api_key, model, base_url = _get_qwen_config()
+
+        # Build the real-data context when a DB session is available
+        business_context = ""
+        workspace_id = (context or {}).get("workspace_id")
+        if db is not None and workspace_id:
+            try:
+                from app.services.ai_agent import BIAgent
+                result = await BIAgent.intent_data(db, workspace_id, prompt)
+                data = result.get("data") or {}
+                snapshot = result.get("snapshot") or {}
+                if data:
+                    business_context = (
+                        f"以下是该工作空间的真实经营数据（来自数据库查询）：\n"
+                        f"{json.dumps(data, ensure_ascii=False)[:2500]}\n"
+                        f"工作空间整体快照：{json.dumps(snapshot, ensure_ascii=False)[:1200]}"
+                    )
+                else:
+                    # 查询结果为空时附上商品库存快照，让 AI 仍有真实数据可引用
+                    from app.models.product import Product
+                    from sqlalchemy import select
+                    rows = (
+                        await db.execute(
+                            select(Product.name, Product.stock)
+                            .where(Product.workspace_id == workspace_id)
+                            .order_by(Product.stock.asc())
+                        )
+                    ).all()
+                    snapshot2 = [
+                        {"name": r[0], "stock": r[1]} for r in rows
+                    ]
+                    business_context = (
+                        "针对该问题的数据库查询结果为空（当前没有符合条件的数据）。"
+                        "若用户询问具体商品情况，可引用以下工作空间商品库存快照：\n"
+                        f"{json.dumps(snapshot2, ensure_ascii=False)[:2500]}"
+                    )
+            except Exception:
+                # Never let context building break the chat
+                pass
+
+        # Fallback: no API key configured — yield rule-based response in chunks
+        if not api_key:
+            fallback = AIService._generate_fallback(prompt, context)
+            if business_context:
+                fallback = (
+                    "根据您工作空间的真实数据：\n"
+                    f"{business_context}\n\n"
+                    f"{fallback}"
+                )
+            for i in range(0, len(fallback), 10):
+                yield fallback[i:i + 10]
+                await asyncio.sleep(0.05)
+            return
+
+        # Stream from the Qwen OpenAI-compatible endpoint, grounded in data
+        system_msg = (
+            "你是一位嵌入电商管理平台 Nexora 的数据分析助手。"
+            "回答要用简洁专业的中文，优先引用用户工作空间的真实数据，"
+            "不要编造数字。"
+        )
+        if business_context:
+            system_msg += f"\n\n{business_context}"
+
+        # 多轮记忆：把最近对话作为额外的 system 内容（避免破坏真实数据上下文）
+        if history:
+            lines = []
+            for msg in history[-6:]:
+                role = "用户" if msg.get("role") == "user" else "助手"
+                lines.append(f"{role}：{str(msg.get('content', ''))[:300]}")
+            system_msg += "\n\n以下是本次会话历史（供理解上下文，如“那退款呢”“刚才说的”）:\n" + "\n".join(lines)
+
+        async with httpx.AsyncClient(timeout=60) as client:
+            async with client.stream(
+                "POST",
+                f"{base_url}/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {api_key}",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "model": model,
+                    "messages": [
+                        {"role": "system", "content": system_msg},
+                        {"role": "user", "content": prompt},
+                    ],
+                    "stream": True,
+                    "max_tokens": 2000,
+                },
+            ) as response:
+                async for line in response.aiter_lines():
+                    if line.startswith("data: "):
+                        data = line[6:]
+                        if data == "[DONE]":
+                            break
+                        try:
+                            chunk = json.loads(data)
+                            content = (
+                                chunk.get("choices", [{}])[0]
+                                .get("delta", {})
+                                .get("content", "")
+                            )
+                            if content:
+                                yield content
+                        except json.JSONDecodeError:
+                            continue

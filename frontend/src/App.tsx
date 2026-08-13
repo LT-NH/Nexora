@@ -2,6 +2,7 @@ import React, { Suspense, useState, useEffect } from 'react';
 import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { ProtectedRoute } from '@/components/ProtectedRoute';
+import { RouteErrorBoundary } from '@/components/ErrorBoundary';
 import { useAuth } from '@/hooks/useAuth';
 import { Spinner } from '@/components/ui/Spinner';
 import { SplashScreen } from '@/components/SplashScreen';
@@ -72,8 +73,29 @@ const Customers = React.lazy(() =>
 const Stores = React.lazy(() =>
   import('@/pages/Stores').then((m) => ({ default: m.Stores }))
 );
+const Coupons = React.lazy(() =>
+  import('@/pages/Coupons').then((m) => ({ default: m.Coupons }))
+);
+const Webhooks = React.lazy(() =>
+  import('@/pages/Webhooks').then((m) => ({ default: m.Webhooks }))
+);
 const Analytics = React.lazy(() =>
   import('@/pages/Analytics').then((m) => ({ default: m.Analytics }))
+);
+const Permissions = React.lazy(() =>
+  import('@/pages/Permissions').then((m) => ({ default: m.Permissions }))
+);
+const Refunds = React.lazy(() =>
+  import('@/pages/Refunds').then((m) => ({ default: m.Refunds }))
+);
+const AIChat = React.lazy(() =>
+  import('@/pages/AIChat').then((m) => ({ default: m.AIChat }))
+);
+const Payments = React.lazy(() =>
+  import('@/pages/Payments').then((m) => ({ default: m.Payments }))
+);
+const Branding = React.lazy(() =>
+  import('@/pages/Branding').then((m) => ({ default: m.Branding }))
 );
 const ForgotPassword = React.lazy(() =>
   import('@/pages/ForgotPassword').then((m) => ({ default: m.ForgotPassword }))
@@ -111,11 +133,14 @@ const App: React.FC = () => {
   const [showSplash, setShowSplash] = useState(false);
 
   // Show splash only on landing page, only once per session,
-  // or when ?splash=1 is in the URL
+  // or when ?splash=1 is in the URL. ?demo=1 / ?demo=2 skips it entirely
+  // for instant access during live demos.
   useEffect(() => {
-    const force = new URLSearchParams(location.search).get('splash') === '1';
+    const params = new URLSearchParams(location.search);
+    const force = params.get('splash') === '1';
+    const skip = params.has('demo');
     const shown = sessionStorage.getItem('splash_v2');
-    if (location.pathname === '/' && (force || !shown)) {
+    if (location.pathname === '/' && !skip && (force || !shown)) {
       setShowSplash(true);
       sessionStorage.setItem('splash_v2', '1');
     }
@@ -128,43 +153,43 @@ const App: React.FC = () => {
       <Suspense fallback={<PageLoader />}>
       <Routes>
         {/* 公开路由 */}
-        <Route path="/" element={<Landing />} />
-        <Route 
-          path="/login" 
+        <Route path="/" element={<RouteErrorBoundary><Landing /></RouteErrorBoundary>} />
+        <Route
+          path="/login"
           element={
             <GuestRoute>
-              <Login />
+              <RouteErrorBoundary><Login /></RouteErrorBoundary>
             </GuestRoute>
-          } 
+          }
         />
-        <Route 
-          path="/register" 
+        <Route
+          path="/register"
           element={
             <GuestRoute>
-              <Register />
+              <RouteErrorBoundary><Register /></RouteErrorBoundary>
             </GuestRoute>
-          } 
+          }
         />
-        <Route 
-          path="/forgot-password" 
+        <Route
+          path="/forgot-password"
           element={
             <GuestRoute>
-              <ForgotPassword />
+              <RouteErrorBoundary><ForgotPassword /></RouteErrorBoundary>
             </GuestRoute>
-          } 
+          }
         />
-        <Route 
-          path="/reset-password" 
+        <Route
+          path="/reset-password"
           element={
             <GuestRoute>
-              <ResetPassword />
+              <RouteErrorBoundary><ResetPassword /></RouteErrorBoundary>
             </GuestRoute>
-          } 
+          }
         />
-        <Route path="/terms" element={<Terms />} />
-        <Route path="/privacy" element={<Privacy />} />
-        <Route path="/changelog" element={<Changelog />} />
-        <Route path="/status" element={<Status />} />
+        <Route path="/terms" element={<RouteErrorBoundary><Terms /></RouteErrorBoundary>} />
+        <Route path="/privacy" element={<RouteErrorBoundary><Privacy /></RouteErrorBoundary>} />
+        <Route path="/changelog" element={<RouteErrorBoundary><Changelog /></RouteErrorBoundary>} />
+        <Route path="/status" element={<RouteErrorBoundary><Status /></RouteErrorBoundary>} />
 
         {/* 需要认证的路由 — 共享同一个 AppLayout，避免每次切换都重建 Sidebar */}
         <Route
@@ -174,29 +199,36 @@ const App: React.FC = () => {
             </ProtectedRoute>
           }
         >
-          <Route path="/dashboard" element={<Dashboard />} />
-          <Route path="/team" element={<Team />} />
-          <Route path="/billing" element={<Billing />} />
-          <Route path="/api-keys" element={<ApiKeys />} />
-          <Route path="/settings" element={<WorkspaceSettings />} />
-          <Route path="/profile" element={<Profile />} />
-          <Route path="/products" element={<Products />} />
-          <Route path="/orders" element={<Orders />} />
-          <Route path="/customers" element={<Customers />} />
-          <Route path="/stores" element={<Stores />} />
-          <Route path="/analytics" element={<Analytics />} />
+          <Route path="/dashboard" element={<RouteErrorBoundary><Dashboard /></RouteErrorBoundary>} />
+          <Route path="/team" element={<RouteErrorBoundary><Team /></RouteErrorBoundary>} />
+          <Route path="/billing" element={<RouteErrorBoundary><Billing /></RouteErrorBoundary>} />
+          <Route path="/api-keys" element={<RouteErrorBoundary><ApiKeys /></RouteErrorBoundary>} />
+          <Route path="/settings" element={<RouteErrorBoundary><WorkspaceSettings /></RouteErrorBoundary>} />
+          <Route path="/profile" element={<RouteErrorBoundary><Profile /></RouteErrorBoundary>} />
+          <Route path="/products" element={<RouteErrorBoundary><Products /></RouteErrorBoundary>} />
+          <Route path="/orders" element={<RouteErrorBoundary><Orders /></RouteErrorBoundary>} />
+          <Route path="/customers" element={<RouteErrorBoundary><Customers /></RouteErrorBoundary>} />
+          <Route path="/stores" element={<RouteErrorBoundary><Stores /></RouteErrorBoundary>} />
+          <Route path="/coupons" element={<RouteErrorBoundary><Coupons /></RouteErrorBoundary>} />
+          <Route path="/webhooks" element={<RouteErrorBoundary><Webhooks /></RouteErrorBoundary>} />
+          <Route path="/analytics" element={<RouteErrorBoundary><Analytics /></RouteErrorBoundary>} />
+          <Route path="/permissions" element={<RouteErrorBoundary><Permissions /></RouteErrorBoundary>} />
+          <Route path="/refunds" element={<RouteErrorBoundary><Refunds /></RouteErrorBoundary>} />
+          <Route path="/ai-chat" element={<RouteErrorBoundary><AIChat /></RouteErrorBoundary>} />
+          <Route path="/payments" element={<RouteErrorBoundary><Payments /></RouteErrorBoundary>} />
+          <Route path="/branding" element={<RouteErrorBoundary><Branding /></RouteErrorBoundary>} />
           <Route
             path="/admin"
             element={
               <ProtectedRoute requireAdmin>
-                <AdminDashboard />
+                <RouteErrorBoundary><AdminDashboard /></RouteErrorBoundary>
               </ProtectedRoute>
             }
           />
         </Route>
 
         {/* 404 */}
-        <Route path="*" element={<NotFound />} />
+        <Route path="*" element={<RouteErrorBoundary><NotFound /></RouteErrorBoundary>} />
       </Routes>
         <BackToTop />
         <CommandPalette />

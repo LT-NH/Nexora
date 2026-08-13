@@ -20,6 +20,7 @@ import { EmptyState } from '@/components/ui/EmptyState';
 import { useToast } from '@/components/ui/Toast';
 import { useWorkspace } from '@/hooks/useWorkspace';
 import { usePageTitle } from '@/hooks/usePageTitle';
+import { usePageT, type Lang } from '@/i18n';
 import api from '@/services/api';
 import type { ApiKey, ApiKeyCreatedResponse, ApiKeyScope } from '@/types';
 
@@ -45,8 +46,98 @@ function scopesArrayToObject(scopes: ApiKeyScope[]): Record<string, boolean> {
   return scopes.reduce((acc, scope) => ({ ...acc, [scope]: true }), {});
 }
 
+const D = {
+  zh: {
+    api_keys_page_title: 'API 密钥',
+    api_keys_title: 'API 密钥',
+    api_keys_subtitle: '管理用于程序化访问的 API 密钥',
+    load_api_keys_failed: '加载 API 密钥失败',
+    retry: '重试',
+    create_api_key: '创建 API 密钥',
+    no_keys_title: '暂无 API 密钥',
+    no_keys_desc: '创建您的第一个 API 密钥以开始集成 Nexora API。',
+    key_created: 'API 密钥已创建',
+    key_created_msg: '请妥善保存您的密钥，它只会显示一次。',
+    create_failed: '创建失败',
+    error_occurred: '发生错误',
+    key_revoked: '密钥已撤销',
+    key_revoked_msg: '该 API 密钥已被撤销。',
+    revoke_failed: '撤销失败',
+    copied: '已复制！',
+    copied_msg: 'API 密钥已复制到剪贴板。',
+    never: '从未',
+    scope_read: '读取',
+    scope_write: '写入',
+    scope_admin: '管理',
+    active: '活跃',
+    revoked: '已撤销',
+    created_at: '创建于 {date}',
+    revoke: '撤销',
+    save_now_title: '请立即保存此密钥',
+    save_now_desc: '此密钥仅显示一次，之后将无法再次查看。',
+    done: '完成',
+    key_name_label: '密钥名称',
+    key_name_placeholder: '生产环境密钥',
+    scopes_label: '权限范围',
+    expiry_label: '有效期（天，可选）',
+    expiry_placeholder: '留空表示永不过期',
+    create_key: '创建密钥',
+    revoke_key: '撤销密钥',
+    revoke_confirm_prefix: '您确定要撤销密钥',
+    revoke_confirm_suffix: '吗？此操作不可撤销，所有使用此密钥的服务将停止工作。',
+    keep: '保留',
+  },
+  en: {
+    api_keys_page_title: 'API Keys',
+    api_keys_title: 'API Keys',
+    api_keys_subtitle: 'Manage API keys for programmatic access',
+    load_api_keys_failed: 'Failed to load API keys',
+    retry: 'Retry',
+    create_api_key: 'Create API Key',
+    no_keys_title: 'No API Keys',
+    no_keys_desc: 'Create your first API key to start integrating with the Nexora API.',
+    key_created: 'API Key Created',
+    key_created_msg: 'Please save your key now. It will only be shown once.',
+    create_failed: 'Create Failed',
+    error_occurred: 'An error occurred',
+    key_revoked: 'Key Revoked',
+    key_revoked_msg: 'This API key has been revoked.',
+    revoke_failed: 'Revoke Failed',
+    copied: 'Copied!',
+    copied_msg: 'API key copied to clipboard.',
+    never: 'Never',
+    scope_read: 'Read',
+    scope_write: 'Write',
+    scope_admin: 'Admin',
+    active: 'Active',
+    revoked: 'Revoked',
+    created_at: 'Created {date}',
+    revoke: 'Revoke',
+    save_now_title: 'Save this key immediately',
+    save_now_desc: 'This key is shown only once and cannot be viewed again later.',
+    done: 'Done',
+    key_name_label: 'Key Name',
+    key_name_placeholder: 'Production key',
+    scopes_label: 'Permissions',
+    expiry_label: 'Expiry (days, optional)',
+    expiry_placeholder: 'Leave blank to never expire',
+    create_key: 'Create Key',
+    revoke_key: 'Revoke Key',
+    revoke_confirm_prefix: 'Are you sure you want to revoke the key',
+    revoke_confirm_suffix: '? This cannot be undone and all services using this key will stop working.',
+    keep: 'Keep',
+  },
+} as Record<Lang, Record<string, string>>;
+
+const getScopeLabels = (t: (key: string, fallback?: string) => string) => ({
+  read: t('scope_read'),
+  write: t('scope_write'),
+  admin: t('scope_admin'),
+});
+
 export const ApiKeys: React.FC = () => {
-  usePageTitle('API 密钥');
+  const t = usePageT(D);
+  usePageTitle(t('api_keys_page_title'));
   const { currentWorkspace } = useWorkspace();
   const { addToast } = useToast();
   const [keys, setKeys] = useState<ApiKey[]>([]);
@@ -73,7 +164,7 @@ export const ApiKeys: React.FC = () => {
       const response = await api.get(`/workspaces/${currentWorkspace.slug}/api-keys`);
       setKeys(extractItems<ApiKey[]>(response.data));
     } catch (err: any) {
-      setError(err?.response?.data?.detail || '加载 API 密钥失败');
+      setError(err?.response?.data?.detail || t('load_api_keys_failed'));
     } finally {
       setIsLoading(false);
     }
@@ -99,9 +190,9 @@ export const ApiKeys: React.FC = () => {
       setKeys((prev) => [newKey, ...prev]);
       setCreatedRawKey(response.data.raw_key);
       setShowKey(true);
-      addToast('success', 'API 密钥已创建', '请妥善保存您的密钥，它只会显示一次。');
+      addToast('success', t('key_created'), t('key_created_msg'));
     } catch (err: any) {
-      addToast('error', '创建失败', err?.response?.data?.detail || '发生错误');
+      addToast('error', t('create_failed'), err?.response?.data?.detail || t('error_occurred'));
     } finally {
       setIsCreating(false);
     }
@@ -117,9 +208,9 @@ export const ApiKeys: React.FC = () => {
           k.id === revokeTarget.id ? { ...k, is_active: false } : k
         )
       );
-      addToast('success', '密钥已撤销', '该 API 密钥已被撤销。');
+      addToast('success', t('key_revoked'), t('key_revoked_msg'));
     } catch (err: any) {
-      addToast('error', '撤销失败', err?.response?.data?.detail || '发生错误');
+      addToast('error', t('revoke_failed'), err?.response?.data?.detail || t('error_occurred'));
     } finally {
       setIsRevoking(false);
       setRevokeTarget(null);
@@ -128,11 +219,11 @@ export const ApiKeys: React.FC = () => {
 
   const handleCopyKey = (keyText: string) => {
     navigator.clipboard.writeText(keyText);
-    addToast('success', '已复制！', 'API 密钥已复制到剪贴板。');
+    addToast('success', t('copied'), t('copied_msg'));
   };
 
   const formatDate = (dateStr: string | null) => {
-    if (!dateStr) return '从未';
+    if (!dateStr) return t('never');
     return new Date(dateStr).toLocaleDateString('zh-CN', {
       month: 'short',
       day: 'numeric',
@@ -140,25 +231,21 @@ export const ApiKeys: React.FC = () => {
     });
   };
 
-  const scopeColors: Record<string, 'green' | 'blue' | 'red'> = {
-    read: 'green',
-    write: 'blue',
-    admin: 'red',
+  const scopeColors: Record<string, 'success' | 'primary' | 'danger'> = {
+    read: 'success',
+    write: 'primary',
+    admin: 'danger',
   };
 
-  const scopeLabels: Record<string, string> = {
-    read: '读取',
-    write: '写入',
-    admin: '管理',
-  };
+  const scopeLabels = getScopeLabels(t);
 
   if (isLoading) {
     return (
       <div className="space-y-6 animate-fade-in">
         <div className="flex items-center justify-between">
           <div>
-            <div className="h-8 w-32 bg-gray-200 rounded shimmer" />
-            <div className="h-4 w-64 bg-gray-200 rounded shimmer mt-2" />
+            <div className="h-8 w-32 bg-gray-200 dark:bg-gray-700 rounded shimmer" />
+            <div className="h-4 w-64 bg-gray-200 dark:bg-gray-700 rounded shimmer mt-2" />
           </div>
         </div>
         <SkeletonTable rows={4} columns={3} />
@@ -169,17 +256,17 @@ export const ApiKeys: React.FC = () => {
   if (error) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[400px] text-center animate-fade-in">
-        <div className="w-12 h-12 rounded-full bg-red-100 flex items-center justify-center mb-4">
-          <AlertTriangle size={24} className="text-red-500" />
+        <div className="w-12 h-12 rounded-full bg-red-100 dark:bg-red-900/30 flex items-center justify-center mb-4">
+          <AlertTriangle size={24} className="text-red-500 dark:text-red-400" />
         </div>
-        <h3 className="text-lg font-semibold text-slate-900">加载 API 密钥失败</h3>
-        <p className="text-sm text-gray-500 mt-1">{error}</p>
+        <h3 className="text-lg font-semibold text-slate-900 dark:text-gray-100">{t('load_api_keys_failed')}</h3>
+        <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">{error}</p>
         <Button
           variant="outline"
           className="mt-4"
           onClick={fetchKeys}
         >
-          重试
+          {t('retry')}
         </Button>
       </div>
     );
@@ -189,9 +276,9 @@ export const ApiKeys: React.FC = () => {
     <div className="space-y-6 animate-fade-in">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-2xl font-bold text-slate-900">API 密钥</h2>
-          <p className="mt-1 text-sm text-gray-500">
-            管理用于程序化访问的 API 密钥
+          <h2 className="text-2xl font-bold text-slate-900 dark:text-gray-100">{t('api_keys_title')}</h2>
+          <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+            {t('api_keys_subtitle')}
           </p>
         </div>
         <Button
@@ -199,21 +286,21 @@ export const ApiKeys: React.FC = () => {
           leftIcon={<Plus size={16} />}
           onClick={() => setShowCreateModal(true)}
         >
-          创建 API 密钥
+          {t('create_api_key')}
         </Button>
       </div>
 
       {keys.length === 0 ? (
         <EmptyState
-          icon={<Key size={28} className="text-gray-500" />}
-          title="暂无 API 密钥"
-          description="创建您的第一个 API 密钥以开始集成 Nexora API。"
-          actionLabel="创建 API 密钥"
+          icon={<Key size={28} className="text-gray-500 dark:text-gray-400" />}
+          title={t('no_keys_title')}
+          description={t('no_keys_desc')}
+          actionLabel={t('create_api_key')}
           onAction={() => setShowCreateModal(true)}
         />
       ) : (
         <Card>
-          <div className="divide-y divide-gray-100">
+          <div className="divide-y divide-gray-100 dark:divide-gray-800">
             {keys.map((key, idx) => {
               const scopeList = scopesObjectToArray(key.scopes);
               return (
@@ -228,26 +315,26 @@ export const ApiKeys: React.FC = () => {
                     </div>
                     <div>
                       <div className="flex items-center gap-2">
-                        <p className="text-sm font-semibold text-slate-900">
+                        <p className="text-sm font-semibold text-slate-900 dark:text-gray-100">
                           {key.name}
                         </p>
                         {key.is_active ? (
-                          <Badge variant="green">
+                          <Badge variant="success">
                             <span className="flex items-center gap-1">
                               <CheckCircle size={12} />
-                              活跃
+                              {t('active')}
                             </span>
                           </Badge>
                         ) : (
-                          <Badge variant="red">
+                          <Badge variant="danger">
                             <span className="flex items-center gap-1">
                               <XCircle size={12} />
-                              已撤销
+                              {t('revoked')}
                             </span>
                           </Badge>
                         )}
                       </div>
-                      <p className="text-xs text-gray-500 font-mono mt-0.5">
+                      <p className="text-xs text-gray-500 dark:text-gray-400 font-mono mt-0.5">
                         {key.key_prefix}...{key.last_4}
                       </p>
                     </div>
@@ -255,13 +342,13 @@ export const ApiKeys: React.FC = () => {
                   <div className="flex items-center gap-3">
                     <div className="hidden sm:flex items-center gap-1.5">
                       {scopeList.map((scope) => (
-                        <Badge key={scope} variant={scopeColors[scope] || 'gray'}>
+                        <Badge key={scope} variant={scopeColors[scope] || 'neutral'}>
                           {scopeLabels[scope] || scope}
                         </Badge>
                       ))}
                     </div>
-                    <div className="hidden md:block text-xs text-gray-500">
-                      创建于 {formatDate(key.created_at)}
+                    <div className="hidden md:block text-xs text-gray-500 dark:text-gray-400">
+                      {t('created_at').replace('{date}', formatDate(key.created_at))}
                     </div>
                     {key.is_active && (
                       <Button
@@ -269,9 +356,9 @@ export const ApiKeys: React.FC = () => {
                         size="sm"
                         leftIcon={<Trash2 size={14} />}
                         onClick={() => setRevokeTarget(key)}
-                        className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                        className="text-red-600 hover:text-red-700 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20"
                       >
-                        撤销
+                        {t('revoke')}
                       </Button>
                     )}
                   </div>
@@ -293,18 +380,18 @@ export const ApiKeys: React.FC = () => {
           setCreatedRawKey(null);
           setShowKey(false);
         }}
-        title="创建 API 密钥"
+        title={t('create_api_key')}
       >
         {createdRawKey ? (
           <div className="space-y-4">
-            <div className="p-4 bg-yellow-50 rounded-lg border border-yellow-200 flex items-start gap-3">
+            <div className="p-4 bg-yellow-50 dark:bg-yellow-900/20 rounded-lg border border-yellow-200 flex items-start gap-3">
               <AlertTriangle size={20} className="text-yellow-600 flex-shrink-0 mt-0.5" />
               <div>
-                <p className="text-sm font-semibold text-yellow-800">
-                  请立即保存此密钥
+                <p className="text-sm font-semibold text-yellow-800 dark:text-yellow-300">
+                  {t('save_now_title')}
                 </p>
                 <p className="text-sm text-yellow-700 mt-1">
-                  此密钥仅显示一次，之后将无法再次查看。
+                  {t('save_now_desc')}
                 </p>
               </div>
             </div>
@@ -341,26 +428,26 @@ export const ApiKeys: React.FC = () => {
                 setShowKey(false);
               }}
             >
-              完成
+              {t('done')}
             </Button>
           </div>
         ) : (
           <div className="space-y-4">
             <Input
-              label="密钥名称"
+              label={t('key_name_label')}
               value={newKeyName}
               onChange={(e) => setNewKeyName(e.target.value)}
-              placeholder="生产环境密钥"
+              placeholder={t('key_name_placeholder')}
             />
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1.5">
-                权限范围
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
+                {t('scopes_label')}
               </label>
               <div className="flex flex-wrap gap-2">
                 {(['read', 'write', 'admin'] as ApiKeyScope[]).map((scope) => (
                   <label
                     key={scope}
-                    className="flex items-center gap-2 px-3 py-2 rounded-lg border border-gray-300 cursor-pointer hover:border-primary-300 hover:bg-primary-50/50 transition-all duration-200"
+                    className="flex items-center gap-2 px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 cursor-pointer hover:border-primary-300 hover:bg-primary-50/50 transition-all duration-200"
                   >
                     <input
                       type="checkbox"
@@ -372,9 +459,9 @@ export const ApiKeys: React.FC = () => {
                           setNewKeyScopes(newKeyScopes.filter((s) => s !== scope));
                         }
                       }}
-                      className="w-4 h-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                      className="w-4 h-4 rounded border-gray-300 dark:border-gray-600 text-primary-600 focus:ring-primary-500"
                     />
-                    <span className="text-sm font-medium text-gray-700">
+                    <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
                       {scopeLabels[scope] || scope}
                     </span>
                   </label>
@@ -382,8 +469,8 @@ export const ApiKeys: React.FC = () => {
               </div>
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1.5">
-                有效期（天，可选）
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
+                {t('expiry_label')}
               </label>
               <Input
                 type="number"
@@ -392,7 +479,7 @@ export const ApiKeys: React.FC = () => {
                   const val = e.target.value;
                   setNewKeyExpiry(val ? parseInt(val, 10) : null);
                 }}
-                placeholder="留空表示永不过期"
+                placeholder={t('expiry_placeholder')}
                 min={1}
                 max={3650}
               />
@@ -408,7 +495,7 @@ export const ApiKeys: React.FC = () => {
               setNewKeyExpiry(null);
             }}
             onConfirm={handleCreate}
-            confirmText="创建密钥"
+            confirmText={t('create_key')}
             isLoading={isCreating}
           />
         )}
@@ -418,21 +505,21 @@ export const ApiKeys: React.FC = () => {
       <Modal
         isOpen={!!revokeTarget}
         onClose={() => setRevokeTarget(null)}
-        title="撤销 API 密钥"
+        title={t('revoke_key')}
       >
-        <p className="text-sm text-gray-600">
-          您确定要撤销密钥{' '}
-          <span className="font-semibold text-slate-900">
+        <p className="text-sm text-gray-600 dark:text-gray-400">
+          {t('revoke_confirm_prefix')}{' '}
+          <span className="font-semibold text-slate-900 dark:text-gray-100">
             {revokeTarget?.name}
-          </span>
-          吗？此操作不可撤销，所有使用此密钥的服务将停止工作。
+          </span>{' '}
+          {t('revoke_confirm_suffix')}
         </p>
         <ModalFooter
           onCancel={() => setRevokeTarget(null)}
           onConfirm={handleRevoke}
-          confirmText="撤销密钥"
+          confirmText={t('revoke_key')}
           confirmVariant="danger"
-          cancelText="保留"
+          cancelText={t('keep')}
           isLoading={isRevoking}
         />
       </Modal>

@@ -69,6 +69,16 @@ class Customer(Base):
         nullable=True,
         default=None,
     )
+    membership_level: Mapped[str | None] = mapped_column(
+        String(20),
+        nullable=True,
+        default="bronze",
+    )
+    membership_points: Mapped[int] = mapped_column(
+        Integer,
+        default=0,
+        nullable=False,
+    )
     notes: Mapped[str | None] = mapped_column(
         String(2000),
         nullable=True,

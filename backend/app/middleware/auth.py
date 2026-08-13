@@ -5,6 +5,7 @@ Provides FastAPI dependencies for JWT-based and API key-based authentication.
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
+import json
 from typing import Annotated, Optional
 
 from fastapi import Depends, Header, HTTPException, Request, status
@@ -260,19 +261,31 @@ class AuthContext:
     def max_role(self) -> WorkspaceRole:
         """Maximum role implied by this auth context."""
         if self.api_key:
-            scopes = self.api_key.scopes or {}
-            active = [s for s, v in scopes.items() if v]
-            if not active:
+            scopes = _parse_scopes(self.api_key.scopes)
+            if not scopes:
                 # No scopes specified → read-only by default
                 return WorkspaceRole.VIEWER
             best = WorkspaceRole.VIEWER
-            for s in active:
+            for s in scopes:
                 mapped = _SCOPE_ROLE_MAP.get(s)
                 if mapped and _role_level(mapped) > _role_level(best):
                     best = mapped
             return best
         # JWT users are full members — role is checked via WorkspaceMember
         return WorkspaceRole.OWNER
+
+
+def _parse_scopes(raw: str | None) -> list[str]:
+    """Parse scopes from a JSON array string, returning a list of scope strings."""
+    if not raw:
+        return []
+    try:
+        parsed = json.loads(raw)
+        if isinstance(parsed, list):
+            return [s for s in parsed if isinstance(s, str)]
+    except (json.JSONDecodeError, TypeError):
+        pass
+    return []
 
 
 def _role_level(role: WorkspaceRole) -> int:
@@ -292,12 +305,13 @@ async def get_principal(
         Depends(security_scheme),
     ] = None,
     x_api_key: Annotated[str | None, Header(alias="X-API-Key")] = None,
+    api_key_query: Annotated[str | None, None] = None,
     db: Annotated[AsyncSession, Depends(get_db)] = None,
 ) -> AuthContext:
     """Unified authentication dependency supporting both JWT and API key.
 
-    Tries API key (X-API-Key header or sf_-prefixed Bearer token) first,
-    then falls back to JWT Bearer token.
+    Tries API key (X-API-Key header, ?api_key= query param, or sf_-prefixed
+    Bearer token) first, then falls back to JWT Bearer token.
 
     Returns:
         AuthContext with either ``user`` or ``api_key`` populated.
@@ -308,8 +322,14 @@ async def get_principal(
     # --- Try API Key ---
     raw_key: str | None = None
 
+    # ?api_key= query parameter
+    if not x_api_key:
+        api_key_query = request.query_params.get("api_key")
+    if api_key_query and isinstance(api_key_query, str):
+        raw_key = api_key_query.strip()
+
     # X-API-Key header
-    if x_api_key:
+    if not raw_key and x_api_key:
         raw_key = x_api_key.strip()
 
     # Bearer token that looks like an API key (starts with "sf_")

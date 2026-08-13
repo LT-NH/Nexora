@@ -62,14 +62,14 @@ export const Modal: React.FC<ModalProps> = ({
       document.addEventListener('keydown', handleKeyDown);
       document.body.style.overflow = 'hidden';
 
-      // Focus first focusable element after render
+      // Focus first focusable element only on initial open
       requestAnimationFrame(() => {
         const dialog = dialogRef.current;
         if (dialog) {
           const focusable = dialog.querySelectorAll(FOCUSABLE_SELECTOR);
-          if (focusable.length > 0) {
+          if (focusable.length > 0 && !dialog.contains(document.activeElement)) {
             (focusable[0] as HTMLElement).focus();
-          } else {
+          } else if (!dialog.contains(document.activeElement)) {
             dialog.focus();
           }
         }
@@ -85,7 +85,8 @@ export const Modal: React.FC<ModalProps> = ({
         (previousActiveElement.current as HTMLElement).focus();
       }
     };
-  }, [isOpen, handleKeyDown]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen]);
 
   if (!isOpen) return null;
 
@@ -103,17 +104,17 @@ export const Modal: React.FC<ModalProps> = ({
     <div
       ref={overlayRef}
       onClick={handleOverlayClick}
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-fade-in"
+      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/50 backdrop-blur-sm animate-fade-in"
     >
       <div
         ref={dialogRef}
         tabIndex={-1}
-        className={`bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full ${sizeClasses[size]} overflow-hidden animate-scale-in outline-none`}
+        className={`bg-white dark:bg-gray-800 rounded-t-2xl sm:rounded-2xl shadow-2xl w-full ${sizeClasses[size]} overflow-hidden animate-scale-in outline-none max-h-[90vh] sm:max-h-[85vh] flex flex-col`}
         role="dialog"
         aria-modal="true"
         aria-labelledby="modal-title"
       >
-        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 dark:border-gray-700">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 dark:border-gray-700 flex-shrink-0">
           <h2 id="modal-title" className="text-lg font-semibold text-slate-900 dark:text-gray-100">
             {title}
           </h2>
@@ -125,7 +126,7 @@ export const Modal: React.FC<ModalProps> = ({
             <X size={20} />
           </button>
         </div>
-        <div className="px-6 py-5">{children}</div>
+        <div className="px-6 py-5 overflow-y-auto flex-1">{children}</div>
       </div>
     </div>
   );

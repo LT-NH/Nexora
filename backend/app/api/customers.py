@@ -134,6 +134,81 @@ async def create_customer(
 
 
 @router.get(
+    "/cohort-retention",
+    summary="Cohort 留存分析（首购月份 × 留存月份热力图）",
+)
+async def cohort_retention(
+    slug: str,
+    principal: Annotated[AuthContext, Depends(get_principal)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> dict:
+    """按客户首购月份分群，计算各群在后续月份的留存率。
+
+    返回：
+      cohorts: [{month: "2026-05", size: 12, retention: [null, 83.3, 66.7, ...]}]
+      - retention[i] = 第 i 个月后仍有订单的客户占比（%），首月为 null（即 100% 起点）
+      - 仅计算有订单的客户（首购 = 最早订单月）
+    """
+    from datetime import datetime, timezone, timedelta
+    from collections import OrderedDict
+
+    workspace, _ = await _require_member(slug, principal, db, WorkspaceRole.VIEWER)
+
+    # 拉取该工作空间全部订单（客户 + 时间）
+    rows = (
+        await db.execute(
+            select(Order.customer_id, Order.created_at).where(
+                Order.workspace_id == workspace.id
+            )
+        )
+    ).all()
+    if not rows:
+        return {"cohorts": []}
+
+    # 客户 → 活跃月份集合（去重）
+    customer_months: dict[str, set[str]] = {}
+    first_month: dict[str, str] = {}
+    for customer_id, created_at in rows:
+        if customer_id is None or created_at is None:
+            continue
+        cid = str(customer_id)
+        month = created_at.strftime("%Y-%m")
+        customer_months.setdefault(cid, set()).add(month)
+        if cid not in first_month or month < first_month[cid]:
+            first_month[cid] = month
+
+    # 月份范围（最小首购月 ~ 当前月）
+    all_months = sorted({m for m in first_month.values()})
+    if not all_months:
+        return {"cohorts": []}
+    start = datetime.strptime(all_months[0], "%Y-%m").replace(tzinfo=timezone.utc)
+    now = datetime.now(timezone.utc).replace(day=1)
+    month_list: list[str] = []
+    cur = start
+    while cur <= now:
+        month_list.append(cur.strftime("%Y-%m"))
+        cur = (cur + timedelta(days=32)).replace(day=1)
+
+    # 分群
+    cohort_map: "OrderedDict[str, list[str]]" = OrderedDict()
+    for cid, fm in first_month.items():
+        cohort_map.setdefault(fm, []).append(cid)
+
+    cohorts = []
+    for fm, cids in cohort_map.items():
+        base_idx = month_list.index(fm) if fm in month_list else 0
+        size = len(cids)
+        retention: list[float | None] = [None]  # 首月
+        for j in range(base_idx + 1, len(month_list)):
+            m = month_list[j]
+            active = sum(1 for c in cids if m in customer_months.get(c, set()))
+            retention.append(round(active / size * 100, 1) if size else 0.0)
+        cohorts.append({"month": fm, "size": size, "retention": retention})
+
+    return {"cohorts": cohorts, "months": month_list}
+
+
+@router.get(
     "/rfm-analysis",
     response_model=RFMAnalysisResponse,
     summary="RFM customer analysis",
@@ -347,6 +422,18 @@ async def delete_customer(
             detail="Customer not found.",
         )
 
+    # Check if customer has orders before deleting
+    order_count_result = await db.execute(
+        select(func.count(Order.id)).where(Order.customer_id == customer_id)
+    )
+    order_count = order_count_result.scalar()
+    if order_count > 0:
+        # Don't physically delete, just mark as inactive or return error
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"无法删除：该客户关联了 {order_count} 个订单"
+        )
+
     await create_audit_log(
         db=db,
         workspace_id=workspace.id,
@@ -382,6 +469,8 @@ def _build_customer_response(customer: Customer) -> CustomerResponse:
         total_orders=customer.total_orders,
         total_spent=round(customer.total_spent, 2),
         last_order_at=customer.last_order_at,
+        membership_level=customer.membership_level,
+        membership_points=int(customer.membership_points or 0),
         notes=customer.notes,
         source=customer.source,
         created_at=customer.created_at,

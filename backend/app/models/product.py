@@ -94,6 +94,19 @@ class Product(Base):
         nullable=True,
         default=None,
         index=True,
+        comment="Stock keeping unit code",
+    )
+    stock: Mapped[int] = mapped_column(
+        Integer,
+        default=0,
+        nullable=False,
+        comment="Current stock quantity",
+    )
+    low_stock_threshold: Mapped[int] = mapped_column(
+        Integer,
+        default=10,
+        nullable=False,
+        comment="Low stock alert threshold",
     )
     barcode: Mapped[str | None] = mapped_column(
         String(100),

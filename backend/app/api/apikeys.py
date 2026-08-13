@@ -3,6 +3,7 @@
 Endpoints for managing workspace API keys.
 """
 
+import json
 from datetime import datetime, timedelta, timezone
 from typing import Annotated
 
@@ -58,7 +59,7 @@ async def list_api_keys(
         .limit(pagination.limit)
     )
     keys = result.scalars().all()
-    items = [ApiKeyResponse.model_validate(k) for k in keys]
+    items = [_api_key_to_response(k) for k in keys]
     return PaginatedResponse.create(items=items, total=total, params=pagination)
 
 
@@ -79,7 +80,7 @@ async def create_api_key(
     The full API key is returned only once at creation time. Store it securely.
 
     - **name**: A label to identify the key.
-    - **scopes**: Optional permission scopes dictionary.
+    - **scopes**: Optional list of permission scopes (e.g. ["read","write","admin"]).
     - **expires_in_days**: Optional expiration in days (max 10 years).
     """
     workspace, _ = await _require_member(slug, current_user, db, WorkspaceRole.ADMIN)
@@ -92,6 +93,9 @@ async def create_api_key(
             days=key_data.expires_in_days
         )
 
+    # Convert scopes list to JSON string
+    scopes_str = json.dumps(key_data.scopes) if key_data.scopes else None
+
     api_key = ApiKey(
         workspace_id=workspace.id,
         created_by=current_user.id,
@@ -99,7 +103,7 @@ async def create_api_key(
         key_hash=hash_api_key(raw_key),
         key_prefix=raw_key[:8],
         last_4=raw_key[-4:],
-        scopes=key_data.scopes or {},
+        scopes=scopes_str,
         expires_at=expires_at,
     )
     db.add(api_key)
@@ -125,7 +129,7 @@ async def create_api_key(
     )
 
     return ApiKeyCreatedResponse(
-        api_key=ApiKeyResponse.model_validate(api_key),
+        api_key=_api_key_to_response(api_key),
         raw_key=raw_key,
     )
 
@@ -177,4 +181,26 @@ async def delete_api_key(
         workspace.slug,
         key.name,
         key.key_prefix,
+    )
+
+
+def _api_key_to_response(key: ApiKey) -> ApiKeyResponse:
+    """Convert an ApiKey ORM model to an ApiKeyResponse, parsing scopes from JSON."""
+    scopes_list = None
+    if key.scopes:
+        try:
+            scopes_list = json.loads(key.scopes)
+        except (json.JSONDecodeError, TypeError):
+            scopes_list = []
+    return ApiKeyResponse(
+        id=key.id,
+        workspace_id=key.workspace_id,
+        name=key.name,
+        key_prefix=key.key_prefix,
+        last_4=key.last_4,
+        scopes=scopes_list,
+        is_active=key.is_active,
+        last_used_at=key.last_used_at,
+        expires_at=key.expires_at,
+        created_at=key.created_at,
     )

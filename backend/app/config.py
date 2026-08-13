@@ -50,6 +50,9 @@ class Settings(BaseSettings):
     # Logging
     LOG_LEVEL: str = "INFO"
 
+    # Redis (caching, rate limiting, token blacklist)
+    REDIS_URL: str = "redis://localhost:6379/0"
+
     # Rate Limiting
     RATE_LIMIT_REQUESTS: int = 100
     RATE_LIMIT_WINDOW_SECONDS: int = 60

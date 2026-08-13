@@ -4,7 +4,7 @@ Endpoints for user registration, login, token refresh, and profile.
 """
 
 import os
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -49,17 +49,17 @@ async def register(
 
 @router.post(
     "/login",
-    response_model=TokenResponse,
     summary="Login and get access tokens",
 )
 async def login(
     login_data: UserLogin,
     db: Annotated[AsyncSession, Depends(get_db)],
-) -> TokenResponse:
+) -> Any:
     """Authenticate with email and password to receive JWT tokens.
 
     - **access_token**: Short-lived token for API requests (Bearer).
     - **refresh_token**: Long-lived token to obtain new access tokens.
+    - If 2FA is enabled and no totp_code provided, returns ``{"requires_2fa": true, "user_id": "..."}``.
     """
     return await AuthService.authenticate_user(db, login_data)
 
@@ -219,3 +219,50 @@ async def change_password(
     current_user.password_hash = hash_password(new_pw)
     await db.flush()
     return {"message": "密码已更新"}
+
+
+# ── 2FA Endpoints ────────────────────────────────────────────────────────
+
+@router.get("/me/2fa/setup")
+async def setup_2fa(
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> dict:
+    """Generate TOTP secret and QR code for 2FA setup."""
+    from app.services.totp import generate_totp_secret, get_totp_uri, generate_qr_code
+
+    secret = generate_totp_secret(current_user)
+    current_user.totp_secret = secret
+    await db.flush()
+    uri = get_totp_uri(current_user)
+    qr = generate_qr_code(uri)
+    return {"secret": secret, "qr_code": f"data:image/png;base64,{qr}", "uri": uri}
+
+
+@router.post("/me/2fa/verify")
+async def verify_2fa_endpoint(
+    body: dict,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> dict:
+    """Verify TOTP code and enable 2FA."""
+    from app.services.totp import verify_totp
+
+    code = body.get("code", "")
+    if verify_totp(current_user, code):
+        current_user.totp_enabled = True
+        await db.flush()
+        return {"success": True, "message": "2FA已启用"}
+    raise HTTPException(400, "验证码错误")
+
+
+@router.post("/me/2fa/disable")
+async def disable_2fa(
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> dict:
+    """Disable 2FA for current user."""
+    current_user.totp_enabled = False
+    current_user.totp_secret = None
+    await db.flush()
+    return {"success": True}

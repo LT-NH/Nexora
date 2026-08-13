@@ -1,48 +1,71 @@
-version: '3.8'
-
+# Nexora — one-click infrastructure.
+#   docker compose up --build
+#
+# Stack: PostgreSQL 16 (primary store) + Redis 7 (rate limit/cache/queue)
+#        + FastAPI backend + Vite-preview frontend.
 services:
-  backend:
-    build: ./backend
-    container_name: nexora-backend
-    ports:
-      - "8000:8000"
-    environment:
-      - DATABASE_URL=postgresql+asyncpg://saas:saas123@db:5432/nexora
-      - SECRET_KEY=${SECRET_KEY:-production-secret-key-change-me}
-      - ENVIRONMENT=production
-      - DEBUG=false
-      - CORS_ORIGINS=["http://localhost:8080","http://localhost:8000"]
-    depends_on:
-      db:
-        condition: service_healthy
-    volumes:
-      - backend_uploads:/app/uploads
-
-  frontend:
-    build: ./frontend
-    container_name: nexora-frontend
-    ports:
-      - "8080:80"
-    depends_on:
-      - backend
-
-  db:
+  postgres:
     image: postgres:16-alpine
-    container_name: nexora-db
+    restart: unless-stopped
     environment:
-      POSTGRES_USER: saas
-      POSTGRES_PASSWORD: saas123
+      POSTGRES_USER: nexora
+      POSTGRES_PASSWORD: nexora
       POSTGRES_DB: nexora
-    ports:
-      - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U saas -d nexora"]
+      test: ["CMD-SHELL", "pg_isready -U nexora -d nexora"]
       interval: 5s
       timeout: 5s
-      retries: 5
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql+asyncpg://nexora:nexora@postgres:5432/nexora
+      REDIS_URL: redis://redis:6379/0
+      SECRET_KEY: "${SECRET_KEY:-change-me-in-production-use-a-strong-random-secret-key-123}"
+      CORS_ORIGINS: '["http://localhost:3000","http://localhost:8000"]'
+      SITE_URL: http://localhost:3000
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      # Persistent uploads/data (e.g. SQLite fallback, backups).
+      - ./backend/data:/app/data
+      - ./backend/uploads:/app/uploads
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+    volumes:
+      - frontend_dist:/app/dist
 
 volumes:
   postgres_data:
-  backend_uploads:
+  redis_data:
+  frontend_dist:

@@ -7,11 +7,25 @@ service-layer modules.
 
 import uuid
 from datetime import datetime, timezone
+from decimal import Decimal
 from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.audit import AuditLog
+
+
+def _sanitize_details(obj: Any) -> Any:
+    """Recursively convert Decimal and other non-JSON types to serializable values."""
+    if isinstance(obj, Decimal):
+        return float(obj)
+    if isinstance(obj, dict):
+        return {k: _sanitize_details(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [_sanitize_details(v) for v in obj]
+    if isinstance(obj, datetime):
+        return obj.isoformat()
+    return obj
 
 
 async def create_audit_log(
@@ -46,7 +60,7 @@ async def create_audit_log(
         action=action,
         resource_type=resource_type,
         resource_id=resource_id,
-        details=details or {},
+        details=_sanitize_details(details or {}),
         ip_address=ip_address,
         created_at=datetime.now(timezone.utc),
     )

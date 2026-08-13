@@ -94,6 +94,8 @@ class ProductService:
             compare_at_price=product_data.compare_at_price,
             cost_price=product_data.cost_price,
             sku=product_data.sku,
+            stock=product_data.stock if product_data.stock is not None else 0,
+            low_stock_threshold=product_data.low_stock_threshold if product_data.low_stock_threshold is not None else 10,
             barcode=product_data.barcode,
             weight=product_data.weight,
             status=ProductStatus(product_data.status),

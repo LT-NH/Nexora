@@ -53,6 +53,7 @@ class UserLogin(BaseModel):
     email: EmailStr = Field(..., description="User email address")
     password: str = Field(..., description="User password")
     remember_me: bool = Field(default=False, description="Extend token lifetime to 30 days")
+    totp_code: Optional[str] = Field(default=None, description="TOTP code for 2FA")
 
 
 class UserResponse(BaseModel):
@@ -67,6 +68,7 @@ class UserResponse(BaseModel):
     is_active: bool
     is_superadmin: bool
     email_verified: bool
+    totp_enabled: bool = False
     created_at: datetime
     updated_at: datetime
 

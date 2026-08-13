@@ -17,6 +17,8 @@ class ProductCreate(BaseModel):
     compare_at_price: Optional[float] = Field(None, ge=0)
     cost_price: Optional[float] = Field(None, ge=0)
     sku: Optional[str] = Field(None, max_length=100)
+    stock: Optional[int] = Field(0, ge=0)
+    low_stock_threshold: Optional[int] = Field(10, ge=0)
     barcode: Optional[str] = Field(None, max_length=100)
     weight: Optional[float] = Field(None, ge=0)
     status: str = Field(default="draft", pattern=r"^(draft|active|archived)$")
@@ -36,6 +38,8 @@ class ProductUpdate(BaseModel):
     compare_at_price: Optional[float] = Field(None, ge=0)
     cost_price: Optional[float] = Field(None, ge=0)
     sku: Optional[str] = Field(None, max_length=100)
+    stock: Optional[int] = Field(None, ge=0)
+    low_stock_threshold: Optional[int] = Field(None, ge=0)
     barcode: Optional[str] = Field(None, max_length=100)
     weight: Optional[float] = Field(None, ge=0)
     status: Optional[str] = Field(None, pattern=r"^(draft|active|archived)$")
@@ -57,6 +61,8 @@ class ProductResponse(BaseModel):
     compare_at_price: Optional[float] = None
     cost_price: Optional[float] = None
     sku: Optional[str] = None
+    stock: int = 0
+    low_stock_threshold: int = 10
     barcode: Optional[str] = None
     weight: Optional[float] = None
     status: str

@@ -1,30 +1,75 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { Outlet, useLocation } from 'react-router-dom';
 import { Menu } from 'lucide-react';
 import { Sidebar } from './Sidebar';
 import { Topbar } from './Topbar';
+import FeedbackWidget from '@/components/FeedbackWidget';
+import { OnboardingWizard } from '@/components/OnboardingWizard';
+import { AIAssistant } from '@/components/AIAssistant';
+import { useBranding } from '@/hooks/useBranding';
+import { useI18n, translations } from '@/i18n';
 
-const pageTitles: Record<string, string> = {
-  '/dashboard': '仪表板',
-  '/products': '商品管理',
-  '/orders': '订单管理',
-  '/customers': '客户 CRM',
-  '/stores': '店铺管理',
-  '/team': '团队',
-  '/billing': '计费',
-  '/api-keys': 'API 密钥',
-  '/settings': '工作空间设置',
-  '/admin': '管理仪表板',
-  '/profile': '个人资料',
+const pageTitleKeys: Record<string, keyof typeof translations.zh> = {
+  '/dashboard': 'dashboard',
+  '/products': 'products',
+  '/orders': 'orders',
+  '/customers': 'customers',
+  '/analytics': 'analytics',
+  '/stores': 'stores',
+  '/billing': 'billing',
+  '/team': 'team',
+  '/api-keys': 'api_keys',
+  '/settings': 'settings',
+  '/profile': 'profile',
+  '/permissions': 'permissions',
+  '/coupons': 'coupons',
+  '/refunds': 'refunds',
+  '/webhooks': 'webhooks',
+  '/ai-chat': 'ai_chat',
+  '/payments': 'payments',
+  '/branding': 'branding',
 };
+
+/** Maps the current pathname to breadcrumb items. */
+function getBreadcrumbs(pathname: string, tFn: (k: keyof typeof translations.zh) => string): { label: string; href?: string }[] {
+  const key = pageTitleKeys[pathname];
+  return key ? [{ label: tFn(key) }] : [];
+}
 
 export const AppLayout: React.FC = () => {
   const location = useLocation();
-  const title = pageTitles[location.pathname] || 'Nexora';
+  const { t: tt } = useI18n();
+  const title = tt(pageTitleKeys[location.pathname] ?? 'dashboard');
+  const breadcrumbs = getBreadcrumbs(location.pathname, tt);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  useBranding();
+
+  // Touch tracking for swipe-left-to-close gesture on the mobile sidebar overlay.
+  const touchStartX = useRef(0);
+  const touchCurrentX = useRef(0);
+
+  const handleTouchStart = (e: React.TouchEvent) => {
+    touchStartX.current = e.touches[0].clientX;
+    touchCurrentX.current = e.touches[0].clientX;
+  };
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    touchCurrentX.current = e.touches[0].clientX;
+  };
+
+  const handleTouchEnd = () => {
+    const delta = touchCurrentX.current - touchStartX.current;
+    // Detect a leftward swipe (negative X delta beyond a threshold) to close.
+    if (delta < -50) {
+      setSidebarOpen(false);
+    }
+  };
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-950">
+    <div className="min-h-screen bg-gray-50 dark:bg-gray-950 relative overflow-hidden">
+      {/* Subtle colorful blobs behind glass cards */}
+      <div className="fixed top-0 right-0 w-[600px] h-[600px] bg-indigo-200/15 rounded-full blur-[150px] pointer-events-none z-0" />
+      <div className="fixed bottom-0 left-0 w-[500px] h-[500px] bg-violet-200/10 rounded-full blur-[120px] pointer-events-none z-0" />
       {/* Mobile hamburger menu button */}
       <button
         className="fixed top-3 left-3 z-50 md:hidden p-2 rounded-lg bg-white dark:bg-gray-800 shadow-md border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:text-slate-900 dark:hover:text-gray-100 transition-colors"
@@ -34,11 +79,14 @@ export const AppLayout: React.FC = () => {
         <Menu size={20} />
       </button>
 
-      {/* Mobile overlay backdrop */}
+      {/* Mobile overlay backdrop — swipe left to close */}
       {sidebarOpen && (
         <div
           className="fixed inset-0 z-40 bg-black/50 backdrop-blur-sm md:hidden"
           onClick={() => setSidebarOpen(false)}
+          onTouchStart={handleTouchStart}
+          onTouchMove={handleTouchMove}
+          onTouchEnd={handleTouchEnd}
           aria-hidden="true"
         />
       )}
@@ -59,12 +107,19 @@ export const AppLayout: React.FC = () => {
       <div className="md:ml-64 bg-tech-dots">
         <Topbar
           title={title}
+          breadcrumb={breadcrumbs}
           onMenuClick={() => setSidebarOpen(true)}
         />
         <main className="p-6">
           <Outlet />
         </main>
+        <FeedbackWidget />
+        <OnboardingWizard />
       </div>
+
+      {/* Floating AI assistant — rendered outside the main content area so it
+          overlays every page via fixed positioning. */}
+      <AIAssistant />
     </div>
   );
 };

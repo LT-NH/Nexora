@@ -1,5 +1,10 @@
-from fastapi import APIRouter, BackgroundTasks, Depends
-from app.api.deps import get_current_workspace
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
+from app.api.deps import get_current_workspace, _require_member
+from app.middleware.auth import AuthContext, get_principal
+from app.database import get_db
+from sqlalchemy.ext.asyncio import AsyncSession
+from typing import Annotated
+from app.models.workspace import WorkspaceRole
 import time
 
 router = APIRouter(prefix="/workspaces/{workspace_slug}/reports", tags=["reports"])
@@ -15,7 +20,13 @@ async def request_report(
     workspace_slug: str,
     report_type: str,
     background_tasks: BackgroundTasks,
-    workspace=Depends(get_current_workspace),
+    principal: Annotated[AuthContext, Depends(get_principal)],
+    db: Annotated[AsyncSession, Depends(get_db)],
 ):
+    workspace, membership = await _require_member(workspace_slug, principal, db, WorkspaceRole.VIEWER)
+    from app.services.permission import check_permission
+    can_view = await check_permission(db, workspace.id, principal.user_id, "view_revenue", member=membership)
+    if not can_view:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "无权限查看营收数据")
     background_tasks.add_task(generate_report, str(workspace.id), report_type)
     return {"message": f"Report {report_type} generation started", "workspace": workspace_slug}

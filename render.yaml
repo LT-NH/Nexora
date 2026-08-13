@@ -1,0 +1,58 @@
+# ============================================================
+# Nexora - Render 蓝图（完全免费部署）
+# 用法：
+#   1. 把整个项目推到 GitHub 私有仓库
+#   2. 打开 https://dashboard.render.com  → New → Blueprint
+#   3. 选择你的仓库，Render 会自动创建：
+#      - nexora-db     （免费 PostgreSQL）
+#      - nexora-redis  （免费 Redis）
+#      - nexora-api    （免费 Web Service，自动连接上面两个）
+#   4. 部署完成后，在 api 服务的 Environment 里填 QWEN_API_KEY / SECRET_KEY
+#      并复制 Public URL 给前端用
+# ============================================================
+services:
+  # ---------- 后端 API ----------
+  - type: web
+    name: nexora-api
+    runtime: docker
+    repo: https://github.com/YOUR_USERNAME/nexora   # ← 改成你的仓库地址
+    plan: free                                       # 免费实例（15 分钟无请求休眠）
+    dockerfilePath: Dockerfile.backend
+    healthCheckPath: /health
+    envVars:
+      - key: ENVIRONMENT
+        value: production
+      - key: DEBUG
+        value: "false"
+      - key: DATABASE_URL
+        fromDatabase:
+          name: nexora-db
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: nexora-redis
+          property: connectionString
+      - key: SECRET_KEY
+        sync: false                                  # 部署时手动填写（强随机串）
+      - key: ENCRYPTION_KEY
+        sync: false                                  # 可留空（自动从 SECRET_KEY 派生）
+      - key: QWEN_API_KEY
+        sync: false                                  # 部署时填你的千问 Key
+      - key: CORS_ORIGINS
+        value: https://nexora.vercel.app             # ← 改成你的 Vercel 前端域名
+      - key: METRICS_AUTH
+        value: "false"
+
+  # ---------- PostgreSQL ----------
+  - type: postgres
+    name: nexora-db
+    plan: free                                       # 免费 1GB 存储
+    database: nexora
+    user: nexora
+
+  # ---------- Redis ----------
+  - type: redis
+    name: nexora-redis
+    plan: free                                       # 免费 50MB（不可用时 API 自动回退内存）
+    maxmemoryPolicy: noeviction

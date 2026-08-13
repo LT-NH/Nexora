@@ -4,9 +4,13 @@ Provides AI-powered features: product description, SEO keywords,
 sales trend analysis, customer insights, and marketing copy generation.
 """
 
+import asyncio
 from typing import Annotated, Optional
 
+import json
+
 from fastapi import APIRouter, Depends, Query
+from fastapi.responses import StreamingResponse
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -17,7 +21,9 @@ from app.models.customer import Customer
 from app.models.order import Order, OrderStatus
 from app.models.user import User
 from app.models.workspace import WorkspaceRole
+from app.schemas.ai import AIChatRequest
 from app.services.ai import AIService
+from app.services.ai_agent import BIAgent
 from app.utils.logging import get_logger
 
 router = APIRouter(prefix="/workspaces/{slug}/ai")
@@ -100,7 +106,18 @@ async def analyze_sales_trend(
             "platform": order.platform,
         })
 
-    analysis = await AIService.analyze_sales_trend(order_dicts)
+    # 千问网络调用可能较慢：4s 超时保护，避免阻塞 asyncio 事件循环（其他接口排队）
+    try:
+        analysis = await asyncio.wait_for(
+            AIService.analyze_sales_trend(order_dicts), timeout=4.0
+        )
+    except asyncio.TimeoutError:
+        analysis = {
+            "trend": "stable",
+            "forecast": {"next_7_days": 0, "confidence": "low"},
+            "peak_days": [],
+            "recommendations": ["AI 深度分析超时，已返回基础统计，请稍后重试"],
+        }
 
     # Add workspace-specific stats
     return {
@@ -184,3 +201,93 @@ async def generate_marketing_copy(
         "channel": channel,
         "copy": copy,
     }
+
+
+@router.post("/chat/stream", summary="AI 对话流式输出 (SSE)")
+async def ai_chat_stream(
+    slug: str,
+    body: dict,
+    principal: Annotated[AuthContext, Depends(get_principal)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """Stream an AI chat response via Server-Sent Events (SSE).
+
+    The endpoint returns a ``text/event-stream`` response. Each SSE event
+    carries a JSON payload ``{"content": "<chunk>"}`` with a piece of the
+    AI-generated text. Falls back to a rule-based response when no Qwen
+    API key is configured.
+    """
+    workspace, _ = await _require_member(slug, principal, db, WorkspaceRole.VIEWER)
+
+    async def generate():
+        async for chunk in AIService.stream_chat(
+            body.get("prompt", ""),
+            {"workspace_id": workspace.id},
+            db=db,
+            history=body.get("history") or [],
+        ):
+            yield f"data: {json.dumps({'content': chunk})}\n\n"
+
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+@router.post("/chat", summary="AI 自然语言 BI 问答")
+async def ai_bi_chat(
+    slug: str,
+    body: AIChatRequest,
+    principal: Annotated[AuthContext, Depends(get_principal)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> dict:
+    """Answer a business question in natural language.
+
+    Detects the intent from the question, queries the real database
+    (scoped to the workspace), and returns a structured dict with
+    ``intent`` / ``answer_text`` / ``data`` / ``chart_type`` / ``suggestion``
+    that the frontend renders as text, table and chart.
+    """
+    workspace, _ = await _require_member(slug, principal, db, WorkspaceRole.VIEWER)
+    return await BIAgent.answer(
+        db, workspace.id, principal.user_id, body.question, history=body.history
+    )
+
+
+@router.get("/weekly-summary", summary="AI 周报摘要")
+async def ai_weekly_summary(
+    slug: str,
+    principal: Annotated[AuthContext, Depends(get_principal)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> dict:
+    """Return an AI-generated summary of this week's business performance.
+
+    Runs the same weekly-report queries used by the email report, then
+    produces a Chinese summary (3 highlights + 1 risk + 1 suggestion).
+    """
+    workspace, _ = await _require_member(slug, principal, db, WorkspaceRole.VIEWER)
+    from app.services.report import (  # noqa: PLC0415 - local import to avoid cycles
+        collect_weekly_report_data,
+        generate_ai_summary,
+    )
+
+    report_data = await collect_weekly_report_data(db, workspace.id)
+    summary = await generate_ai_summary(db, workspace.id, report_data)
+    return {"summary": summary, "report_data": report_data}
+
+
+@router.get("/pricing", summary="AI 定价建议")
+async def ai_pricing_suggestion(
+    slug: str,
+    principal: Annotated[AuthContext, Depends(get_principal)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> dict:
+    """Return per-product pricing suggestions based on stock coverage."""
+    workspace, _ = await _require_member(slug, principal, db, WorkspaceRole.VIEWER)
+    items = await BIAgent.pricing_suggestion(db, workspace.id)
+    return {"items": items}

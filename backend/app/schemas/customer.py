@@ -37,6 +37,8 @@ class CustomerResponse(BaseModel):
     total_orders: int
     total_spent: float
     last_order_at: Optional[datetime] = None
+    membership_level: Optional[str] = None
+    membership_points: int = 0
     notes: Optional[str] = None
     source: Optional[str] = None
     created_at: datetime

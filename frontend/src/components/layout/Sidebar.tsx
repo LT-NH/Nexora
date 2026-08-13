@@ -14,12 +14,20 @@ import {
   Package,
   Store,
   UserCheck,
+  Tag,
+  Webhook,
+  Shield,
+  RotateCcw,
+  Sparkles,
+  Wallet,
+  Palette,
 } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { useWorkspace } from '@/hooks/useWorkspace';
 import { usePlan } from '@/hooks/usePlan';
 import { Avatar } from '@/components/ui/Avatar';
 import { Dropdown } from '@/components/ui/Dropdown';
+import { useI18n, translations } from '@/i18n';
 
 const navItems = [
   { to: '/dashboard', label: '仪表板', icon: LayoutDashboard },
@@ -27,11 +35,44 @@ const navItems = [
   { to: '/orders', label: '订单管理', icon: ShoppingBag },
   { to: '/customers', label: '客户 CRM', icon: UserCheck },
   { to: '/stores', label: '店铺管理', icon: Store },
+  { to: '/coupons', label: '优惠券', icon: Tag },
+  { to: '/refunds', label: '退款售后', icon: RotateCcw },
+  { to: '/ai-chat', label: 'AI 智能助手', icon: Sparkles },
+  { to: '/payments', label: '收款管理', icon: Wallet },
+  { to: '/permissions', label: '权限管理', icon: Shield },
+  { to: '/webhooks', label: 'Webhooks', icon: Webhook },
+  { to: '/branding', label: '品牌定制', icon: Palette },
   { to: '/team', label: '团队', icon: Users },
   { to: '/billing', label: '计费', icon: CreditCard },
   { to: '/api-keys', label: 'API 密钥', icon: Key },
   { to: '/settings', label: '设置', icon: Settings },
 ];
+
+// 主导航中可被 i18n 翻译的路径 → 翻译键
+const navKeyByPath: Record<string, keyof typeof translations.zh> = {
+  '/dashboard': 'dashboard',
+  '/products': 'products',
+  '/orders': 'orders',
+  '/customers': 'customers',
+  '/stores': 'stores',
+  '/coupons': 'coupons',
+  '/refunds': 'refunds',
+  '/settings': 'settings',
+  '/ai-chat': 'ai_chat',
+  '/payments': 'payments',
+  '/branding': 'branding',
+  '/team': 'team',
+  '/billing': 'billing',
+  '/api-keys': 'api_keys',
+  '/permissions': 'permissions',
+  '/webhooks': 'webhooks',
+};
+
+/** 翻译导航标签，若键不存在则回退到原始中文 */
+const translateLabel = (to: string, fallback: string, tFn: (k: any) => string): string => {
+  const key = navKeyByPath[to];
+  return key ? tFn(key) : fallback;
+};
 
 interface SidebarProps {
   onNavigate?: () => void;
@@ -43,6 +84,8 @@ export const Sidebar: React.FC<SidebarProps> = ({ onNavigate }) => {
     useWorkspace();
   const plan = usePlan();
   const navigate = useNavigate();
+  // 响应式 i18n：语言切换即时重渲染
+  const { t: tt } = useI18n();
 
   const planInfo = { free: { label: 'Free', color: 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400' }, pro: { label: 'Pro', color: 'bg-primary-100 text-primary-700 dark:bg-primary-900/30 dark:text-primary-400' }, enterprise: { label: 'Enterprise', color: 'bg-gradient-to-r from-amber-100 to-yellow-100 text-amber-800 dark:from-amber-900/40 dark:to-yellow-900/30 dark:text-amber-300 border border-amber-300 dark:border-amber-700' } }[plan];
 
@@ -76,7 +119,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ onNavigate }) => {
       onClick: () => { navigate('/profile'); onNavigate?.(); },
     },
     {
-      label: '退出登录',
+      label: tt('logout'),
       value: 'logout',
       icon: <LogOut size={16} />,
       danger: true,
@@ -120,15 +163,15 @@ export const Sidebar: React.FC<SidebarProps> = ({ onNavigate }) => {
             to={item.to}
             onClick={handleNavClick}
             className={({ isActive }: { isActive: boolean }) =>
-              `flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 ${
+              `flex items-center gap-3 px-3 py-3 rounded-lg text-sm font-medium transition-all duration-200 relative ${
                 isActive
-                  ? 'bg-gradient-to-r from-primary-50 to-indigo-50 dark:from-primary-900/30 dark:to-indigo-900/30 text-primary-700 dark:text-primary-300 shadow-sm'
+                  ? 'bg-gradient-to-r from-primary-50 to-indigo-50 dark:from-primary-900/30 dark:to-indigo-900/30 text-primary-700 dark:text-primary-300 shadow-sm before:absolute before:left-0 before:top-1/2 before:-translate-y-1/2 before:w-0.5 before:h-5 before:bg-primary-500 before:rounded-full'
                   : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800 hover:text-slate-900 dark:hover:text-gray-200'
               }`
             }
           >
             <item.icon size={18} />
-            {item.label}
+            {translateLabel(item.to, item.label, tt)}
           </NavLink>
         ))}
       </nav>

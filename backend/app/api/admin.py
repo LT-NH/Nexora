@@ -6,7 +6,7 @@ Endpoints for platform administration: users, workspaces, and statistics.
 from typing import Annotated
 
 from fastapi import APIRouter, Depends
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
@@ -148,4 +148,81 @@ async def get_stats(
         "plans": {
             "total": total_plans,
         },
+    }
+
+
+@router.post(
+    "/reset-demo",
+    summary="一键重置演示数据（超管专属）",
+)
+async def reset_demo_data(
+    db: Annotated[AsyncSession, Depends(get_db)],
+    _superadmin: Annotated[User, Depends(require_superadmin)],
+) -> dict:
+    """清空演示工作空间的业务数据并重新播种 90 天种子数据。
+
+    用于演示现场被评委乱改数据后一键恢复。只影响 demo 用户所属的
+    工作空间（demo@nexora.com 的第一个工作空间），不触碰其他租户。
+    """
+    from app.models.order import Order, OrderItem
+    from app.models.product import Product
+    from app.models.customer import Customer
+    from app.models.refund import Refund
+    from app.models.notification import Notification
+
+    # 找到 demo 用户及其第一个工作空间
+    demo_user = await db.execute(
+        select(User).where(User.email == "demo@nexora.com")
+    )
+    demo_user = demo_user.scalar_one_or_none()
+    if demo_user is None:
+        # 没有 demo 用户时直接播种（会重建 demo 用户/工作空间）
+        demo_ws = None
+    else:
+        demo_ws = await db.execute(
+            select(Workspace)
+            .join(WorkspaceMember, WorkspaceMember.workspace_id == Workspace.id)
+            .where(WorkspaceMember.user_id == demo_user.id)
+            .order_by(Workspace.created_at.asc())
+            .limit(1)
+        )
+        demo_ws = demo_ws.scalar_one_or_none()
+
+    if demo_ws is not None:
+        ws_id = demo_ws.id
+        # 删除该工作空间全部业务数据（保持外键顺序）
+        await db.execute(delete(Notification).where(Notification.workspace_id == ws_id))
+        await db.execute(delete(Refund).where(Refund.workspace_id == ws_id))
+        await db.execute(
+            delete(OrderItem).where(
+                OrderItem.order_id.in_(
+                    select(Order.id).where(Order.workspace_id == ws_id)
+                )
+            )
+        )
+        await db.execute(delete(Order).where(Order.workspace_id == ws_id))
+        await db.execute(delete(Customer).where(Customer.workspace_id == ws_id))
+        await db.execute(delete(Product).where(Product.workspace_id == ws_id))
+        # 重置白标字段为默认
+        demo_ws.name = "Demo 优选旗舰店"
+        demo_ws.brand_name = "Demo 优选"
+        demo_ws.brand_color = "#7C3AED"
+        demo_ws.brand_dark_mode = False
+        demo_ws.brand_logo_url = None
+        demo_ws.logo_url = None
+        await db.commit()
+
+    # 重新播种 90 天数据（force=True：订单/退款强制重建）
+    import os
+    import sys as _sys
+    _backend_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..")
+    if _backend_path not in _sys.path:
+        _sys.path.insert(0, _backend_path)
+    import seed_demo
+
+    code = await seed_demo.run(days=90, force=True)
+    return {
+        "status": "ok" if code == 0 else "error",
+        "message": "演示数据已重置（商品/客户/订单/退款已恢复为 90 天种子数据）",
+        "workspace": demo_ws.slug if demo_ws else None,
     }

@@ -125,6 +125,17 @@ class Order(Base):
         nullable=True,
         default=None,
     )
+    tracking_number: Mapped[str | None] = mapped_column(
+        String(100),
+        nullable=True,
+        default=None,
+    )
+    carrier: Mapped[str | None] = mapped_column(
+        String(50),
+        nullable=True,
+        default=None,
+        comment="SF/YT/ZTO/STO etc.",
+    )
     notes: Mapped[str | None] = mapped_column(
         String(2000),
         nullable=True,

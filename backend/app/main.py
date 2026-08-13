@@ -6,13 +6,14 @@ routers, and startup events.
 
 import os
 import uuid
+import asyncio
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 
 from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -21,6 +22,7 @@ from app.config import settings
 from app.database import async_session_factory, get_db, init_db
 from app.middleware.rate_limit import RateLimitMiddleware
 from app.middleware.request_id import RequestMiddleware
+from app.middleware.performance import PerformanceMiddleware
 from app.models.subscription import SubscriptionPlan
 from app.utils.exceptions import register_exception_handlers
 from app.utils.logging import get_logger, setup_logging
@@ -28,6 +30,8 @@ from app.utils.logging import get_logger, setup_logging
 # Initialize structured logging
 setup_logging()
 logger = get_logger(__name__)
+
+scheduler: "AsyncIOScheduler | None" = None
 
 
 @asynccontextmanager
@@ -58,9 +62,31 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.error("Failed to seed default subscription plans: %s", str(e))
 
+    # Start scheduled database backup (daily at 3:00 AM)
+    try:
+        global scheduler
+        from apscheduler.schedulers.asyncio import AsyncIOScheduler
+        import sys
+        import os as _os
+        _backend_path = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "..")
+        if _backend_path not in sys.path:
+            sys.path.insert(0, _backend_path)
+        from backup import backup as backup_func
+        scheduler = AsyncIOScheduler()
+        scheduler.add_job(backup_func, "cron", hour=3, minute=0)
+        # Send weekly reports every Monday at 8:00 AM
+        from app.services.report import send_all_weekly_reports
+        scheduler.add_job(send_all_weekly_reports, "cron", day_of_week="mon", hour=8, minute=0)
+        scheduler.start()
+        logger.info("Scheduled daily backup at 03:00 and weekly reports on Monday 08:00.")
+    except Exception as e:
+        logger.warning("Failed to start backup scheduler: %s", str(e))
+
     logger.info("Nexora API is ready.")
     yield
     # Shutdown
+    if scheduler:
+        scheduler.shutdown(wait=False)
     logger.info("Shutting down Nexora API.")
 
 
@@ -153,10 +179,11 @@ async def seed_default_plans() -> None:
 # Create FastAPI application
 app = FastAPI(
     title="Nexora API",
+    description="Multi-tenant e-commerce platform API. Use API keys to authenticate.",
     version="1.0.0",
-    description="Multi-tenant SaaS platform backend API",
     docs_url="/docs",
     redoc_url="/redoc",
+    openapi_url="/openapi.json",
     lifespan=lifespan,
 )
 
@@ -181,6 +208,9 @@ app.add_middleware(
 
 # Request ID Middleware
 app.add_middleware(RequestMiddleware)
+
+# Performance Monitoring Middleware
+app.add_middleware(PerformanceMiddleware)
 
 # Include API router
 app.include_router(api_router)
@@ -210,6 +240,108 @@ async def health_check(session: AsyncSession = Depends(get_db)) -> dict:
         "database": "connected" if db_ok else "unavailable",
         "timestamp": datetime.now(timezone.utc).isoformat()
     }
+
+
+# ---------------------------------------------------------------------------
+# Metrics endpoint (performance monitoring)
+# ---------------------------------------------------------------------------
+@app.get(
+    "/metrics",
+    summary="Service metrics",
+    tags=["System"],
+    response_model=dict,
+)
+async def metrics():
+    """Return process-level performance metrics (memory, CPU, connections)."""
+    try:
+        import psutil
+        import os as _os
+        process = psutil.Process(_os.getpid())
+        return {
+            "memory_mb": round(process.memory_info().rss / 1024 / 1024, 2),
+            "cpu_percent": process.cpu_percent(interval=0.1),
+            "connections": len(process.connections()),
+        }
+    except ImportError:
+        return {
+            "memory_mb": 0,
+            "cpu_percent": 0,
+            "connections": 0,
+            "note": "psutil not installed",
+        }
+
+
+# ---------------------------------------------------------------------------
+# Weekly report manual trigger endpoint
+# ---------------------------------------------------------------------------
+@app.post(
+    "/api/v1/admin/trigger-weekly-report",
+    summary="Manually trigger weekly reports",
+    tags=["System"],
+)
+async def trigger_report():
+    """Manually trigger sending weekly reports to all workspace owners."""
+    from app.services.report import send_all_weekly_reports
+    asyncio.create_task(send_all_weekly_reports())
+    return {"status": "started"}
+
+
+# ---------------------------------------------------------------------------
+# Manual backup trigger endpoint
+# ---------------------------------------------------------------------------
+@app.post(
+    "/api/v1/backup",
+    summary="Trigger manual database backup",
+    tags=["System"],
+)
+async def trigger_backup():
+    """Trigger a manual database backup. Returns the path and last backup time."""
+    try:
+        import sys
+        import os as _os
+        _backend_path = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "..")
+        if _backend_path not in sys.path:
+            sys.path.insert(0, _backend_path)
+        from backup import backup as backup_func, get_last_backup_time
+
+        result = backup_func()
+        last = get_last_backup_time()
+        return {
+            "status": "done",
+            "last_backup": last,
+            "path": result,
+        }
+    except Exception as e:
+        return JSONResponse(
+            status_code=500,
+            content={"status": "error", "detail": str(e)},
+        )
+
+
+@app.get(
+    "/api/v1/backup/status",
+    summary="Get last backup time",
+    tags=["System"],
+)
+async def backup_status():
+    """Return the timestamp of the most recent database backup."""
+    try:
+        import sys
+        import os as _os
+        _backend_path = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "..")
+        if _backend_path not in sys.path:
+            sys.path.insert(0, _backend_path)
+        from backup import get_last_backup_time
+
+        last = get_last_backup_time()
+        return {
+            "last_backup": last,
+        }
+    except Exception as e:
+        return JSONResponse(
+            status_code=500,
+            content={"last_backup": None, "error": str(e)},
+        )
 
 
 # ---------------------------------------------------------------------------

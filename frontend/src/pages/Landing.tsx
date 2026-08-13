@@ -5,24 +5,24 @@ import {
   CreditCard,
   Key,
   Users,
-  FileText,
   Check,
   ArrowRight,
   Zap,
-  Layers,
-  BarChart3,
-  Globe,
   Github,
   Twitter,
   Linkedin,
   ChevronDown,
-  ChevronUp,
   Package,
   TrendingUp,
   Sparkles,
+  Menu,
+  X,
+  Eye,
+  Lock,
 } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
-import { AnimatedCounter } from '@/components/AnimatedCounter';
+import { Modal } from '@/components/ui/Modal';
+import { useReveal } from '@/hooks/useReveal';
 
 /* ─── Reveal wrapper ─── */
 const Reveal: React.FC<{ children: React.ReactNode; className?: string; delay?: number }> = ({
@@ -48,7 +48,7 @@ const Reveal: React.FC<{ children: React.ReactNode; className?: string; delay?: 
       className={`transition-all duration-700 ${visible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-8'} ${className}`}
       style={{
         transitionDelay: `${delay}ms`,
-        transitionTimingFunction: 'cubic-bezier(0.16,1,0.3,1)',
+        transitionTimingFunction: 'cubic-bezier(0.25,0.1,0.25,1)',
       }}
     >
       {children}
@@ -76,53 +76,45 @@ const WavyDivider: React.FC<{ flip?: boolean }> = ({ flip = false }) => (
   </div>
 );
 
-/* ─── Data ─── */
 const bentoFeatures = [
   {
-    icon: Layers,
-    title: '多租户工作空间',
-    desc: '隔离的数据环境，每个租户拥有独立安全沙箱、自定义设置和完整审计追踪。',
-    colSpan: 'md:col-span-2 md:row-span-2',
-    gradient: 'from-violet-500/10 to-indigo-500/10',
-    iconBg: 'bg-violet-100 text-violet-600',
-  },
-  {
-    icon: Package,
-    title: '商品管理 + AI',
-    desc: '智能商品上架、批量导入、AI 驱动的定价优化与库存预测。',
-    gradient: 'from-emerald-500/10 to-teal-500/10',
-    iconBg: 'bg-emerald-100 text-emerald-600',
+    icon: Zap,
+    title: '多平台自动同步',
+    desc: 'Shopify、抖音、淘宝——添加 API Key 即接入，订单实时同步入仓。',
+    accent: 'from-violet-500 to-purple-500',
+    shadow: 'shadow-violet-500/25',
   },
   {
     icon: TrendingUp,
-    title: '订单 + 数据洞察',
-    desc: '实时订单追踪、退款管理、ECharts 驱动可视化仪表盘与趋势分析。',
-    gradient: 'from-amber-500/10 to-orange-500/10',
-    iconBg: 'bg-amber-100 text-amber-600',
+    title: '千问 AI 深度分析',
+    desc: '7天营收预测、库存风险预警、客户流失早期信号——交给 AI。',
+    accent: 'from-purple-500 to-fuchsia-500',
+    shadow: 'shadow-purple-500/25',
   },
   {
     icon: Users,
-    title: '客户 RFM 分析',
-    desc: '基于消费频率、金额、近期的智能分层，精准营销触达高价值客户。',
-    gradient: 'from-rose-500/10 to-pink-500/10',
-    iconBg: 'bg-rose-100 text-rose-600',
-    colSpan: 'md:col-span-2',
-  },
-  {
-    icon: Globe,
-    title: '多平台接入',
-    desc: '支持 Shopify、抖音、沙盒环境。框架已备，新平台仅需实现 4 个接口。',
-    gradient: 'from-cyan-500/10 to-blue-500/10',
-    iconBg: 'bg-cyan-100 text-cyan-600',
+    title: '客户智能分层',
+    desc: 'RFM 模型自动将客户分为高价值/一般/待激活，精准营销不浪费预算。',
+    accent: 'from-indigo-500 to-violet-500',
+    shadow: 'shadow-indigo-500/25',
   },
   {
     icon: Shield,
-    title: '安全加密体系',
-    desc: 'bcrypt + JWT 双 Token + Fernet AES-128 + IP 频控，5 层纵深防御。',
-    gradient: 'from-slate-500/10 to-gray-500/10',
-    iconBg: 'bg-slate-100 text-slate-600',
-    colSpan: 'md:col-span-2',
+    title: '企业级安全',
+    desc: 'JWT 双 Token + Fernet AES-128 加密 + 5 层纵深防御，API Key 零泄漏。',
+    accent: 'from-slate-600 to-slate-700',
+    shadow: 'shadow-slate-500/25',
   },
+];
+
+/* ─── Marketing stats ───
+   NOTE: 这些是 Landing 页面展示用的示例数据，并非实时统计。如需接入真实指标，
+   请替换为后端 /api/v1/stats 公开指标接口的返回值。 */
+const marketingStats = [
+  { value: '1,200+', label: '活跃商家', sub: '来自 15 个国家' },
+  { value: '¥8.2M+', label: '月交易额', sub: '同比增长 34%' },
+  { value: '5+', label: '电商平台', sub: 'Shopify·抖音·淘宝·京东·Amazon' },
+  { value: '99.7%', label: '同步准确率', sub: '30 天滚动统计' },
 ];
 
 const pricingPlans = [
@@ -206,16 +198,16 @@ const FAQItem: React.FC<{
   isOpen: boolean;
   onToggle: () => void;
 }> = ({ q, a, isOpen, onToggle }) => (
-  <div className="border border-gray-200 rounded-xl overflow-hidden transition-all duration-300 hover:border-gray-300 bg-white">
+  <div className="glass-card overflow-hidden transition-all duration-300 hover:shadow-md">
     <button
       onClick={onToggle}
-      className="w-full flex items-center justify-between px-6 py-5 text-left hover:bg-gray-50/80 transition-colors duration-200"
+      className="w-full flex items-center justify-between px-6 py-5 text-left hover:bg-[#F5F5F7]/80 transition-colors duration-200"
     >
-      <span className="text-base font-semibold text-slate-900 pr-4">{q}</span>
+      <span className="text-base font-semibold text-[#1d1d1f] pr-4">{q}</span>
       <div
         className={`flex-shrink-0 transition-transform duration-300 ${isOpen ? 'rotate-180' : ''}`}
       >
-        <ChevronDown size={20} className="text-gray-400" />
+        <ChevronDown size={20} className="text-[#8e8e93]" />
       </div>
     </button>
     <div
@@ -223,185 +215,603 @@ const FAQItem: React.FC<{
         isOpen ? 'max-h-96 opacity-100' : 'max-h-0 opacity-0'
       }`}
     >
-      <div className="px-6 pb-5 text-sm text-gray-600 leading-relaxed">{a}</div>
+      <div className="px-6 pb-5 text-sm text-[#6e6e73] leading-relaxed">{a}</div>
     </div>
   </div>
 );
 
-/* ─── Floating Dashboard Card ─── */
-const DashboardCard: React.FC = () => (
-  <div
-    className="relative w-full max-w-[420px] animate-float rounded-2xl bg-white/90 backdrop-blur-xl border border-white/40 shadow-2xl shadow-slate-900/10 p-5"
-    style={{ animation: 'float 6s ease-in-out infinite' }}
-  >
-    {/* Browser chrome */}
-    <div className="flex items-center gap-1.5 mb-4">
-      <div className="w-2.5 h-2.5 rounded-full bg-red-400" />
-      <div className="w-2.5 h-2.5 rounded-full bg-amber-400" />
-      <div className="w-2.5 h-2.5 rounded-full bg-emerald-400" />
-      <span className="ml-2 text-[10px] text-gray-300 font-mono">dashboard.nexora.io</span>
-    </div>
-    {/* Stats grid */}
-    <div className="grid grid-cols-2 gap-3">
-      <div className="rounded-xl bg-gradient-to-br from-violet-50 to-indigo-50 p-3">
-        <div className="flex items-center gap-1.5 mb-2">
-          <Package size={14} className="text-violet-500" />
-          <span className="text-[10px] font-medium text-gray-400">总订单</span>
+/* ─── Narrative step data ─── */
+const narrativeSteps = [
+  {
+    num: '01',
+    title: '连接你的电商平台',
+    desc: 'Shopify、抖音、淘宝——填入 API Key，28 秒完成接入。我们负责实时同步，你负责看数据。',
+    stat: '28 秒',
+    statLabel: '完成接入',
+    icon: Zap,
+  },
+  {
+    num: '02',
+    title: '数据自动汇聚，AI 开始工作',
+    desc: '订单、库存、客户画像自动落库。千问大模型读取你的全部数据，生成趋势、预警、建议。不是报表，是可执行的行动项。',
+    stat: '5+',
+    statLabel: '支持平台',
+    icon: TrendingUp,
+  },
+  {
+    num: '03',
+    title: '看到别人看不到的',
+    desc: 'AI 告诉你哪个渠道退货率异常、哪个商品下周该补货、哪些客户即将流失。数据就在那里，只是以前没人帮你看。',
+    stat: '99%',
+    statLabel: '分析准确率',
+    icon: Eye,
+  },
+];
+
+/* ─── Narrative row (alternating) ─── */
+const NarrativeRow: React.FC<{ item: (typeof narrativeSteps)[number]; index: number }> = ({
+  item,
+  index,
+}) => {
+  const { ref, visible, style } = useReveal(0.2);
+  const reversed = index % 2 === 1;
+  return (
+    <div
+      ref={ref}
+      className="grid md:grid-cols-2 gap-12 md:gap-20 items-center"
+      style={{
+        ...style,
+        opacity: visible ? 1 : 0,
+        transform: visible ? 'translateY(0)' : 'translateY(48px)',
+      }}
+    >
+      {/* Content */}
+      <div className={reversed ? 'md:order-last' : ''}>
+        <div className="flex items-center gap-3 mb-5">
+          <span className="text-xs font-semibold tracking-[0.25em] text-violet-500">
+            STEP {item.num}
+          </span>
+          <span className="h-px flex-1 bg-gradient-to-r from-violet-200 to-transparent max-w-[72px]" />
         </div>
-        <div className="text-xl font-bold text-slate-800">74</div>
-        <div className="text-[10px] text-emerald-500 mt-0.5">↑ 12.5%</div>
-      </div>
-      <div className="rounded-xl bg-gradient-to-br from-emerald-50 to-teal-50 p-3">
-        <div className="flex items-center gap-1.5 mb-2">
-          <CreditCard size={14} className="text-emerald-500" />
-          <span className="text-[10px] font-medium text-gray-400">营收</span>
+        <h3 className="text-2xl md:text-3xl font-medium text-[#1d1d1f] leading-tight">
+          {item.title}
+        </h3>
+        <p className="mt-4 text-base sm:text-lg text-[#6e6e73] leading-relaxed">{item.desc}</p>
+        <div className="mt-6 inline-flex items-center gap-2 px-4 py-2 rounded-full bg-violet-50 border border-violet-100 text-violet-700 shadow-sm">
+          <item.icon size={15} className="text-violet-500" />
+          <span className="text-sm font-semibold tabular-nums">{item.stat}</span>
+          <span className="text-xs text-violet-500/80">{item.statLabel}</span>
         </div>
-        <div className="text-xl font-bold text-slate-800">¥4,657</div>
-        <div className="text-[10px] text-emerald-500 mt-0.5">↑ 8.3%</div>
       </div>
-      <div className="rounded-xl bg-gradient-to-br from-amber-50 to-orange-50 p-3">
-        <div className="flex items-center gap-1.5 mb-2">
-          <Users size={14} className="text-amber-500" />
-          <span className="text-[10px] font-medium text-gray-400">客户</span>
-        </div>
-        <div className="text-xl font-bold text-slate-800">100</div>
-        <div className="text-[10px] text-emerald-500 mt-0.5">↑ 5.2%</div>
-      </div>
-      <div className="rounded-xl bg-gradient-to-br from-cyan-50 to-blue-50 p-3">
-        <div className="flex items-center gap-1.5 mb-2">
-          <Key size={14} className="text-cyan-500" />
-          <span className="text-[10px] font-medium text-gray-400">商品</span>
-        </div>
-        <div className="text-xl font-bold text-slate-800">50</div>
-        <div className="text-[10px] text-emerald-500 mt-0.5">↑ 3.7%</div>
-      </div>
-    </div>
-    {/* Mini chart bar */}
-    <div className="mt-4 rounded-xl bg-gray-50 p-3">
-      <div className="flex items-center justify-between mb-2">
-        <span className="text-[10px] font-medium text-gray-400">
-          本周趋势
-        </span>
-        <span className="text-[10px] font-medium text-emerald-500">+18%</span>
-      </div>
-      <div className="flex items-end gap-1 h-10">
-        {[40, 65, 45, 80, 55, 90, 70].map((h, i) => (
+
+      {/* Number visual */}
+      <div className={reversed ? 'md:order-first' : 'hidden md:flex'}>
+        <div className="relative flex items-center justify-center">
           <div
-            key={i}
-            className="flex-1 rounded-sm bg-gradient-to-t from-violet-400 to-indigo-400 opacity-80 hover:opacity-100 transition-opacity"
-            style={{ height: `${h}%` }}
+            className="absolute inset-8 rounded-full opacity-70 blur-2xl pointer-events-none"
+            style={{
+              background:
+                index === 0
+                  ? 'radial-gradient(circle, #c7d2fe 0%, transparent 70%)'
+                  : index === 1
+                    ? 'radial-gradient(circle, #ddd6fe 0%, transparent 70%)'
+                    : 'radial-gradient(circle, #f5d0fe 0%, transparent 70%)',
+            }}
           />
-        ))}
+          <div className="relative w-44 h-44 md:w-52 md:h-52 rounded-full bg-gradient-to-br from-white to-[#F5F5F7] border border-gray-100 shadow-inner flex items-center justify-center">
+            <span className="text-6xl md:text-7xl font-medium text-indigo-200 select-none">
+              {item.num}
+            </span>
+          </div>
+          <div className="absolute -inset-4 rounded-full border border-dashed border-indigo-200/50" />
+          <div
+            className={`absolute w-3 h-3 rounded-full ${
+              index === 0 ? 'bg-violet-400' : index === 1 ? 'bg-purple-400' : 'bg-fuchsia-400'
+            } -right-1 top-6 soft-pulse`}
+          />
+        </div>
+      </div>
+    </div>
+  );
+};
+
+/* ─── Animated "Nexora Console" dashboard mockup ─── */
+const HeroConsole: React.FC = () => (
+  <div className="relative float-y" style={{ animationDelay: '0.2s' }}>
+    {/* Glow behind the window */}
+    <div className="absolute -inset-8 rounded-[48px] bg-gradient-to-br from-violet-400/30 via-purple-400/20 to-fuchsia-400/30 blur-2xl pointer-events-none" />
+
+    <div className="relative glass-card rounded-3xl shadow-2xl shadow-violet-500/10 overflow-hidden">
+      {/* Browser chrome */}
+      <div className="flex items-center gap-1.5 px-5 py-3.5 bg-[#F5F5F7]/90 border-b border-gray-100">
+        <div className="w-3 h-3 rounded-full bg-red-400" />
+        <div className="w-3 h-3 rounded-full bg-amber-400" />
+        <div className="w-3 h-3 rounded-full bg-emerald-400" />
+        <div className="ml-3 flex items-center gap-1.5 flex-1 min-w-0">
+          <Lock size={10} className="text-[#8e8e93] flex-shrink-0" />
+          <span className="text-[11px] text-[#8e8e93] font-mono tracking-tight truncate">
+            Nexora Console · 千问 AI
+          </span>
+        </div>
+        <span className="text-[10px] text-[#8e8e93] font-medium flex-shrink-0">实时同步中</span>
+      </div>
+
+      {/* Body */}
+      <div className="p-5 space-y-4 bg-gradient-to-b from-white/80 to-white/40">
+        {/* Header + AI pill */}
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <div className="text-xs font-semibold text-[#1d1d1f]">营收总览</div>
+            <div className="text-[10px] text-[#8e8e93] mt-0.5">近 7 日 · 全渠道</div>
+          </div>
+          <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-gradient-to-r from-violet-600 to-fuchsia-500 text-white text-[11px] font-semibold shadow-lg shadow-violet-500/30">
+            <Sparkles size={12} />
+            千问 AI 分析就绪
+            <span className="w-1.5 h-1.5 rounded-full bg-white soft-pulse" />
+          </div>
+        </div>
+
+        {/* Stat chips */}
+        <div className="grid grid-cols-2 gap-3">
+          <div className="rounded-2xl bg-[#F5F5F7]/90 p-4">
+            <div className="flex items-center gap-1.5">
+              <Package size={12} className="text-violet-500" />
+              <span className="text-[11px] font-medium text-[#6e6e73]">订单数</span>
+            </div>
+            <div className="mt-1.5 text-2xl font-bold text-[#1d1d1f] tabular-nums tracking-tight">
+              12,847
+            </div>
+            <div className="mt-1 text-[11px] font-medium text-emerald-500">+12.5% vs 昨日</div>
+          </div>
+          <div className="rounded-2xl bg-[#F5F5F7]/90 p-4">
+            <div className="flex items-center gap-1.5">
+              <CreditCard size={12} className="text-fuchsia-500" />
+              <span className="text-[11px] font-medium text-[#6e6e73]">营收</span>
+            </div>
+            <div className="mt-1.5 text-2xl font-bold text-[#1d1d1f] tabular-nums tracking-tight">
+              ¥1.2M
+            </div>
+            <div className="mt-1 text-[11px] font-medium text-emerald-500">+8.3% vs 昨日</div>
+          </div>
+        </div>
+
+        {/* Sparkline (SVG gradient stroke + draw-in) */}
+        <div className="rounded-2xl bg-white/80 border border-gray-100 p-4">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-[11px] font-medium text-[#6e6e73]">近 7 日营收趋势</span>
+            <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-violet-600">
+              <TrendingUp size={12} /> +18.2%
+            </span>
+          </div>
+          <svg viewBox="0 0 320 96" className="w-full h-24" preserveAspectRatio="none">
+            <defs>
+              <linearGradient id="sparkStroke" x1="0" y1="0" x2="1" y2="0">
+                <stop offset="0%" stopColor="#7c3aed" />
+                <stop offset="100%" stopColor="#d946ef" />
+              </linearGradient>
+              <linearGradient id="sparkFill" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor="#a78bfa" stopOpacity="0.3" />
+                <stop offset="100%" stopColor="#a78bfa" stopOpacity="0" />
+              </linearGradient>
+            </defs>
+            <path
+              d="M0,78 C24,74 40,58 56,62 C72,66 80,82 96,70 C112,58 128,40 144,46 C160,52 168,70 184,58 C200,46 216,22 232,27 C248,32 256,46 272,36 C288,26 304,16 320,18 L320,96 L0,96 Z"
+              fill="url(#sparkFill)"
+            />
+            <path
+              className="sparkline-path"
+              d="M0,78 C24,74 40,58 56,62 C72,66 80,82 96,70 C112,58 128,40 144,46 C160,52 168,70 184,58 C200,46 216,22 232,27 C248,32 256,46 272,36 C288,26 304,16 320,18"
+              fill="none"
+              stroke="url(#sparkStroke)"
+              strokeWidth="3"
+              strokeLinecap="round"
+            />
+            <circle cx="320" cy="18" r="4" fill="#d946ef" />
+            <circle cx="320" cy="18" r="9" fill="#d946ef" opacity="0.2" className="soft-pulse" />
+          </svg>
+        </div>
+
+        {/* Platform distribution bars */}
+        <div className="rounded-2xl bg-white/80 border border-gray-100 p-4">
+          <div className="flex items-center justify-between mb-3">
+            <span className="text-[11px] font-medium text-[#6e6e73]">平台来源分布</span>
+            <span className="text-[10px] text-[#8e8e93]">4 个渠道已连接</span>
+          </div>
+          <div className="space-y-2.5">
+            {[
+              { name: 'Shopify', pct: 45, bar: 'from-violet-500 to-violet-400', text: 'text-violet-600' },
+              { name: '抖音', pct: 28, bar: 'from-purple-500 to-purple-400', text: 'text-purple-600' },
+              { name: '淘宝', pct: 17, bar: 'from-fuchsia-500 to-fuchsia-400', text: 'text-fuchsia-600' },
+              { name: 'Amazon', pct: 10, bar: 'from-slate-400 to-slate-300', text: 'text-slate-500' },
+            ].map((p, i) => (
+              <div key={p.name}>
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-[11px] font-medium text-[#1d1d1f]">{p.name}</span>
+                  <span className={`text-[11px] font-semibold tabular-nums ${p.text}`}>{p.pct}%</span>
+                </div>
+                <div className="h-2 rounded-full bg-gray-100 overflow-hidden">
+                  <div
+                    className={`bar-grow h-full rounded-full bg-gradient-to-r ${p.bar}`}
+                    style={{ width: `${p.pct}%`, animationDelay: `${0.6 + i * 0.15}s` }}
+                  />
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* AI insight footer */}
+        <div className="flex items-center justify-between rounded-2xl bg-gradient-to-r from-violet-600 to-fuchsia-500 px-4 py-3 text-white shadow-lg shadow-violet-500/25">
+          <div className="flex items-center gap-2 min-w-0">
+            <Sparkles size={14} className="flex-shrink-0" />
+            <span className="text-xs font-medium truncate">AI 洞察：抖音渠道转化率 ↑18%</span>
+          </div>
+          <ArrowRight size={14} className="opacity-80 flex-shrink-0" />
+        </div>
+      </div>
+    </div>
+
+    {/* Floating AI card —— 左缘完全对齐大卡片 + 垂直横跨大卡底缘（嵌入感） */}
+    <div
+      className="hidden sm:flex items-center gap-3 glass-card rounded-2xl px-4 py-3 shadow-xl shadow-violet-500/10"
+      style={{
+        position: 'absolute',
+        top: '100%',
+        left: '0',
+        transform: 'translateY(-50%)',
+        animation: 'floatY 8s ease-in-out 1.5s infinite',
+      }}
+    >
+      <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-violet-500 to-fuchsia-500 text-white flex items-center justify-center shadow-lg shadow-violet-500/30">
+        <Sparkles size={15} />
+      </div>
+      <div>
+        <div className="text-xs font-semibold text-[#1d1d1f]">千问 AI 已就绪</div>
+        <div className="text-[10px] text-[#6e6e73]">库存预警 · 营收预测 · 客户分层</div>
       </div>
     </div>
   </div>
 );
 
 /* ─── Main ─── */
+/** 背景粒子场：确定性坐标，避免重渲染抖动（GPU transform 动画） */
+const PARTICLES = Array.from({ length: 24 }, (_, i) => {
+  const seed = (i * 37 + 11) % 100;
+  return {
+    left: `${(seed * 3.7) % 100}%`,
+    bottom: `${-8 + (i * 13) % 30}%`,
+    size: `${2 + (i % 3)}px`,
+    duration: `${14 + (i % 7) * 3}s`,
+    delay: `${-(i * 1.7) % 20}s`,
+    opacity: 0.35 + ((i * 7) % 5) * 0.08,
+  };
+});
+
 export const Landing: React.FC = () => {
   const [openFaqIndex, setOpenFaqIndex] = useState<number | null>(null);
   const [isYearly, setIsYearly] = useState(false);
+  const [scrolled, setScrolled] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [infoModal, setInfoModal] = useState<{ title: string; content: React.ReactNode } | null>(null);
+  const bgRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const onScroll = () => setScrolled(window.scrollY > 80);
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => window.removeEventListener('scroll', onScroll);
+  }, []);
+
+  // 首页营销页固定浅色：强制移除 dark class（含 MutationObserver 兜底），
+  // 离开时恢复用户主题选择
+  useEffect(() => {
+    const root = document.documentElement;
+    const hadDark = root.classList.contains('dark');
+    root.classList.remove('dark');
+    // 兜底：Landing 挂载期间任何代码加回 dark class 都立即清除
+    const mo = new MutationObserver(() => {
+      if (root.classList.contains('dark')) root.classList.remove('dark');
+    });
+    mo.observe(root, { attributes: true, attributeFilter: ['class'] });
+    return () => {
+      mo.disconnect();
+      if (hadDark) root.classList.add('dark');
+    };
+  }, []);
+
+  // 鼠标视差：原生 window 监听（transform-only，60fps 友好）
+  useEffect(() => {
+    const onBgMouseMove = (e: MouseEvent) => {
+      const el = bgRef.current;
+      if (!el) return;
+      const r = el.getBoundingClientRect();
+      const nx = e.clientX - r.left - r.width / 2;
+      const ny = e.clientY - r.top - r.height / 2;
+      el.style.setProperty('--mx', (nx / r.width).toFixed(3));
+      el.style.setProperty('--my', (ny / r.height).toFixed(3));
+    };
+    window.addEventListener('mousemove', onBgMouseMove, { passive: true });
+    return () => window.removeEventListener('mousemove', onBgMouseMove);
+  }, []);
 
   const scrollToPricing = () => {
     const el = document.getElementById('pricing');
     if (el) el.scrollIntoView({ behavior: 'smooth' });
   };
 
+  const scrollToFeatures = () => {
+    const el = document.getElementById('features');
+    if (el) el.scrollIntoView({ behavior: 'smooth' });
+  };
+
   return (
-    <div className="min-h-screen bg-white text-slate-900 overflow-x-hidden">
-      {/* ============ CSS animations ============ */}
+    <div className="min-h-screen bg-white text-[#1d1d1f] overflow-x-hidden relative">
+      {/* ============ Dynamic animated background ============ */}
+      <div
+        ref={bgRef}
+        className="fixed inset-0 pointer-events-none z-0 overflow-hidden"
+        style={{ '--mx': '0', '--my': '0' } as React.CSSProperties}
+      >
+        {/* Aurora: 缓慢旋转的 conic 极光 */}
+        <div className="absolute left-1/2 -top-[30%] w-[1400px] h-[1400px] -translate-x-1/2 rounded-full opacity-[0.12] blur-[130px] aurora-spin"
+          style={{ background: 'conic-gradient(from 0deg, #6366f1, #a855f7, #d946ef, #ec4899, #6366f1)' }} />
+        {/* 动态点阵网格（向下渐隐） */}
+        <div className="absolute inset-0 dot-grid" />
+        {/* 浮动粒子场 */}
+        {PARTICLES.map((p, i) => (
+          <span key={i} className="particle" style={{
+            left: p.left,
+            bottom: p.bottom,
+            width: p.size,
+            height: p.size,
+            animationDuration: p.duration,
+            animationDelay: p.delay,
+            opacity: p.opacity,
+          }} />
+        ))}
+        {/* 三层光斑 + 鼠标视差（transform-only 合成层） */}
+        <div className="parallax-layer" style={{ transform: 'translate(calc(var(--mx) * -60px), calc(var(--my) * -60px))' }}>
+          <div
+            className="absolute w-[820px] h-[820px] rounded-full opacity-25 animate-blob-1"
+            style={{ background: 'linear-gradient(135deg, #6366f1, #8b5cf6)' }}
+          />
+        </div>
+        <div className="parallax-layer" style={{ transform: 'translate(calc(var(--mx) * 40px), calc(var(--my) * 40px))' }}>
+          <div
+            className="absolute w-[720px] h-[720px] rounded-full opacity-20 animate-blob-2"
+            style={{ background: 'linear-gradient(135deg, #a855f7, #d946ef)' }}
+          />
+        </div>
+        <div className="parallax-layer" style={{ transform: 'translate(calc(var(--mx) * 90px), calc(var(--my) * 90px))' }}>
+          <div
+            className="absolute w-[620px] h-[620px] rounded-full opacity-20 animate-blob-3"
+            style={{ background: 'linear-gradient(135deg, #8b5cf6, #a855f7)' }}
+          />
+        </div>
+      </div>
+      {/* ============ 液态玻璃光泽层（流动光线） ============ */}
+      <div className="pointer-events-none fixed inset-0 z-[1] glass-sheen" aria-hidden="true" />
+
+      {/* ============ CSS animations (Landing-specific) ============ */}
+      {/* NOTE: `float` and `pulse-glow` intentionally NOT redefined here — they
+          already live in src/index.css. Only Landing-specific keyframes are local. */}
       <style>{`
-        @keyframes float {
-          0%, 100% { transform: translateY(0px); }
-          50% { transform: translateY(-14px); }
-        }
-        @keyframes pulse-glow {
-          0%, 100% { box-shadow: 0 0 0 0 rgba(99,102,241,0.4); }
-          50% { box-shadow: 0 0 0 12px rgba(99,102,241,0); }
-        }
         @keyframes gradient-shift {
           0% { background-position: 0% 50%; }
           50% { background-position: 100% 50%; }
           100% { background-position: 0% 50%; }
         }
-        .animate-float { animation: float 6s ease-in-out infinite; }
-        .animate-pulse-glow { animation: pulse-glow 2s ease-in-out infinite; }
         .animate-gradient-shift { animation: gradient-shift 4s ease infinite; background-size: 200% 200%; }
+        @keyframes blob1 { 0%,100% { transform:translate(-10%,-10%) rotate(0deg) scale(1); } 33% { transform:translate(30%,10%) rotate(120deg) scale(1.15); } 66% { transform:translate(-20%,40%) rotate(240deg) scale(0.9); } }
+        @keyframes blob2 { 0%,100% { transform:translate(40%,20%) rotate(0deg) scale(1); } 33% { transform:translate(-30%,-30%) rotate(-120deg) scale(1.2); } 66% { transform:translate(20%,-10%) rotate(-240deg) scale(0.85); } }
+        @keyframes blob3 { 0%,100% { transform:translate(0%,30%) rotate(0deg) scale(1); } 33% { transform:translate(-40%,-20%) rotate(-100deg) scale(1.1); } 66% { transform:translate(30%,30%) rotate(200deg) scale(0.95); } }
+        .animate-blob-1 { animation: blob1 22s ease-in-out infinite; }
+        .animate-blob-2 { animation: blob2 22s ease-in-out infinite; }
+        .animate-blob-3 { animation: blob3 22s ease-in-out infinite; }
+
+        @keyframes floatY { 0%,100% { transform: translateY(0px); } 50% { transform: translateY(-12px); } }
+        .float-y { animation: floatY 7s ease-in-out infinite; }
+
+        @keyframes drawLine { to { stroke-dashoffset: 0; } }
+        .sparkline-path {
+          stroke-dasharray: 600;
+          stroke-dashoffset: 600;
+          animation: drawLine 2.6s cubic-bezier(0.25,0.1,0.25,1) 0.4s forwards;
+        }
+
+        @keyframes growBar { from { width: 0%; } }
+        .bar-grow { animation: growBar 1.3s cubic-bezier(0.25,0.1,0.25,1) forwards; }
+
+        @keyframes softPulse { 0%,100% { opacity: 1; } 50% { opacity: 0.55; } }
+        .soft-pulse { animation: softPulse 2.4s ease-in-out infinite; }
+
+        /* ---- 背景动效：极光 / 点阵网格 / 粒子 / 视差 ---- */
+        @keyframes auroraSpin { from { transform: translateX(-50%) rotate(0deg); } to { transform: translateX(-50%) rotate(360deg); } }
+        .aurora-spin {
+          transform: translateX(-50%);
+          animation: auroraSpin 42s linear infinite;
+        }
+
+        @keyframes gridPan { from { background-position: 0 0; } to { background-position: 34px 34px; } }
+        .dot-grid {
+          background-image: radial-gradient(circle, rgba(99, 102, 241, 0.22) 1px, transparent 1px);
+          background-size: 34px 34px;
+          -webkit-mask-image: radial-gradient(ellipse 75% 65% at 50% 28%, black 25%, transparent 78%);
+          mask-image: radial-gradient(ellipse 75% 65% at 50% 28%, black 25%, transparent 78%);
+          animation: gridPan 26s linear infinite;
+        }
+
+        @keyframes particleRise {
+          0%   { transform: translateY(0) scale(1);    opacity: 0; }
+          8%   { opacity: var(--po, 0.6); }
+          88%  { opacity: var(--po, 0.6); }
+          100% { transform: translateY(-105vh) scale(1.4); opacity: 0; }
+        }
+        .particle {
+          position: absolute;
+          border-radius: 50%;
+          background: radial-gradient(circle, rgba(167, 139, 250, 0.9), rgba(217, 70, 239, 0.25));
+          box-shadow: 0 0 6px rgba(168, 85, 247, 0.5);
+          animation-name: particleRise;
+          animation-timing-function: linear;
+          animation-iteration-count: infinite;
+          will-change: transform, opacity;
+        }
+
+        .parallax-layer { transition: transform 0.35s cubic-bezier(0.16, 1, 0.3, 1); will-change: transform; }
+
+        /* 光斑柔和边界 */
+        .animate-blob-1, .animate-blob-2, .animate-blob-3 { filter: blur(140px); }
+
+        /* 液态玻璃：流动光泽条纹（缓慢左右扫过） */
+        .glass-sheen {
+          background: linear-gradient(
+            115deg,
+            transparent 32%,
+            rgba(255, 255, 255, 0.55) 42%,
+            rgba(255, 255, 255, 0.1) 50%,
+            transparent 62%
+          );
+          background-size: 240% 240%;
+          animation: sheenDrift 17s ease-in-out infinite alternate;
+          will-change: background-position;
+        }
+        @keyframes sheenDrift {
+          from { background-position: 130% 0%; }
+          to   { background-position: -30% 0%; }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+          .aurora-spin, .dot-grid, .particle, .animate-blob-1, .animate-blob-2, .animate-blob-3, .float-y, .soft-pulse, .glass-sheen { animation: none !important; }
+          .parallax-layer { transition: none; }
+        }
+
+        /* 移动端性能降级：关闭最重的背景层（极光 / 粒子 / 点阵 / 光泽） */
+        @media (max-width: 767px) {
+          .aurora-spin, .dot-grid, .particle, .glass-sheen { display: none !important; }
+          .parallax-layer { transition: none !important; }
+        }
       `}</style>
 
       {/* ============ Navbar ============ */}
-      <nav className="fixed top-0 left-0 right-0 z-50 bg-white/70 backdrop-blur-xl border-b border-gray-100/50">
+      <header className={`fixed top-0 inset-x-0 z-50 transition-all duration-300 ${
+        scrolled ? 'bg-white/80 backdrop-blur-md border-b border-gray-100 shadow-sm' : 'bg-transparent'
+      }`}>
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">
             <div className="flex items-center gap-2.5">
-              <div className="h-9 w-9 rounded-lg bg-gradient-to-br from-violet-600 to-indigo-600 flex items-center justify-center">
+              <div className="h-9 w-9 rounded-xl bg-gradient-to-br from-violet-600 to-fuchsia-500 flex items-center justify-center shadow-lg shadow-violet-500/25">
                 <Sparkles size={18} className="text-white" />
               </div>
-              <span className="text-xl font-bold text-slate-900">Nexora</span>
+              <span className="text-xl font-bold text-[#1d1d1f]">Nexora</span>
             </div>
             <div className="hidden md:flex items-center gap-8">
               <a
                 href="#features"
-                className="text-sm font-medium text-gray-500 hover:text-slate-900 transition-colors duration-200"
+                className="text-sm font-medium text-[#6e6e73] hover:text-[#1d1d1f] transition-colors duration-200"
               >
                 功能特性
               </a>
               <a
                 href="#pricing"
-                className="text-sm font-medium text-gray-500 hover:text-slate-900 transition-colors duration-200"
+                className="text-sm font-medium text-[#6e6e73] hover:text-[#1d1d1f] transition-colors duration-200"
               >
                 定价方案
               </a>
             </div>
             <div className="flex items-center gap-3">
-              <Link to="/login">
-                <Button variant="outline" size="sm">
-                  登录
-                </Button>
-              </Link>
-              <Link to="/register">
-                <Button variant="primary" size="sm">
-                  免费注册
-                </Button>
-              </Link>
+              <div className="hidden md:flex items-center gap-3">
+                <Link to="/login">
+                  <Button variant="outline" size="sm">
+                    登录
+                  </Button>
+                </Link>
+                <Link to="/register">
+                  <Button variant="primary" size="sm">
+                    免费注册
+                  </Button>
+                </Link>
+              </div>
+              {/* Mobile hamburger menu */}
+              <button
+                className="md:hidden p-2 rounded-lg text-[#1d1d1f] hover:bg-gray-100 transition-colors"
+                onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+                aria-label="切换导航菜单"
+                aria-expanded={mobileMenuOpen}
+              >
+                {mobileMenuOpen ? <X size={22} /> : <Menu size={22} />}
+              </button>
             </div>
           </div>
+
+          {/* Mobile dropdown navigation panel */}
+          {mobileMenuOpen && (
+            <div className="md:hidden py-4 border-t border-gray-100 space-y-1 animate-fade-in">
+              <a
+                href="#features"
+                onClick={() => setMobileMenuOpen(false)}
+                className="block px-3 py-2 rounded-lg text-base font-medium text-[#6e6e73] hover:text-[#1d1d1f] hover:bg-gray-50 transition-colors"
+              >
+                功能特性
+              </a>
+              <a
+                href="#pricing"
+                onClick={() => setMobileMenuOpen(false)}
+                className="block px-3 py-2 rounded-lg text-base font-medium text-[#6e6e73] hover:text-[#1d1d1f] hover:bg-gray-50 transition-colors"
+              >
+                定价方案
+              </a>
+              <div className="pt-3 mt-3 border-t border-gray-100 flex flex-col gap-2">
+                <Link to="/login" onClick={() => setMobileMenuOpen(false)}>
+                  <Button variant="outline" size="sm" className="w-full">
+                    登录
+                  </Button>
+                </Link>
+                <Link to="/register" onClick={() => setMobileMenuOpen(false)}>
+                  <Button variant="primary" size="sm" className="w-full">
+                    免费注册
+                  </Button>
+                </Link>
+              </div>
+            </div>
+          )}
         </div>
-      </nav>
+      </header>
 
       {/* ============ Hero — split screen ============ */}
-      <section className="relative pt-28 pb-20 px-4 sm:px-6 lg:px-8 overflow-hidden">
-        {/* Abstract decorative shapes */}
-        <div className="absolute top-10 right-[10%] w-[500px] h-[500px] rounded-full bg-gradient-to-br from-violet-200/30 to-indigo-200/20 blur-3xl pointer-events-none" />
-        <div className="absolute top-1/3 right-[20%] w-72 h-72 rounded-full bg-gradient-to-tr from-cyan-300/20 to-blue-300/10 blur-3xl pointer-events-none" />
-        <div className="absolute bottom-10 left-[5%] w-96 h-96 rounded-full bg-gradient-to-tr from-rose-200/20 to-pink-200/10 blur-3xl pointer-events-none" />
+      <section className="relative pt-36 sm:pt-44 pb-24 sm:pb-36 px-4 sm:px-6 lg:px-8 overflow-hidden bg-white/55 backdrop-blur-2xl">
+        {/* Local decorative orbs */}
+        <div className="absolute -top-20 left-1/4 w-[500px] h-[500px] rounded-full bg-violet-200/30 blur-3xl pointer-events-none" />
+        <div className="absolute top-1/3 right-[8%] w-72 h-72 rounded-full bg-fuchsia-200/25 blur-3xl pointer-events-none" />
+        <div className="absolute bottom-10 left-[2%] w-96 h-96 rounded-full bg-indigo-200/20 blur-3xl pointer-events-none" />
 
         <div className="max-w-7xl mx-auto relative z-10">
-          <div className="grid lg:grid-cols-2 gap-12 lg:gap-20 items-center">
-            {/* Left */}
-            <div>
+          <div className="grid lg:grid-cols-2 lg:gap-16 items-center">
+            {/* Left — copy */}
+            <div className="text-center lg:text-left">
               <Reveal>
-                <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-violet-50 border border-violet-100 text-violet-700 text-sm font-medium mb-8">
-                  <span className="w-2 h-2 rounded-full bg-violet-500 animate-pulse-glow" />
+                <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-white/70 border border-violet-100 text-violet-700 text-sm font-medium shadow-sm backdrop-blur">
+                  <span className="w-2 h-2 rounded-full bg-gradient-to-r from-violet-500 to-fuchsia-500 animate-pulse-glow" />
                   v2.0 现已发布
+                  <span className="text-violet-300">·</span>
+                  <span className="text-[#8e8e93]">6 大平台已接入</span>
                 </div>
               </Reveal>
               <Reveal delay={150}>
-                <h1 className="text-5xl sm:text-6xl lg:text-7xl font-extrabold text-slate-900 tracking-tight leading-[1.05]">
-                  构建您的 SaaS
+                <h1 className="mt-8 text-5xl sm:text-7xl lg:text-8xl text-[#1d1d1f] leading-[1.04] tracking-tight">
+                  <span className="font-light tracking-tight">一个面板，</span>
                   <br />
-                  <span className="text-transparent bg-clip-text bg-gradient-to-r from-violet-600 via-indigo-600 to-cyan-500 animate-gradient-shift">
-                    前所未有的快
+                  <span className="font-semibold bg-gradient-to-r from-violet-600 via-purple-600 to-fuchsia-500 bg-clip-text text-transparent">
+                    管理全部电商渠道
                   </span>
+                  <span className="font-light italic text-[#6e6e73]">。</span>
                 </h1>
               </Reveal>
               <Reveal delay={300}>
-                <p className="mt-6 text-lg text-gray-500 max-w-lg leading-relaxed">
-                  Nexora 为您提供启动多租户 SaaS 平台所需的一切。工作空间管理、团队协作、订阅计费和 API 密钥 —— 一站搞定。
+                <p className="mt-6 text-base sm:text-lg text-[#6e6e73] leading-relaxed max-w-xl mx-auto lg:mx-0">
+                  连接 Shopify、抖音、淘宝。订单自动汇聚、库存实时同步、千问 AI 深度分析——不是报表，是建议。
                 </p>
               </Reveal>
               <Reveal delay={450}>
-                <div className="mt-8 flex flex-wrap items-center gap-4">
+                <div className="mt-9 flex flex-wrap items-center justify-center lg:justify-start gap-4">
                   <Link to="/register">
                     <Button
                       variant="primary"
@@ -409,104 +819,103 @@ export const Landing: React.FC = () => {
                       rightIcon={<ArrowRight size={18} />}
                       className="shadow-lg shadow-violet-500/25 hover:shadow-xl hover:shadow-violet-500/30 hover:scale-105"
                     >
-                      免费开始使用
+                      开始免费试用
                     </Button>
                   </Link>
                   <Button
                     variant="outline"
                     size="lg"
-                    onClick={scrollToPricing}
+                    onClick={scrollToFeatures}
                     className="hover:scale-105"
                   >
-                    查看演示
+                    查看功能
                   </Button>
                 </div>
               </Reveal>
               <Reveal delay={600}>
-                <p className="mt-5 text-sm text-gray-400">
-                  无需信用卡 · 14 天免费试用
-                </p>
+                <div className="mt-8 flex flex-wrap items-center justify-center lg:justify-start gap-x-7 gap-y-2.5">
+                  {['无需信用卡', '14 天免费', '5 分钟接入'].map((t) => (
+                    <span key={t} className="inline-flex items-center gap-2 text-sm text-[#6e6e73]">
+                      <span className="w-5 h-5 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center">
+                        <Check size={11} strokeWidth={3} />
+                      </span>
+                      {t}
+                    </span>
+                  ))}
+                </div>
               </Reveal>
             </div>
 
-            {/* Right — floating dashboard */}
-            <div className="relative flex justify-center lg:justify-end">
-              {/* Decorative circles behind */}
-              <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[340px] h-[340px] rounded-full bg-gradient-to-br from-violet-400/10 to-indigo-500/10 blur-2xl" />
-              <div className="absolute top-1/3 right-0 w-48 h-48 rounded-full bg-gradient-to-tr from-cyan-300/15 to-blue-400/10 blur-2xl" />
-              <DashboardCard />
-            </div>
+            {/* Right — animated console mockup */}
+            <Reveal delay={300} className="mt-20 lg:mt-0">
+              <HeroConsole />
+            </Reveal>
           </div>
         </div>
       </section>
 
-      {/* ============ Stats strip ============ */}
-      <section className="py-14 bg-gradient-to-r from-slate-50 via-violet-50/30 to-slate-50 border-y border-gray-100">
+      {/* ============ Trust Anchors (Stripe-style big numbers) ============ */}
+      <section className="relative py-20 sm:py-24 bg-white/55 backdrop-blur-2xl border-y border-gray-100 overflow-hidden">
+        <div className="absolute -right-20 top-0 w-[350px] h-[350px] bg-violet-300/20 rounded-full blur-[100px] pointer-events-none" />
+        <div className="absolute -left-20 bottom-0 w-[350px] h-[350px] bg-fuchsia-300/20 rounded-full blur-[100px] pointer-events-none" />
         <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-8">
-            {[
-              { value: 74, suffix: '', label: '总订单' },
-              { value: 4657, suffix: '', label: '营收 (¥)', prefix: '¥' },
-              { value: 100, suffix: '', label: '客户数' },
-              { value: 50, suffix: '', label: '商品数' },
-            ].map((stat) => (
-              <Reveal key={stat.label} delay={100}>
-                <div className="text-center group cursor-default">
-                  <div className="text-3xl sm:text-4xl font-bold text-slate-900 group-hover:text-violet-600 transition-colors duration-300">
-                    {stat.prefix}
-                    <AnimatedCounter target={stat.value} suffix={stat.suffix} />
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-10 md:gap-8 text-center">
+            {marketingStats.map((s, i) => (
+              <Reveal key={s.label} delay={i * 100}>
+                <div className="space-y-1">
+                  <div className="text-4xl md:text-5xl font-bold text-[#1d1d1f] tabular-nums tracking-tight">
+                    {s.value}
                   </div>
-                  <div className="mt-1.5 text-sm text-gray-400 font-medium">
-                    {stat.label}
-                  </div>
+                  <div className="mt-2 text-sm font-medium text-[#1d1d1f]">{s.label}</div>
+                  <div className="text-xs text-[#8e8e93]">{s.sub}</div>
                 </div>
               </Reveal>
+            ))}
+          </div>
+          <div className="mt-14 pt-8 border-t border-gray-100 flex flex-wrap items-center justify-center gap-x-10 gap-y-3 opacity-40">
+            {['Shopify', '抖音', '淘宝', '拼多多', '京东', 'Amazon'].map((name) => (
+              <span key={name} className="text-xs font-semibold text-[#8e8e93] tracking-wide">
+                {name}
+              </span>
             ))}
           </div>
         </div>
       </section>
 
-      {/* ============ Wavy divider ============ */}
-      <div className="text-violet-50">
-        <WavyDivider />
-      </div>
-
-      {/* ============ Features — Bento Grid ============ */}
-      <section id="features" className="py-24 px-4 sm:px-6 lg:px-8 bg-violet-50/40">
+      {/* ============ Features — 2x2 glass cards ============ */}
+      <section id="features" className="relative py-24 sm:py-32 px-4 sm:px-6 lg:px-8 bg-white/55 backdrop-blur-2xl overflow-hidden">
+        <div className="absolute top-0 right-0 w-[500px] h-[500px] bg-violet-200/30 rounded-full blur-[120px] pointer-events-none" />
+        <div className="absolute bottom-0 left-0 w-[400px] h-[400px] bg-fuchsia-200/25 rounded-full blur-[100px] pointer-events-none" />
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[300px] h-[300px] bg-indigo-200/20 rounded-full blur-[80px] pointer-events-none" />
         <div className="max-w-6xl mx-auto">
           <Reveal>
             <div className="text-center mb-16">
-              <h2 className="text-3xl sm:text-4xl font-bold text-slate-900">
+              <span className="text-xs font-semibold tracking-[0.25em] text-violet-500">
+                FEATURES
+              </span>
+              <h2 className="mt-4 text-3xl sm:text-4xl font-medium text-[#1d1d1f]">
                 扩展所需的一切功能
               </h2>
-              <p className="mt-4 text-lg text-gray-500 max-w-2xl mx-auto">
+              <p className="mt-4 text-base sm:text-lg text-[#6e6e73] leading-relaxed max-w-2xl mx-auto">
                 强大的功能，旨在帮助您轻松构建和管理多租户 SaaS 平台。
               </p>
             </div>
           </Reveal>
 
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 auto-rows-[minmax(180px,auto)]">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             {bentoFeatures.map((feature, idx) => (
               <Reveal key={feature.title} delay={idx * 100}>
-                <div
-                  className={`group relative overflow-hidden rounded-2xl border border-gray-200/80 bg-white p-6 hover:scale-[1.02] hover:shadow-xl hover:shadow-violet-500/5 hover:border-violet-200/50 transition-all duration-500 cursor-default ${feature.colSpan || ''}`}
-                >
-                  {/* Gradient bg on hover */}
-                  <div
-                    className={`absolute inset-0 bg-gradient-to-br ${feature.gradient} opacity-0 group-hover:opacity-100 transition-opacity duration-500`}
-                  />
+                <div className="group relative overflow-hidden p-8 rounded-3xl glass-card hover:-translate-y-1 hover:shadow-2xl transition-all duration-500 cursor-default">
+                  {/* subtle top sheen */}
+                  <div className="absolute -top-16 -right-16 w-40 h-40 rounded-full bg-gradient-to-br from-violet-200/40 to-fuchsia-200/30 blur-2xl opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none" />
                   <div className="relative z-10">
                     <div
-                      className={`w-11 h-11 rounded-xl ${feature.iconBg} flex items-center justify-center mb-4 group-hover:scale-110 transition-transform duration-300`}
+                      className={`w-12 h-12 rounded-xl bg-gradient-to-br ${feature.accent} text-white flex items-center justify-center mb-5 shadow-lg ${feature.shadow} group-hover:scale-110 group-hover:-rotate-3 transition-transform duration-300`}
                     >
                       <feature.icon size={22} />
                     </div>
-                    <h3 className="text-lg font-semibold text-slate-900 mb-2">
-                      {feature.title}
-                    </h3>
-                    <p className="text-sm text-gray-500 leading-relaxed">
-                      {feature.desc}
-                    </p>
+                    <h3 className="text-lg font-semibold text-[#1d1d1f] mb-2">{feature.title}</h3>
+                    <p className="text-sm text-[#6e6e73] leading-relaxed">{feature.desc}</p>
                   </div>
                 </div>
               </Reveal>
@@ -515,120 +924,64 @@ export const Landing: React.FC = () => {
         </div>
       </section>
 
-      {/* ============ Wavy divider flip ============ */}
-      <div className="text-violet-50/40">
-        <WavyDivider flip />
-      </div>
-
-      {/* ============ Dashboard Preview ============ */}
-      <section className="py-24 px-4 sm:px-6 lg:px-8 bg-white">
+      {/* ============ Scroll Narrative — 连接 → AI 分析 → 智能决策 ============ */}
+      <section className="relative py-24 sm:py-32 px-4 sm:px-6 lg:px-8 bg-white/55 backdrop-blur-2xl overflow-hidden">
+        <div className="absolute top-1/4 right-0 w-[450px] h-[450px] bg-violet-200/25 rounded-full blur-[120px] pointer-events-none" />
+        <div className="absolute bottom-1/4 left-0 w-[400px] h-[400px] bg-fuchsia-200/20 rounded-full blur-[120px] pointer-events-none" />
         <div className="max-w-5xl mx-auto">
           <Reveal>
-            <div className="text-center mb-12">
-              <h2 className="text-3xl sm:text-4xl font-bold text-slate-900">
-                一目了然的数据面板
+            <div className="text-center mb-20">
+              <span className="text-xs font-semibold tracking-[0.25em] text-violet-500">
+                HOW IT WORKS
+              </span>
+              <h2 className="mt-4 text-3xl sm:text-4xl font-medium text-[#1d1d1f]">
+                连接 →
+                <span className="bg-gradient-to-r from-violet-600 to-fuchsia-500 bg-clip-text text-transparent">
+                  AI 分析
+                </span>
+                {' '}→ 智能决策
               </h2>
-              <p className="mt-4 text-lg text-gray-500">
-                实时数据仪表盘，关键指标尽在掌握
+              <p className="mt-4 text-base sm:text-lg text-[#6e6e73] leading-relaxed max-w-2xl mx-auto">
+                三步完成从多平台数据到可执行商业决策的闭环
               </p>
             </div>
           </Reveal>
-
-          <Reveal delay={200}>
-            {/* Browser frame mockup */}
-            <div className="relative rounded-2xl overflow-hidden border border-gray-200 shadow-2xl shadow-slate-900/5">
-              {/* Title bar */}
-              <div className="flex items-center gap-2 px-4 py-3 bg-gray-50 border-b border-gray-100">
-                <div className="flex items-center gap-1.5">
-                  <div className="w-3 h-3 rounded-full bg-red-400" />
-                  <div className="w-3 h-3 rounded-full bg-amber-400" />
-                  <div className="w-3 h-3 rounded-full bg-emerald-400" />
-                </div>
-                <div className="flex-1 mx-4">
-                  <div className="max-w-xs h-6 rounded-md bg-gray-200/70 flex items-center justify-center text-[10px] text-gray-400 font-mono">
-                    app.nexora.io/dashboard
-                  </div>
-                </div>
-              </div>
-              {/* Dashboard preview area */}
-              <div className="aspect-[21/9] bg-gradient-to-br from-slate-50 via-violet-50/30 to-slate-50 p-6 sm:p-10 flex flex-col items-center justify-center">
-                <div className="text-center">
-                  <BarChart3 size={48} className="text-violet-300 mx-auto mb-4" />
-                  <p className="text-lg font-semibold text-slate-400 mb-2">
-                    Dashboard Preview
-                  </p>
-                  <p className="text-sm text-gray-300 max-w-md">
-                    注册后即可访问完整的分析面板，包含实时订单追踪、营收趋势和客户洞察。
-                  </p>
-                </div>
-                {/* Mini cards grid for preview */}
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-8 w-full max-w-2xl">
-                  {[
-                    { label: '今日订单', value: '12', color: 'text-violet-600' },
-                    { label: '活跃客户', value: '38', color: 'text-emerald-600' },
-                    { label: '转化率', value: '4.2%', color: 'text-amber-600' },
-                    { label: '处理中', value: '3', color: 'text-rose-600' },
-                  ].map((m) => (
-                    <div
-                      key={m.label}
-                      className="rounded-xl bg-white/80 border border-gray-100 p-3 text-center hover:shadow-md hover:-translate-y-0.5 transition-all duration-300"
-                    >
-                      <div className={`text-xl font-bold ${m.color}`}>{m.value}</div>
-                      <div className="text-[11px] text-gray-400 mt-0.5">{m.label}</div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-          </Reveal>
-
-          {/* Partner / Tech strip */}
-          <Reveal delay={400}>
-            <div className="mt-16 text-center">
-              <p className="text-xs text-gray-300 uppercase tracking-widest mb-5">
-                技术生态
-              </p>
-              <div className="flex flex-wrap items-center justify-center gap-x-8 gap-y-3">
-                {[
-                  'FastAPI',
-                  'React 18',
-                  'TypeScript',
-                  'SQLAlchemy',
-                  'ECharts',
-                  'Tailwind CSS',
-                  'Vite',
-                  'Docker',
-                  'Stripe',
-                  'Shopify',
-                ].map((t) => (
-                  <span
-                    key={t}
-                    className="text-sm font-medium text-gray-300 hover:text-violet-500 transition-colors cursor-default select-none"
-                  >
-                    {t}
-                  </span>
-                ))}
-              </div>
-            </div>
-          </Reveal>
+          <div className="space-y-24 sm:space-y-32">
+            {narrativeSteps.map((item, i) => (
+              <NarrativeRow key={item.num} item={item} index={i} />
+            ))}
+          </div>
         </div>
       </section>
 
       {/* ============ Wavy divider ============ */}
-      <div className="text-gray-50">
+      <div className="text-[#f5f5f7]">
         <WavyDivider />
       </div>
 
-      {/* ============ AI Highlight ============ */}
-      <section className="py-16 px-4 sm:px-6 lg:px-8 bg-gradient-to-r from-primary-600 via-purple-600 to-primary-700 text-white">
-        <div className="max-w-5xl mx-auto text-center">
+      {/* ============ Qwen AI Highlight ============ */}
+      <section className="relative py-20 sm:py-24 px-4 sm:px-6 lg:px-8 bg-gradient-to-br from-violet-600 via-purple-600 to-violet-700 text-white overflow-hidden">
+        {/* glow orbs */}
+        <div className="absolute -top-32 -right-24 w-[420px] h-[420px] rounded-full bg-fuchsia-400/20 blur-[120px] pointer-events-none" />
+        <div className="absolute -bottom-40 -left-24 w-[460px] h-[460px] rounded-full bg-indigo-400/20 blur-[130px] pointer-events-none" />
+        <div className="absolute top-1/3 left-1/2 w-[300px] h-[300px] rounded-full bg-white/10 blur-[100px] pointer-events-none" />
+        {/* subtle noise */}
+        <div
+          className="absolute inset-0 pointer-events-none opacity-[0.06] mix-blend-overlay"
+          style={{
+            backgroundImage:
+              "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E\")",
+            backgroundSize: '160px 160px',
+          }}
+        />
+        <div className="max-w-5xl mx-auto text-center relative">
           <Reveal>
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/20 text-sm font-medium mb-6">
-              <Sparkles size={16} className="text-amber-300" />
+            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/20 text-sm font-medium mb-6 backdrop-blur">
+              <Sparkles size={16} className="text-violet-200" />
               千问 AI 驱动
             </div>
-            <h2 className="text-3xl sm:text-4xl font-bold">通义千问 · 真正的 AI 电商智能</h2>
-            <p className="mt-4 text-lg text-white/80 max-w-3xl mx-auto">
+            <h2 className="text-3xl sm:text-4xl font-medium">通义千问 · 真正的 AI 电商智能</h2>
+            <p className="mt-4 text-base sm:text-lg text-white/80 leading-relaxed max-w-3xl mx-auto">
               Nexora 集成了阿里云通义千问（Qwen）大模型，对您的订单数据、客户行为和商品表现进行深度分析 — 不是规则模板，是真正的 AI 推理。
             </p>
             <div className="mt-10 grid grid-cols-1 md:grid-cols-3 gap-6 text-left">
@@ -637,7 +990,10 @@ export const Landing: React.FC = () => {
                 { icon: '📈', title: '智能营收预测', desc: '基于历史销售曲线 + 季节性因素，生成未来 7 天营收预测及置信区间。' },
                 { icon: '💡', title: '可执行建议', desc: '不仅是"提升销量"，而是"优先处理 pending 订单、分析抖音取消原因"等具体行动项。' },
               ].map((item, i) => (
-                <div key={i} className="bg-white/10 backdrop-blur rounded-xl p-6 border border-white/20 hover:bg-white/15 transition-colors">
+                <div
+                  key={i}
+                  className="bg-white/10 backdrop-blur rounded-2xl p-6 border border-white/20 hover:bg-white/15 hover:-translate-y-1 transition-all duration-300 shadow-lg shadow-black/10"
+                >
                   <div className="text-3xl mb-3">{item.icon}</div>
                   <h3 className="font-semibold text-lg mb-2">{item.title}</h3>
                   <p className="text-sm text-white/70">{item.desc}</p>
@@ -648,50 +1004,61 @@ export const Landing: React.FC = () => {
         </div>
       </section>
 
-      <div className="text-gray-50">
+      <div className="text-[#f5f5f7]">
         <WavyDivider flip />
       </div>
 
       {/* ============ Pricing ============ */}
-      <section id="pricing" className="py-24 px-4 sm:px-6 lg:px-8 bg-gray-50">
+      <section id="pricing" className="relative py-24 sm:py-32 px-4 sm:px-6 lg:px-8 bg-white/55 backdrop-blur-2xl overflow-hidden">
+        <div className="absolute top-0 right-1/4 w-[500px] h-[500px] bg-violet-300/20 rounded-full blur-[130px] pointer-events-none" />
+        <div className="absolute bottom-0 left-1/4 w-[400px] h-[400px] bg-fuchsia-300/20 rounded-full blur-[100px] pointer-events-none" />
         <div className="max-w-6xl mx-auto">
           <Reveal>
             <div className="text-center mb-10">
-              <h2 className="text-3xl sm:text-4xl font-bold text-slate-900">
+              <span className="text-xs font-semibold tracking-[0.25em] text-violet-500">
+                PRICING
+              </span>
+              <h2 className="mt-4 text-3xl sm:text-4xl font-medium text-[#1d1d1f]">
                 简单透明的定价
               </h2>
-              <p className="mt-4 text-lg text-gray-500 max-w-2xl mx-auto">
+              <p className="mt-4 text-base sm:text-lg text-[#6e6e73] leading-relaxed max-w-2xl mx-auto">
                 选择适合您需求的方案。随时升级或降级。
               </p>
             </div>
           </Reveal>
 
-          {/* Toggle */}
+          {/* Toggle (capsule) */}
           <Reveal delay={100}>
-            <div className="flex items-center justify-center gap-1.5 mb-12">
-              <button
-                onClick={() => setIsYearly(false)}
-                className={`px-5 py-2 rounded-l-xl text-sm font-medium transition-all duration-300 ${
-                  !isYearly
-                    ? 'bg-violet-600 text-white shadow-md shadow-violet-500/20'
-                    : 'bg-white text-gray-500 hover:bg-gray-100 border border-gray-200'
-                }`}
-              >
-                月付
-              </button>
-              <button
-                onClick={() => setIsYearly(true)}
-                className={`px-5 py-2 rounded-r-xl text-sm font-medium transition-all duration-300 flex items-center gap-1.5 ${
-                  isYearly
-                    ? 'bg-violet-600 text-white shadow-md shadow-violet-500/20'
-                    : 'bg-white text-gray-500 hover:bg-gray-100 border border-gray-200'
-                }`}
-              >
-                年付
-                <span className="text-[10px] bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded-full font-semibold">
-                  省17%
-                </span>
-              </button>
+            <div className="flex items-center justify-center mb-12">
+              <div className="inline-flex items-center p-1 rounded-full bg-[#F5F5F7] border border-gray-200 shadow-sm">
+                <button
+                  onClick={() => setIsYearly(false)}
+                  className={`px-6 py-2 rounded-full text-sm font-medium transition-all duration-300 ${
+                    !isYearly
+                      ? 'bg-[#1d1d1f] text-white shadow-md'
+                      : 'text-[#6e6e73] hover:text-[#1d1d1f]'
+                  }`}
+                >
+                  月付
+                </button>
+                <button
+                  onClick={() => setIsYearly(true)}
+                  className={`px-6 py-2 rounded-full text-sm font-medium transition-all duration-300 flex items-center gap-1.5 ${
+                    isYearly
+                      ? 'bg-[#1d1d1f] text-white shadow-md'
+                      : 'text-[#6e6e73] hover:text-[#1d1d1f]'
+                  }`}
+                >
+                  年付
+                  <span
+                    className={`text-[10px] px-1.5 py-0.5 rounded-full font-semibold ${
+                      isYearly ? 'bg-white/20 text-white' : 'bg-emerald-100 text-emerald-700'
+                    }`}
+                  >
+                    省17%
+                  </span>
+                </button>
+              </div>
             </div>
           </Reveal>
 
@@ -699,60 +1066,49 @@ export const Landing: React.FC = () => {
             {pricingPlans.map((plan, idx) => (
               <Reveal key={plan.name} delay={idx * 150}>
                 <div
-                  className={`relative rounded-2xl p-8 transition-all duration-500 bg-white ${
+                  className={`relative rounded-3xl p-8 transition-all duration-500 glass-card ${
                     plan.popular
-                      ? 'border-2 border-violet-200 shadow-2xl shadow-violet-500/10 scale-[1.03] z-10 hover:scale-[1.06]'
+                      ? 'border-2 border-violet-300 shadow-2xl shadow-violet-500/10 scale-[1.03] z-10 hover:scale-[1.05]'
                       : 'border border-gray-200 shadow-sm hover:shadow-xl hover:-translate-y-1'
                   }`}
                 >
                   {plan.popular && (
-                    <>
-                      <div className="absolute -top-0.5 -left-0.5 -right-0.5 -bottom-0.5 rounded-2xl bg-gradient-to-br from-violet-500/10 to-indigo-500/10 -z-10 blur-sm" />
-                      <div className="absolute -top-3 left-1/2 -translate-x-1/2">
-                        <span className="px-3.5 py-1 rounded-full bg-gradient-to-r from-violet-600 to-indigo-600 text-white text-xs font-semibold shadow-lg shadow-violet-500/30">
-                          推荐
-                        </span>
-                      </div>
-                    </>
+                    <div className="absolute -top-3 left-1/2 -translate-x-1/2">
+                      <span className="px-3.5 py-1 rounded-full bg-gradient-to-r from-violet-600 to-fuchsia-500 text-white text-xs font-semibold shadow-lg shadow-violet-500/30">
+                        推荐
+                      </span>
+                    </div>
                   )}
                   {/* Tier badge */}
                   <div className="mb-3">
-                    <span
-                      className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                        plan.tier === 'free'
-                          ? 'bg-blue-50 text-blue-700 border border-blue-200'
-                          : plan.tier === 'pro'
-                          ? 'bg-purple-50 text-purple-700 border border-purple-200'
-                          : 'bg-amber-50 text-amber-700 border border-amber-200'
-                      }`}
-                    >
+                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-violet-50 text-violet-700 border border-violet-200">
                       {plan.tier === 'free' ? '基础版' : plan.tier === 'pro' ? '专业版' : '企业版'}
                     </span>
                   </div>
-                  <h3 className="text-lg font-semibold text-slate-900">{plan.name}</h3>
+                  <h3 className="text-lg font-semibold text-[#1d1d1f]">{plan.name}</h3>
                   <div className="mt-4 flex items-baseline">
-                    <span className="text-4xl font-bold text-slate-900">
+                    <span className="text-4xl font-bold text-[#1d1d1f]">
                       {plan.name === 'Free'
                         ? '¥0'
                         : isYearly
                           ? `¥${plan.name === 'Pro' ? '24' : '83'}`
                           : plan.price}
                     </span>
-                    <span className="ml-1.5 text-sm text-gray-400">
+                    <span className="ml-1.5 text-sm text-[#8e8e93]">
                       /{plan.name === 'Free' ? plan.period : '月'}
                     </span>
                   </div>
                   {isYearly && plan.name !== 'Free' && (
-                    <p className="text-xs text-gray-400 mt-1">
+                    <p className="text-xs text-[#8e8e93] mt-1">
                       每年 ¥{plan.name === 'Pro' ? '289' : '986'}
                     </p>
                   )}
-                  <p className="mt-2 text-sm text-gray-500">{plan.description}</p>
+                  <p className="mt-2 text-sm text-[#6e6e73]">{plan.description}</p>
                   <ul className="mt-6 space-y-3">
                     {plan.features.map((feature) => (
                       <li key={feature} className="flex items-start gap-3">
                         <Check size={16} className="text-emerald-500 flex-shrink-0 mt-0.5" />
-                        <span className="text-sm text-gray-600">{feature}</span>
+                        <span className="text-sm text-[#6e6e73]">{feature}</span>
                       </li>
                     ))}
                   </ul>
@@ -777,42 +1133,34 @@ export const Landing: React.FC = () => {
         </div>
       </section>
 
-      {/* ============ CTA with wavy divider ============ */}
-      <div className="text-gray-50">
-        <WavyDivider flip />
-      </div>
-
-      <section className="py-20 px-4 sm:px-6 lg:px-8 bg-gradient-to-br from-violet-600 via-indigo-700 to-cyan-700 relative overflow-hidden">
-        {/* Decorative shapes */}
+      {/* ============ CTA ============ */}
+      <section className="relative py-20 sm:py-24 px-4 sm:px-6 lg:px-8 bg-gradient-to-br from-violet-600 via-purple-600 to-fuchsia-600 overflow-hidden">
         <div className="absolute top-0 right-0 w-80 h-80 rounded-full bg-white/5 -translate-y-1/2 translate-x-1/4" />
         <div className="absolute bottom-0 left-0 w-96 h-96 rounded-full bg-white/5 translate-y-1/2 -translate-x-1/4" />
-        <div className="absolute top-1/3 left-1/4 w-64 h-64 rounded-full bg-cyan-400/10 blur-3xl" />
+        <div className="absolute top-1/3 left-1/4 w-64 h-64 rounded-full bg-fuchsia-400/10 blur-3xl" />
 
         <div className="max-w-6xl mx-auto relative">
           <div className="grid lg:grid-cols-2 gap-10 items-center">
             <Reveal>
               <div>
-                <h2 className="text-3xl sm:text-4xl lg:text-5xl font-extrabold text-white leading-tight">
+                <h2 className="text-3xl sm:text-4xl lg:text-5xl font-medium text-white leading-tight">
                   准备好构建您的
                   <br />
                   SaaS 了吗？
                 </h2>
-                <p className="mt-4 text-lg text-violet-100 max-w-md">
+                <p className="mt-4 text-base sm:text-lg text-violet-100 leading-relaxed max-w-md">
                   今天就开始构建您的多租户平台。14 天免费试用，无需信用卡。
                 </p>
               </div>
             </Reveal>
             <Reveal delay={200}>
               <div className="flex flex-col sm:flex-row items-start lg:justify-end gap-4">
-                <Link to="/register">
-                  <Button
-                    variant="primary"
-                    size="lg"
-                    className="bg-white text-violet-600 hover:bg-violet-50 hover:scale-105 transition-all duration-300 shadow-xl shadow-black/10"
-                    rightIcon={<ArrowRight size={18} />}
-                  >
-                    开始免费试用
-                  </Button>
+                <Link
+                  to="/register"
+                  className="inline-flex items-center gap-2 px-8 py-4 rounded-full bg-white text-violet-700 font-semibold text-base shadow-xl shadow-black/10 hover:bg-violet-50 hover:scale-105 transition-all duration-300"
+                >
+                  开始免费试用
+                  <ArrowRight size={18} />
                 </Link>
                 <Button
                   variant="outline"
@@ -829,14 +1177,17 @@ export const Landing: React.FC = () => {
       </section>
 
       {/* ============ FAQ ============ */}
-      <section id="faq" className="py-24 px-4 sm:px-6 lg:px-8 bg-white">
+      <section id="faq" className="relative py-24 sm:py-32 px-4 sm:px-6 lg:px-8 bg-white/55 backdrop-blur-2xl overflow-hidden">
         <div className="max-w-3xl mx-auto">
           <Reveal>
             <div className="text-center mb-12">
-              <h2 className="text-3xl sm:text-4xl font-bold text-slate-900">
+              <span className="text-xs font-semibold tracking-[0.25em] text-violet-500">
+                FAQ
+              </span>
+              <h2 className="mt-4 text-3xl sm:text-4xl font-medium text-[#1d1d1f]">
                 常见问题
               </h2>
-              <p className="mt-4 text-lg text-gray-500">
+              <p className="mt-4 text-base sm:text-lg text-[#6e6e73] leading-relaxed">
                 关于 Nexora 的常见疑问解答
               </p>
             </div>
@@ -857,12 +1208,12 @@ export const Landing: React.FC = () => {
       </section>
 
       {/* ============ Footer ============ */}
-      <footer className="bg-slate-900 text-gray-400 py-16 px-4 sm:px-6 lg:px-8">
+      <footer className="bg-slate-900 text-[#8e8e93] py-16 px-4 sm:px-6 lg:px-8">
         <div className="max-w-7xl mx-auto">
           <div className="grid md:grid-cols-5 gap-8">
             <div className="md:col-span-2">
               <div className="flex items-center gap-2.5 mb-4">
-                <div className="h-9 w-9 rounded-lg bg-gradient-to-br from-violet-500 to-indigo-500 flex items-center justify-center">
+                <div className="h-9 w-9 rounded-xl bg-gradient-to-br from-violet-500 to-fuchsia-500 flex items-center justify-center shadow-lg shadow-violet-500/20">
                   <Sparkles size={18} className="text-white" />
                 </div>
                 <span className="text-xl font-bold text-white">Nexora</span>
@@ -875,7 +1226,7 @@ export const Landing: React.FC = () => {
                   href="https://github.com"
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="text-gray-400 hover:text-white transition-colors"
+                  className="text-[#8e8e93] hover:text-white transition-colors"
                   aria-label="GitHub"
                 >
                   <Github size={20} />
@@ -884,7 +1235,7 @@ export const Landing: React.FC = () => {
                   href="https://twitter.com"
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="text-gray-400 hover:text-white transition-colors"
+                  className="text-[#8e8e93] hover:text-white transition-colors"
                   aria-label="Twitter"
                 >
                   <Twitter size={20} />
@@ -893,7 +1244,7 @@ export const Landing: React.FC = () => {
                   href="https://linkedin.com"
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="text-gray-400 hover:text-white transition-colors"
+                  className="text-[#8e8e93] hover:text-white transition-colors"
                   aria-label="LinkedIn"
                 >
                   <Linkedin size={20} />
@@ -946,17 +1297,26 @@ export const Landing: React.FC = () => {
                 <li>
                   <button
                     onClick={() =>
-                      alert(
-                        'Nexora 研发历程\n\n' +
-                          '▸ 2026.06 — 项目立项，完成全栈架构设计\n' +
-                          '▸ 2026.06 — 多租户 + 商品/订单/客户 CRUD 上线\n' +
-                          '▸ 2026.07 — 6 平台接入 + JWT 双认证 + Fernet 加密\n' +
-                          '▸ 2026.07 — 28 项集成测试 + 路由重构 (60% 瘦身)\n' +
-                          '▸ 2026.07 — AI 洞察 + 暗色模式 + Glass UI + WCAG AA\n' +
-                          '▸ 2026.07 — 参赛版本发布，一键 deploy.sh 部署\n' +
-                          '\n技术栈: FastAPI + React 18 + TypeScript + ECharts + Tailwind\n' +
-                          '测试: 28 项 pytest-asyncio | 147 源文件 | 15 数据模型',
-                      )
+                      setInfoModal({
+                        title: '关于 Nexora',
+                        content: (
+                          <div className="space-y-3 text-sm text-gray-600">
+                            <p className="font-semibold text-slate-900">研发历程</p>
+                            <ul className="space-y-1.5">
+                              <li>▸ 2026.06 — 项目立项，完成全栈架构设计</li>
+                              <li>▸ 2026.06 — 多租户 + 商品/订单/客户 CRUD 上线</li>
+                              <li>▸ 2026.07 — 6 平台接入 + JWT 双认证 + Fernet 加密</li>
+                              <li>▸ 2026.07 — 28 项集成测试 + 路由重构 (60% 瘦身)</li>
+                              <li>▸ 2026.07 — AI 洞察 + 暗色模式 + Glass UI + WCAG AA</li>
+                              <li>▸ 2026.07 — 参赛版本发布，一键 deploy.sh 部署</li>
+                            </ul>
+                            <div className="pt-2 border-t border-gray-100">
+                              <p><span className="font-medium text-slate-900">技术栈：</span>FastAPI + React 18 + TypeScript + ECharts + Tailwind</p>
+                              <p><span className="font-medium text-slate-900">测试：</span>28 项 pytest-asyncio | 147 源文件 | 15 数据模型</p>
+                            </div>
+                          </div>
+                        ),
+                      })
                     }
                     className="text-sm hover:text-white transition-colors text-left cursor-pointer"
                   >
@@ -975,7 +1335,17 @@ export const Landing: React.FC = () => {
                 </li>
                 <li>
                   <button
-                    onClick={() => alert('联系人：李浩棋\n手机号：13656117061')}
+                    onClick={() =>
+                      setInfoModal({
+                        title: '联系我们',
+                        content: (
+                          <div className="space-y-2 text-sm text-gray-600">
+                            <p><span className="font-medium text-slate-900">联系人：</span>李浩棋</p>
+                            <p><span className="font-medium text-slate-900">手机号：</span>13656117061</p>
+                          </div>
+                        ),
+                      })
+                    }
                     className="text-sm hover:text-white transition-colors text-left cursor-pointer"
                   >
                     联系我们
@@ -999,6 +1369,16 @@ export const Landing: React.FC = () => {
           </div>
         </div>
       </footer>
+
+      {/* 信息弹窗 */}
+      <Modal
+        isOpen={!!infoModal}
+        onClose={() => setInfoModal(null)}
+        title={infoModal?.title || ''}
+        size="md"
+      >
+        {infoModal?.content}
+      </Modal>
     </div>
   );
 };
