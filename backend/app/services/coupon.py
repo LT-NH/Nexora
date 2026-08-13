@@ -218,7 +218,8 @@ class CouponService:
                 message="该优惠券已失效。",
             )
 
-        now = datetime.now(timezone.utc)
+        # SQLite 存 naive datetime —— 统一 naive UTC 比较
+        now = datetime.utcnow()
         if now < coupon.starts_at:
             return CouponValidateResponse(
                 valid=False,

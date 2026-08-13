@@ -52,3 +52,6 @@ simulator.logqrcode.png
 
 # WorkBuddy 工作记忆（不入库）
 .workbuddy/
+
+# vite 临时文件
+*.timestamp-*.mjs

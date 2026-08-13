@@ -142,7 +142,14 @@ def register_exception_handlers(app: FastAPI) -> None:
 
     @app.exception_handler(404)
     async def not_found_handler(request: Request, exc: Exception) -> JSONResponse:
-        """Handle requests to unknown routes."""
+        """Handle 404s, preserving business-layer detail messages."""
+        # 业务层 raise 的 HTTPException(404) 也走这里 —— 保留其 detail
+        if isinstance(exc, FastAPIHTTPException) and getattr(exc, "detail", None):
+            return JSONResponse(
+                status_code=404,
+                content={"error_code": "not_found", "detail": str(exc.detail)},
+                headers=getattr(exc, "headers", None),
+            )
         return JSONResponse(
             status_code=404,
             content={

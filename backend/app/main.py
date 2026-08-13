@@ -271,6 +271,19 @@ async def metrics():
         }
 
 
+# Alias under the API prefix so the frontend's `api.get('/metrics/process')`
+# (which prepends /api/v1) resolves correctly.
+@app.get(
+    "/api/v1/metrics/process",
+    summary="Process metrics (API prefix alias)",
+    tags=["System"],
+    response_model=dict,
+)
+async def process_metrics_api():
+    """API-prefixed alias of /metrics for the dashboard card."""
+    return await metrics()
+
+
 # ---------------------------------------------------------------------------
 # Weekly report manual trigger endpoint
 # ---------------------------------------------------------------------------
