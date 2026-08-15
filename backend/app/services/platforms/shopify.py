@@ -59,7 +59,7 @@ class ShopifyIntegration(PlatformIntegration):
             "Content-Type": "application/json",
         }
         try:
-            async with httpx.AsyncClient(timeout=15) as client:
+            async with httpx.AsyncClient(timeout=15, trust_env=False) as client:
                 resp = await client.get(url, headers=headers)
                 return resp.status_code == 200
         except Exception as exc:
@@ -296,7 +296,7 @@ class ShopifyIntegration(PlatformIntegration):
         url = base_url
         default_params = {"limit": 250, **(params or {})}
 
-        async with httpx.AsyncClient(timeout=30) as client:
+        async with httpx.AsyncClient(timeout=30, trust_env=False) as client:
             while url:
                 resp = await client.get(
                     url,
