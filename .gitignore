@@ -55,3 +55,6 @@ simulator.logqrcode.png
 
 # vite 临时文件
 *.timestamp-*.mjs
+
+# 截图/临时输出
+frontend/shot_out.txt
