@@ -20,8 +20,8 @@ from app.utils.security import (
     create_access_token,
     create_refresh_token,
     decode_token,
-    hash_password,
-    verify_password,
+    hash_password_async,
+    verify_password_async,
 )
 
 logger = get_logger(__name__)
@@ -60,7 +60,7 @@ class AuthService:
 
         user = User(
             email=user_data.email.lower().strip(),
-            password_hash=hash_password(user_data.password),
+            password_hash=await hash_password_async(user_data.password),
             full_name=user_data.full_name.strip(),
         )
         db.add(user)
@@ -138,7 +138,7 @@ class AuthService:
         )
         user = result.scalar_one_or_none()
 
-        if user is None or not verify_password(login_data.password, user.password_hash):
+        if user is None or not await verify_password_async(login_data.password, user.password_hash):
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid email or password.",
@@ -378,7 +378,7 @@ class AuthService:
                 detail="User not found.",
             )
 
-        user.password_hash = hash_password(new_password)
+        user.password_hash = await hash_password_async(new_password)
         await db.flush()
 
         logger.info("Password reset completed for user: %s", user.email)

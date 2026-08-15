@@ -13,7 +13,6 @@ from sqlalchemy import (
     Text,
     func,
 )
-from sqlalchemy.dialects.sqlite import CHAR
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -25,18 +24,18 @@ class Review(Base):
     __tablename__ = "reviews"
 
     id: Mapped[str] = mapped_column(
-        CHAR(36),
+        String(36),
         primary_key=True,
         default=lambda: str(uuid.uuid4()),
     )
     workspace_id: Mapped[str] = mapped_column(
-        CHAR(36),
+        String(36),
         ForeignKey("workspaces.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
     product_id: Mapped[str] = mapped_column(
-        CHAR(36),
+        String(36),
         ForeignKey("products.id", ondelete="CASCADE"),
         nullable=False,
         index=True,

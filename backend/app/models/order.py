@@ -7,14 +7,13 @@ from datetime import datetime, timezone
 from sqlalchemy import (
     DateTime,
     Enum,
-    Float,
     ForeignKey,
     Integer,
     JSON,
+    Numeric,
     String,
     func,
 )
-from sqlalchemy.dialects.sqlite import CHAR
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -47,18 +46,18 @@ class Order(Base):
     __tablename__ = "orders"
 
     id: Mapped[str] = mapped_column(
-        CHAR(36),
+        String(36),
         primary_key=True,
         default=lambda: str(uuid.uuid4()),
     )
     workspace_id: Mapped[str] = mapped_column(
-        CHAR(36),
+        String(36),
         ForeignKey("workspaces.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
     customer_id: Mapped[str | None] = mapped_column(
-        CHAR(36),
+        String(36),
         ForeignKey("customers.id", ondelete="SET NULL"),
         nullable=True,
         default=None,
@@ -86,27 +85,27 @@ class Order(Base):
         nullable=False,
     )
     subtotal: Mapped[float] = mapped_column(
-        Float(asdecimal=True),
+        Numeric(12, 2),
         default=0.0,
         nullable=False,
     )
     tax: Mapped[float] = mapped_column(
-        Float(asdecimal=True),
+        Numeric(12, 2),
         default=0.0,
         nullable=False,
     )
     shipping: Mapped[float] = mapped_column(
-        Float(asdecimal=True),
+        Numeric(12, 2),
         default=0.0,
         nullable=False,
     )
     discount: Mapped[float] = mapped_column(
-        Float(asdecimal=True),
+        Numeric(12, 2),
         default=0.0,
         nullable=False,
     )
     total: Mapped[float] = mapped_column(
-        Float(asdecimal=True),
+        Numeric(12, 2),
         default=0.0,
         nullable=False,
     )
@@ -188,25 +187,25 @@ class OrderItem(Base):
     __tablename__ = "order_items"
 
     id: Mapped[str] = mapped_column(
-        CHAR(36),
+        String(36),
         primary_key=True,
         default=lambda: str(uuid.uuid4()),
     )
     order_id: Mapped[str] = mapped_column(
-        CHAR(36),
+        String(36),
         ForeignKey("orders.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
     product_id: Mapped[str | None] = mapped_column(
-        CHAR(36),
+        String(36),
         ForeignKey("products.id", ondelete="SET NULL"),
         nullable=True,
         default=None,
         index=True,
     )
     variant_id: Mapped[str | None] = mapped_column(
-        CHAR(36),
+        String(36),
         ForeignKey("product_variants.id", ondelete="SET NULL"),
         nullable=True,
         default=None,
@@ -226,12 +225,12 @@ class OrderItem(Base):
         nullable=False,
     )
     unit_price: Mapped[float] = mapped_column(
-        Float(asdecimal=True),
+        Numeric(12, 2),
         default=0.0,
         nullable=False,
     )
     total_price: Mapped[float] = mapped_column(
-        Float(asdecimal=True),
+        Numeric(12, 2),
         default=0.0,
         nullable=False,
     )

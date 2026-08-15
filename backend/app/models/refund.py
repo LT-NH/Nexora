@@ -8,9 +8,9 @@ from sqlalchemy import (
     Column,
     DateTime,
     Enum,
-    Float,
     ForeignKey,
     Integer,
+    Numeric,
     String,
     Text,
 )
@@ -45,7 +45,7 @@ class Refund(Base):
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     workspace_id = Column(String(36), ForeignKey("workspaces.id"), nullable=False)
     order_id = Column(String(36), ForeignKey("orders.id"), nullable=False)
-    amount = Column(Float, nullable=False)
+    amount = Column(Numeric(12, 2), nullable=False)
     reason = Column(Enum(RefundReason), nullable=False)
     reason_detail = Column(Text, nullable=True)
     status = Column(Enum(RefundStatus), default=RefundStatus.PENDING, nullable=False)

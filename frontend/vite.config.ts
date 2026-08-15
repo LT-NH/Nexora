@@ -11,7 +11,6 @@ export default defineConfig({
   },
   server: {
     port: 3000,
-    hmr: false,
     proxy: {
       // 注意：必须用 '/api/' 带斜杠作为前缀，
       // 否则 http-proxy-middleware 会把 /api-keys、/api-docs
@@ -27,6 +26,23 @@ export default defineConfig({
         target: 'http://127.0.0.1:8000',
         changeOrigin: true,
         secure: false,
+      },
+    },
+  },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          'react-markdown': ['react-markdown', 'remark-gfm'],
+          echarts: ['echarts', 'echarts-for-react'],
+          tiptap: [
+            '@tiptap/react',
+            '@tiptap/starter-kit',
+            '@tiptap/extension-image',
+            '@tiptap/extension-link',
+            '@tiptap/extension-placeholder',
+          ],
+        },
       },
     },
   },

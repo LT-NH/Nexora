@@ -8,11 +8,12 @@ interface Toast {
   type: ToastType;
   title: string;
   message?: string;
+  action?: { label: string; onClick: () => void };
 }
 
 interface ToastContextType {
   toasts: Toast[];
-  addToast: (type: ToastType, title: string, message?: string) => void;
+  addToast: (type: ToastType, title: string, message?: string, action?: { label: string; onClick: () => void }) => void;
   removeToast: (id: string) => void;
 }
 
@@ -42,11 +43,11 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({
   }, []);
 
   const addToast = useCallback(
-    (type: ToastType, title: string, message?: string) => {
+    (type: ToastType, title: string, message?: string, action?: { label: string; onClick: () => void }) => {
       const id = Math.random().toString(36).substring(2, 9);
       // Ensure message is always a string (prevents React crash from Pydantic error objects)
       const safeMessage = typeof message === 'string' ? message : message !== undefined ? JSON.stringify(message, null, 2) : undefined;
-      setToasts((prev) => [...prev, { id, type, title, message: safeMessage }]);
+      setToasts((prev) => [...prev, { id, type, title, message: safeMessage, action }]);
       const timer = setTimeout(() => {
         timersRef.current.delete(id);
         setToasts((prev) => prev.filter((t) => t.id !== id));
@@ -74,10 +75,10 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({
 };
 
 const iconMap: Record<ToastType, React.ReactNode> = {
-  success: <CheckCircle size={20} className="text-green-500" />,
-  error: <XCircle size={20} className="text-red-500" />,
-  warning: <AlertTriangle size={20} className="text-yellow-500" />,
-  info: <Info size={20} className="text-blue-500" />,
+  success: <CheckCircle size={20} className="text-success-500 dark:text-green-400" />,
+  error: <XCircle size={20} className="text-danger-500 dark:text-red-400" />,
+  warning: <AlertTriangle size={20} className="text-warning-500 dark:text-yellow-400" />,
+  info: <Info size={20} className="text-primary-500 dark:text-blue-400" />,
 };
 
 const bgMap: Record<ToastType, string> = {
@@ -98,21 +99,32 @@ const ToastContainer: React.FC = () => {
         <div
           key={toast.id}
           className={`
-            flex items-start gap-3 p-4 bg-white rounded-xl shadow-lg border
+            flex items-start gap-3 p-4 bg-white dark:bg-gray-800 rounded-xl shadow-lg border dark:border-gray-700
             animate-slide-in-right
             ${bgMap[toast.type]}
           `}
         >
           <div className="flex-shrink-0 mt-0.5">{iconMap[toast.type]}</div>
           <div className="flex-1 min-w-0">
-            <p className="text-sm font-medium text-slate-900">{toast.title}</p>
+            <p className="text-sm font-medium text-slate-900 dark:text-gray-100">{toast.title}</p>
             {toast.message && (
-              <p className="text-sm text-gray-500 mt-0.5">{toast.message}</p>
+              <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">{toast.message}</p>
+            )}
+            {toast.action && (
+              <button
+                onClick={() => {
+                  toast.action!.onClick();
+                  removeToast(toast.id);
+                }}
+                className="mt-1.5 text-xs font-semibold text-primary-600 dark:text-primary-400 hover:text-primary-700 dark:hover:text-primary-300 transition-colors"
+              >
+                {toast.action.label}
+              </button>
             )}
           </div>
           <button
             onClick={() => removeToast(toast.id)}
-            className="flex-shrink-0 text-gray-500 hover:text-gray-600 transition-colors"
+            className="flex-shrink-0 text-gray-500 hover:text-gray-600 dark:text-gray-400 dark:hover:text-gray-300 transition-colors"
           >
             <X size={16} />
           </button>

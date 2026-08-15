@@ -30,6 +30,12 @@ interface TableProps<T> {
   exportFilename?: string;
   /** Whether the header should be sticky */
   stickyHeader?: boolean;
+  /** Whether to show row selection checkboxes */
+  selectable?: boolean;
+  /** Set of selected row IDs */
+  selectedIds?: Set<string>;
+  /** Callback when selection changes */
+  onSelectionChange?: (ids: Set<string>) => void;
 }
 
 function convertToCSV<T>(columns: TableColumn<T>[], data: T[]): string {
@@ -70,6 +76,9 @@ export function Table<T>({
   exportable = false,
   exportFilename = 'export.csv',
   stickyHeader = false,
+  selectable = false,
+  selectedIds,
+  onSelectionChange,
 }: TableProps<T>) {
   const [sort, setSort] = useState<SortState>({ key: null, direction: null });
 
@@ -101,11 +110,34 @@ export function Table<T>({
     downloadCSV(csv, exportFilename);
   };
 
+  // ── Selection helpers ──────────────────────────────────────────────
+  const allSelected = selectable && data.length > 0 && data.every((item) => selectedIds?.has(keyExtractor(item)));
+  const someSelected = selectable && !allSelected && data.some((item) => selectedIds?.has(keyExtractor(item)));
+
+  const toggleAll = () => {
+    if (!onSelectionChange) return;
+    const next = new Set(selectedIds);
+    if (allSelected) {
+      data.forEach((item) => next.delete(keyExtractor(item)));
+    } else {
+      data.forEach((item) => next.add(keyExtractor(item)));
+    }
+    onSelectionChange(next);
+  };
+
+  const toggleRow = (id: string) => {
+    if (!onSelectionChange) return;
+    const next = new Set(selectedIds);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    onSelectionChange(next);
+  };
+
   if (isLoading) {
     return (
       <div className="animate-fade-in space-y-3 p-4">
         {Array.from({ length: 5 }).map((_, i) => (
-          <div key={i} className="h-10 bg-gray-100 rounded shimmer" />
+          <div key={i} className="h-10 bg-gray-100 dark:bg-gray-700 rounded shimmer" />
         ))}
       </div>
     );
@@ -152,6 +184,18 @@ export function Table<T>({
         <table className="w-full">
           <thead className={stickyHeader ? 'sticky top-0 z-10' : ''}>
             <tr className="border-b border-gray-300 dark:border-gray-700">
+              {selectable && (
+                <th className="px-4 py-3 w-10 bg-white dark:bg-gray-800">
+                  <input
+                    type="checkbox"
+                    checked={allSelected}
+                    ref={(el) => { if (el) el.indeterminate = someSelected; }}
+                    onChange={toggleAll}
+                    className="w-4 h-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500 cursor-pointer"
+                    aria-label="全选"
+                  />
+                </th>
+              )}
               {columns.map((col) => (
                 <th
                   key={col.key}
@@ -169,12 +213,28 @@ export function Table<T>({
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
-            {data.map((item, idx) => (
+            {data.map((item, idx) => {
+              const itemId = keyExtractor(item);
+              const isSelected = selectedIds?.has(itemId) ?? false;
+              return (
               <tr
-                key={keyExtractor(item)}
-                className="hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors animate-fade-in"
+                key={itemId}
+                className={`hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors animate-fade-in ${
+                  isSelected ? 'bg-primary-50/50 dark:bg-primary-900/10' : ''
+                }`}
                 style={{ animationDelay: `${idx * 0.03}s` }}
               >
+                {selectable && (
+                  <td className="px-4 py-3 w-10">
+                    <input
+                      type="checkbox"
+                      checked={isSelected}
+                      onChange={() => toggleRow(itemId)}
+                      className="w-4 h-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500 cursor-pointer"
+                      aria-label="选择此行"
+                    />
+                  </td>
+                )}
                 {columns.map((col) => (
                   <td
                     key={col.key}
@@ -186,7 +246,8 @@ export function Table<T>({
                   </td>
                 ))}
               </tr>
-            ))}
+              );
+            })}
           </tbody>
         </table>
       </div>

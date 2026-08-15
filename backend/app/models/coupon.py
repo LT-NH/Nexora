@@ -8,13 +8,12 @@ from sqlalchemy import (
     Boolean,
     DateTime,
     Enum,
-    Float,
     ForeignKey,
     Integer,
+    Numeric,
     String,
     func,
 )
-from sqlalchemy.dialects.sqlite import CHAR
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
@@ -34,12 +33,12 @@ class Coupon(Base):
     __tablename__ = "coupons"
 
     id: Mapped[str] = mapped_column(
-        CHAR(36),
+        String(36),
         primary_key=True,
         default=lambda: str(uuid.uuid4()),
     )
     workspace_id: Mapped[str] = mapped_column(
-        CHAR(36),
+        String(36),
         ForeignKey("workspaces.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
@@ -53,12 +52,12 @@ class Coupon(Base):
         nullable=False,
     )
     value: Mapped[float] = mapped_column(
-        Float(asdecimal=True),
+        Numeric(12, 2),
         nullable=False,
         comment="percent: 10=10%, fixed: 5=¥5",
     )
     min_order_amount: Mapped[float] = mapped_column(
-        Float(asdecimal=True),
+        Numeric(12, 2),
         default=0,
         nullable=False,
         comment="Minimum order amount required to apply",

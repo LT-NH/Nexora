@@ -264,12 +264,6 @@ class SubscriptionService:
         )
         current_sub = result.scalar_one_or_none()
 
-        if current_sub is None:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="No subscription found",
-            )
-
         # Find target plan
         plan_result = await db.execute(
             select(SubscriptionPlan).where(SubscriptionPlan.slug == target_plan_slug)
@@ -279,6 +273,48 @@ class SubscriptionService:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"Plan '{target_plan_slug}' not found",
+            )
+
+        # If no existing subscription, create one (first-time subscribe via switch)
+        if current_sub is None:
+            now = datetime.now(timezone.utc)
+            trial_end = now + timedelta(days=SubscriptionService.TRIAL_DURATION_DAYS)
+            period_delta = timedelta(days=30)
+
+            is_paid_plan = target_plan.price_monthly > 0
+            sub_status = (
+                SubscriptionStatus.TRIALING
+                if not is_paid_plan
+                else SubscriptionStatus.INCOMPLETE
+            )
+            pay_status = (
+                PaymentStatus.PENDING if is_paid_plan else PaymentStatus.NOT_REQUIRED
+            )
+
+            new_sub = Subscription(
+                workspace_id=workspace.id,
+                plan_id=target_plan.id,
+                status=sub_status,
+                payment_status=pay_status,
+                trial_ends_at=trial_end,
+                current_period_start=now,
+                current_period_end=now + period_delta,
+            )
+            db.add(new_sub)
+            await db.flush()
+
+            return SubscriptionResponse(
+                id=new_sub.id,
+                workspace_id=new_sub.workspace_id,
+                plan_id=new_sub.plan_id,
+                plan=PlanResponse.model_validate(target_plan),
+                status=new_sub.status.value,
+                trial_ends_at=new_sub.trial_ends_at,
+                current_period_start=new_sub.current_period_start,
+                current_period_end=new_sub.current_period_end,
+                stripe_subscription_id=new_sub.stripe_subscription_id,
+                payment_status=new_sub.payment_status.value,
+                created_at=new_sub.created_at,
             )
 
         # Find current plan

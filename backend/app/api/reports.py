@@ -1,3 +1,5 @@
+import asyncio
+
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from app.api.deps import get_current_workspace, _require_member
 from app.middleware.auth import AuthContext, get_principal
@@ -5,15 +7,16 @@ from app.database import get_db
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Annotated
 from app.models.workspace import WorkspaceRole
-import time
+from app.utils.logging import get_logger
 
 router = APIRouter(prefix="/workspaces/{workspace_slug}/reports", tags=["reports"])
+logger = get_logger(__name__)
 
-def generate_report(workspace_id: str, report_type: str):
+async def generate_report(workspace_id: str, report_type: str):
     """Simulate async report generation."""
-    time.sleep(3)  # simulated heavy work
+    await asyncio.sleep(3)  # simulated heavy work
     # In production: write to DB, send email, etc.
-    print(f"Report {report_type} generated for workspace {workspace_id}")
+    logger.info("Report %s generated for workspace %s", report_type, workspace_id)
 
 @router.post("/generate/{report_type}")
 async def request_report(

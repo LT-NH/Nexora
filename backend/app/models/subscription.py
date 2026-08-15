@@ -8,14 +8,13 @@ from sqlalchemy import (
     Boolean,
     DateTime,
     Enum,
-    Float,
     ForeignKey,
     Integer,
     JSON,
+    Numeric,
     String,
     func,
 )
-from sqlalchemy.dialects.sqlite import CHAR
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -46,7 +45,7 @@ class SubscriptionPlan(Base):
     __tablename__ = "subscription_plans"
 
     id: Mapped[str] = mapped_column(
-        CHAR(36),
+        String(36),
         primary_key=True,
         default=lambda: str(uuid.uuid4()),
     )
@@ -61,12 +60,12 @@ class SubscriptionPlan(Base):
         index=True,
     )
     price_monthly: Mapped[float] = mapped_column(
-        Float,
+        Numeric(12, 2),
         default=0.0,
         nullable=False,
     )
     price_yearly: Mapped[float] = mapped_column(
-        Float,
+        Numeric(12, 2),
         default=0.0,
         nullable=False,
     )
@@ -108,18 +107,18 @@ class Subscription(Base):
     __tablename__ = "subscriptions"
 
     id: Mapped[str] = mapped_column(
-        CHAR(36),
+        String(36),
         primary_key=True,
         default=lambda: str(uuid.uuid4()),
     )
     workspace_id: Mapped[str] = mapped_column(
-        CHAR(36),
+        String(36),
         ForeignKey("workspaces.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
     plan_id: Mapped[str] = mapped_column(
-        CHAR(36),
+        String(36),
         ForeignKey("subscription_plans.id", ondelete="RESTRICT"),
         nullable=False,
     )

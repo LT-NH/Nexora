@@ -50,7 +50,7 @@ export const SkeletonTable: React.FC<{ rows?: number; columns?: number }> = ({
 );
 
 export const SkeletonStatCard: React.FC = () => (
-  <div className="bg-white rounded-xl border border-gray-300 shadow-sm p-6 animate-fade-in">
+  <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-300 dark:border-gray-700 shadow-sm p-6 animate-fade-in">
     <div className="flex items-center justify-between">
       <div className="space-y-3 flex-1">
         <Skeleton className="h-4 w-1/3" />

@@ -51,18 +51,21 @@ def encrypt_value(plain: str, fernet: Fernet) -> str:
 def decrypt_value(cipher: str | None, fernet: Fernet) -> str | None:
     """Decrypt *cipher* back to plaintext, or return None if empty.
 
-    If decryption fails (e.g. the value was stored as plaintext before
-    encryption was enabled), return the original value as-is. This ensures
-    backward compatibility with pre-encryption data.
+    If decryption fails (e.g. due to a key mismatch or data corruption),
+    a ``ValueError`` is raised. Silently returning the ciphertext as
+    plaintext would leak encrypted material and mask integrity problems,
+    so failures must surface explicitly.
     """
     if not cipher:
         return None
     try:
         return fernet.decrypt(cipher.encode("ascii")).decode("utf-8")
     except Exception:
-        # Not a valid Fernet token — likely plaintext from before
-        # encryption was enabled. Return as-is for backward compat.
-        return cipher
+        # Never return ciphertext as plaintext — that would silently
+        # expose encrypted material and hide key mismatches / corruption.
+        raise ValueError(
+            "Decryption failed: possible key mismatch or data corruption"
+        )
 
 
 def make_fernet(encryption_key: str) -> Fernet:

@@ -8,7 +8,6 @@ audit logging.
 from datetime import datetime, timezone
 from typing import List, Optional, Tuple
 
-from fastapi import HTTPException, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -18,6 +17,7 @@ from app.models.refund import Refund, RefundReason, RefundStatus
 from app.models.workspace import Workspace
 from app.schemas.refund import RefundCreate, RefundResponse, RefundUpdate
 from app.utils.audit import create_audit_log
+from app.utils.exceptions import NotFoundException, ValidationException
 from app.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -51,31 +51,25 @@ class RefundService:
         order = result.scalar_one_or_none()
 
         if order is None:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Order not found in this workspace.",
-            )
+            raise NotFoundException("Order not found in this workspace.")
 
         if order.status in (OrderStatus.CANCELLED, OrderStatus.REFUNDED):
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Cannot request a refund for an order with status '{order.status.value}'.",
+            raise ValidationException(
+                f"Cannot request a refund for an order with status '{order.status.value}'.",
             )
 
         # Validate refund amount does not exceed order total
         if refund_data.amount > float(order.total):
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Refund amount cannot exceed the order total.",
+            raise ValidationException(
+                "Refund amount cannot exceed the order total.",
             )
 
         # Validate reason
         try:
             reason = RefundReason(refund_data.reason)
         except ValueError:
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail=f"Invalid refund reason: '{refund_data.reason}'. "
+            raise ValidationException(
+                f"Invalid refund reason: '{refund_data.reason}'. "
                 f"Valid values: {[r.value for r in RefundReason]}",
             )
 
@@ -137,15 +131,11 @@ class RefundService:
         refund = result.scalar_one_or_none()
 
         if refund is None:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Refund not found.",
-            )
+            raise NotFoundException("Refund not found.")
 
         if refund.status != RefundStatus.PENDING:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Refund is not in pending status (current: {refund.status.value}).",
+            raise ValidationException(
+                f"Refund is not in pending status (current: {refund.status.value}).",
             )
 
         # Update status
@@ -154,9 +144,8 @@ class RefundService:
             try:
                 refund.status = RefundStatus(new_status)
             except ValueError:
-                raise HTTPException(
-                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                    detail=f"Invalid refund status: '{new_status}'. "
+                raise ValidationException(
+                    f"Invalid refund status: '{new_status}'. "
                     f"Valid values: {[s.value for s in RefundStatus]}",
                 )
 
@@ -236,9 +225,8 @@ class RefundService:
             try:
                 conditions.append(Refund.status == RefundStatus(status_filter))
             except ValueError:
-                raise HTTPException(
-                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                    detail=f"Invalid status filter: '{status_filter}'.",
+                raise ValidationException(
+                    f"Invalid status filter: '{status_filter}'.",
                 )
 
         count_result = await db.execute(
@@ -309,10 +297,7 @@ class RefundService:
         refund = result.scalar_one_or_none()
 
         if refund is None:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Refund not found.",
-            )
+            raise NotFoundException("Refund not found.")
 
         return _build_refund_response(refund)
 

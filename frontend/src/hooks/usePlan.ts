@@ -6,6 +6,7 @@ export type PlanTier = 'free' | 'pro' | 'enterprise';
 
 let cachedPlan: PlanTier | null = null;
 let cacheTs = 0;
+let cachedWorkspaceId: string | null = null;
 
 /**
  * Detects current plan from workspace subscription.
@@ -17,6 +18,15 @@ export function usePlan(): PlanTier {
 
   useEffect(() => {
     if (!currentWorkspace?.slug) return;
+
+    const workspaceId = currentWorkspace.id ?? currentWorkspace.slug;
+
+    // Invalidate cache when the workspace changes
+    if (cachedWorkspaceId !== workspaceId) {
+      cachedPlan = null;
+      cacheTs = 0;
+      cachedWorkspaceId = workspaceId;
+    }
 
     // Use cache for 30 seconds
     if (cachedPlan && Date.now() - cacheTs < 30000) {
@@ -46,7 +56,7 @@ export function usePlan(): PlanTier {
           cacheTs = Date.now();
         }
       });
-  }, [currentWorkspace?.slug]);
+  }, [currentWorkspace?.slug, currentWorkspace?.id]);
 
   return plan;
 }

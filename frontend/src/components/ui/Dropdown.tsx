@@ -128,6 +128,7 @@ export const Dropdown: React.FC<DropdownProps> = ({
           role="menu"
           className={`
             absolute mt-2 w-56 rounded-xl bg-white shadow-lg border border-gray-300
+            dark:bg-gray-800 dark:border-gray-600 dark:text-gray-200
             py-1 z-50 animate-dropdown-in
             ${align === 'right' ? 'right-0' : 'left-0'}
           `}
@@ -143,10 +144,10 @@ export const Dropdown: React.FC<DropdownProps> = ({
                 transition-colors duration-150
                 ${
                   item.danger
-                    ? 'text-red-600 hover:bg-red-50'
-                    : 'text-gray-700 hover:bg-gray-50'
+                    ? 'text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-900/20'
+                    : 'text-gray-700 hover:bg-gray-50 dark:text-gray-200 dark:hover:bg-gray-700'
                 }
-                ${index === activeIndex ? 'bg-gray-50' : ''}
+                ${index === activeIndex ? 'bg-gray-50 dark:bg-gray-700' : ''}
               `}
             >
               {item.icon && (

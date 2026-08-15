@@ -210,7 +210,7 @@ export const AIProductGenerator: React.FC<AIProductGeneratorProps> = ({ onApply 
               <p className="text-xs font-medium text-gray-500 mb-1.5">推荐标签</p>
               <div className="flex flex-wrap gap-1.5">
                 {result.tags.map((tag, i) => (
-                  <Badge key={i} variant="blue">{tag}</Badge>
+                  <Badge key={i} variant="primary">{tag}</Badge>
                 ))}
               </div>
             </div>

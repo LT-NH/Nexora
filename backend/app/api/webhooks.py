@@ -352,7 +352,7 @@ def _webhook_to_dict(wh) -> dict:
         "name": wh.name,
         "url": wh.url,
         "events": events,
-        "secret": wh.secret,
+        "secret_set": bool(wh.secret),
         "is_active": wh.is_active,
         "last_triggered_at": wh.last_triggered_at.isoformat() if wh.last_triggered_at else None,
         "created_at": wh.created_at.isoformat() if wh.created_at else None,

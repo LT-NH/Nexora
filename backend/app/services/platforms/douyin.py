@@ -19,7 +19,7 @@ import hashlib
 import json
 import time
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import httpx
@@ -534,7 +534,7 @@ def _douyin_slugify(text: str) -> str:
 
 def _days_ago(n: int) -> str:
     """Return a timestamp string n days ago for Douyin API."""
-    dt = datetime.now(timezone.utc) - datetime.timedelta(days=n)
+    dt = datetime.now(timezone.utc) - timedelta(days=n)
     return dt.strftime("%Y-%m-%d %H:%M:%S")
 
 

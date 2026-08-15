@@ -5,21 +5,21 @@ Search across products, orders, and customers with fuzzy matching.
 
 from fastapi import APIRouter, Depends, Query
 from app.api.deps import get_current_workspace
-from app.db.session import get_session
+from app.database import get_db
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, or_
 from app.models import Product, Order, Customer
 
-router = APIRouter(prefix="/workspaces/{slug}/search", tags=["search"])
+router = APIRouter(prefix="/workspaces/{workspace_slug}/search", tags=["search"])
 
 
 @router.get("")
 async def unified_search(
-    slug: str,
+    workspace_slug: str,
     q: str = Query("", min_length=0),
     type: str = Query("all", description="Filter by type: all, products, orders, customers"),
     workspace=Depends(get_current_workspace),
-    session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_db),
 ):
     """Search across products, orders, customers. Supports fuzzy matching."""
     results: dict = {"products": [], "orders": [], "customers": []}

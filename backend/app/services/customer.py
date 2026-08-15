@@ -6,7 +6,7 @@ Handles Customer CRUD operations and RFM (Recency, Frequency, Monetary) analysis
 from datetime import datetime, timezone
 
 from fastapi import HTTPException, status
-from sqlalchemy import desc, func, select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.customer import Customer
@@ -264,7 +264,7 @@ class CustomerService:
         """
         ref_date = reference_date or datetime.now(timezone.utc)
 
-        # Get all customers with their order stats
+        # Get all customers in the workspace
         result = await db.execute(
             select(Customer).where(Customer.workspace_id == workspace.id)
         )
@@ -278,31 +278,45 @@ class CustomerService:
                 analyzed_at=ref_date,
             )
 
+        # Single aggregated query for every customer's RFM metrics (avoids N+1).
+        # Recency = days since the most recent order, frequency = order count,
+        # monetary = total spend. Orders without a customer are excluded.
+        rfm_result = await db.execute(
+            select(
+                Order.customer_id,
+                func.max(Order.created_at).label("last_order"),
+                func.count(Order.id).label("frequency"),
+                func.coalesce(func.sum(Order.total), 0).label("monetary"),
+            )
+            .where(
+                Order.workspace_id == workspace.id,
+                Order.customer_id.is_not(None),
+                Order.status.notin_([OrderStatus.CANCELLED, OrderStatus.REFUNDED]),
+            )
+            .group_by(Order.customer_id)
+        )
+        rfm_map: dict[str, dict] = {
+            row.customer_id: {
+                "last_order": row.last_order,
+                "frequency": row.frequency,
+                "monetary": float(row.monetary or 0.0),
+            }
+            for row in rfm_result.all()
+        }
+
         # Calculate RFM metrics for each customer
         rfm_data = []
         for customer in customers:
-            # Get paid/delivered orders for this customer
-            orders_result = await db.execute(
-                select(Order)
-                .where(
-                    Order.workspace_id == workspace.id,
-                    Order.customer_id == customer.id,
-                    Order.status.notin_(
-                        [OrderStatus.CANCELLED, OrderStatus.REFUNDED]
-                    ),
-                )
-                .order_by(desc(Order.created_at))
-            )
-            orders = orders_result.scalars().all()
-
-            if not orders:
+            stats = rfm_map.get(customer.id)
+            if stats is None:
+                # No qualifying orders: measure recency from signup date
                 recency_days = (ref_date - customer.created_at).days or 1
                 frequency = 0
                 monetary = 0.0
             else:
-                recency_days = (ref_date - orders[0].created_at).days or 1
-                frequency = len(orders)
-                monetary = float(sum(o.total for o in orders))
+                recency_days = (ref_date - stats["last_order"]).days or 1
+                frequency = stats["frequency"]
+                monetary = stats["monetary"]
 
             rfm_data.append(
                 {
@@ -310,7 +324,6 @@ class CustomerService:
                     "recency_days": recency_days,
                     "frequency": frequency,
                     "monetary": monetary,
-                    "customer": customer,
                 }
             )
 

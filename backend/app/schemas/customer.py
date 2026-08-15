@@ -3,13 +3,13 @@
 from datetime import datetime
 from typing import Any, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, EmailStr, Field
 
 
 class CustomerCreate(BaseModel):
     """Schema for creating a new customer."""
     name: str = Field(..., min_length=1, max_length=255)
-    email: Optional[str] = Field(None, max_length=255)
+    email: Optional[EmailStr] = Field(None, max_length=255)
     phone: Optional[str] = Field(None, max_length=50)
     tags: Optional[list[Any]] = Field(default=None)
     notes: Optional[str] = Field(None, max_length=2000)
@@ -19,7 +19,7 @@ class CustomerCreate(BaseModel):
 class CustomerUpdate(BaseModel):
     """Schema for updating an existing customer."""
     name: Optional[str] = Field(None, min_length=1, max_length=255)
-    email: Optional[str] = Field(None, max_length=255)
+    email: Optional[EmailStr] = Field(None, max_length=255)
     phone: Optional[str] = Field(None, max_length=50)
     tags: Optional[list[Any]] = None
     notes: Optional[str] = Field(None, max_length=2000)

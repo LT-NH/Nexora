@@ -1,7 +1,7 @@
 """Nexora - Refund Schemas (Pydantic v2)."""
 
 from datetime import datetime
-from typing import Optional
+from typing import Literal, Optional
 
 from pydantic import BaseModel, Field
 
@@ -10,13 +10,28 @@ class RefundCreate(BaseModel):
     """Schema for creating a new refund request."""
     order_id: str
     amount: float = Field(..., gt=0)
-    reason: str
-    reason_detail: Optional[str] = None
+    reason: Literal[
+        "quality",
+        "wrong_item",
+        "damaged",
+        "not_as_described",
+        "other",
+    ]
+    reason_detail: Optional[str] = Field(None, max_length=500)
 
 
 class RefundUpdate(BaseModel):
     """Schema for processing (approving/rejecting) a refund request."""
-    status: Optional[str] = None
+    status: Optional[
+        Literal[
+            "pending",
+            "approved",
+            "rejected",
+            "processing",
+            "completed",
+            "cancelled",
+        ]
+    ] = None
     reviewer_note: Optional[str] = None
 
 

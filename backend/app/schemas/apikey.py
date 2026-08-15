@@ -1,7 +1,7 @@
 """Nexora - API Key Schemas (Pydantic v2)."""
 
 from datetime import datetime
-from typing import Any, List, Optional
+from typing import Any, List, Literal, Optional
 
 from pydantic import BaseModel, Field
 
@@ -15,7 +15,7 @@ class ApiKeyCreate(BaseModel):
         max_length=255,
         description="Name/label for the API key",
     )
-    scopes: Optional[List[str]] = Field(
+    scopes: Optional[List[Literal["read", "write", "admin"]]] = Field(
         default=None,
         description="List of permission scopes (e.g. ['read', 'write', 'admin'])",
     )

@@ -7,7 +7,7 @@ import json
 from datetime import datetime, timedelta, timezone
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -22,6 +22,7 @@ from app.schemas.apikey import (
     ApiKeyCreatedResponse,
     ApiKeyResponse,
 )
+from app.utils.exceptions import NotFoundException
 from app.utils.logging import get_logger
 from app.utils.pagination import PaginatedResponse, PaginationParams
 from app.utils.security import generate_api_key, hash_api_key
@@ -157,10 +158,7 @@ async def delete_api_key(
     key = result.scalar_one_or_none()
 
     if key is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="API key not found in this workspace.",
-        )
+        raise NotFoundException("API key not found in this workspace.")
 
     # Audit log: API key revoked
     await create_audit_log(

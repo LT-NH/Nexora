@@ -12,11 +12,11 @@ from sqlalchemy import (
     ForeignKey,
     Integer,
     JSON,
+    Numeric,
     String,
     UniqueConstraint,
     func,
 )
-from sqlalchemy.dialects.sqlite import CHAR
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -40,12 +40,12 @@ class Product(Base):
     )
 
     id: Mapped[str] = mapped_column(
-        CHAR(36),
+        String(36),
         primary_key=True,
         default=lambda: str(uuid.uuid4()),
     )
     workspace_id: Mapped[str] = mapped_column(
-        CHAR(36),
+        String(36),
         ForeignKey("workspaces.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
@@ -75,17 +75,17 @@ class Product(Base):
         default=None,
     )
     price: Mapped[float] = mapped_column(
-        Float(asdecimal=True),
+        Numeric(12, 2),
         nullable=False,
         default=0.0,
     )
     compare_at_price: Mapped[float | None] = mapped_column(
-        Float(asdecimal=True),
+        Numeric(12, 2),
         nullable=True,
         default=None,
     )
     cost_price: Mapped[float | None] = mapped_column(
-        Float(asdecimal=True),
+        Numeric(12, 2),
         nullable=True,
         default=None,
     )
@@ -171,12 +171,12 @@ class ProductVariant(Base):
     __tablename__ = "product_variants"
 
     id: Mapped[str] = mapped_column(
-        CHAR(36),
+        String(36),
         primary_key=True,
         default=lambda: str(uuid.uuid4()),
     )
     product_id: Mapped[str] = mapped_column(
-        CHAR(36),
+        String(36),
         ForeignKey("products.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
@@ -192,7 +192,7 @@ class ProductVariant(Base):
         index=True,
     )
     price: Mapped[float | None] = mapped_column(
-        Float(asdecimal=True),
+        Numeric(12, 2),
         nullable=True,
         default=None,
     )
@@ -242,12 +242,12 @@ class ProductCategory(Base):
     )
 
     id: Mapped[str] = mapped_column(
-        CHAR(36),
+        String(36),
         primary_key=True,
         default=lambda: str(uuid.uuid4()),
     )
     workspace_id: Mapped[str] = mapped_column(
-        CHAR(36),
+        String(36),
         ForeignKey("workspaces.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
@@ -262,7 +262,7 @@ class ProductCategory(Base):
         index=True,
     )
     parent_id: Mapped[str | None] = mapped_column(
-        CHAR(36),
+        String(36),
         ForeignKey("product_categories.id", ondelete="SET NULL"),
         nullable=True,
         default=None,

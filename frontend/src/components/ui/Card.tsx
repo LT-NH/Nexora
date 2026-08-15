@@ -10,6 +10,8 @@ interface CardProps {
   hover?: boolean;
   glass?: boolean;
   style?: React.CSSProperties;
+  'aria-label'?: string;
+  role?: string;
 }
 
 export const Card: React.FC<CardProps> = ({
@@ -22,6 +24,8 @@ export const Card: React.FC<CardProps> = ({
   hover = false,
   glass = true,
   style,
+  'aria-label': ariaLabel,
+  role,
 }) => {
   return (
     <div
@@ -31,6 +35,8 @@ export const Card: React.FC<CardProps> = ({
         ${className}
       `}
       style={style}
+      role={role}
+      aria-label={ariaLabel}
     >
       {(title || subtitle || actions) && (
         <div

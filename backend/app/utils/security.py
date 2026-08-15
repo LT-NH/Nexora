@@ -3,6 +3,7 @@
 Provides password hashing, JWT token management, and API key generation.
 """
 
+import asyncio
 import hashlib
 import secrets
 import string
@@ -42,6 +43,24 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
         plain_password.encode("utf-8"),
         hashed_password.encode("utf-8"),
     )
+
+
+async def hash_password_async(password: str) -> str:
+    """Hash a password without blocking the event loop.
+
+    Wraps the synchronous :func:`hash_password` (bcrypt) in a worker
+    thread via :func:`asyncio.to_thread`.
+    """
+    return await asyncio.to_thread(hash_password, password)
+
+
+async def verify_password_async(plain: str, hashed: str) -> bool:
+    """Verify a password without blocking the event loop.
+
+    Wraps the synchronous :func:`verify_password` (bcrypt) in a worker
+    thread via :func:`asyncio.to_thread`.
+    """
+    return await asyncio.to_thread(verify_password, plain, hashed)
 
 
 def create_access_token(
