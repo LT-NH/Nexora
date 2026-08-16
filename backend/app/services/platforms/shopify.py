@@ -47,7 +47,7 @@ class ShopifyIntegration(PlatformIntegration):
 
     async def validate_credentials(self, config: dict[str, Any]) -> bool:
         """Ping the Shopify shop endpoint to verify the token."""
-        store_url = (config.get("store_url") or "").rstrip("/")
+        store_url = _normalize_store_url(config.get("store_url"))
         access_token = (config.get("api_key") or config.get("access_token") or "")
 
         if not store_url or not access_token:
@@ -77,7 +77,7 @@ class ShopifyIntegration(PlatformIntegration):
     ) -> SyncResult:
         """Sync products from Shopify into the workspace."""
         result = SyncResult()
-        store_url = (config.get("store_url") or "").rstrip("/")
+        store_url = _normalize_store_url(config.get("store_url"))
         access_token = (config.get("api_key") or config.get("access_token") or "")
 
         if not store_url or not access_token:
@@ -133,7 +133,7 @@ class ShopifyIntegration(PlatformIntegration):
     ) -> SyncResult:
         """Sync orders from Shopify into the workspace."""
         result = SyncResult()
-        store_url = (config.get("store_url") or "").rstrip("/")
+        store_url = _normalize_store_url(config.get("store_url"))
         access_token = (config.get("api_key") or config.get("access_token") or "")
 
         if not store_url or not access_token:
@@ -246,7 +246,7 @@ class ShopifyIntegration(PlatformIntegration):
     ) -> SyncResult:
         """Sync customers from Shopify into the workspace."""
         result = SyncResult()
-        store_url = (config.get("store_url") or "").rstrip("/")
+        store_url = _normalize_store_url(config.get("store_url"))
         access_token = (config.get("api_key") or config.get("access_token") or "")
 
         if not store_url or not access_token:
@@ -654,7 +654,7 @@ class ShopifyIntegration(PlatformIntegration):
         from app.models.coupon import Coupon, CouponType
 
         result = SyncResult()
-        store_url = (config.get("store_url") or "").rstrip("/")
+        store_url = _normalize_store_url(config.get("store_url"))
         access_token = (config.get("api_key") or config.get("access_token") or "")
 
         if not store_url or not access_token:
@@ -764,6 +764,20 @@ class ShopifyIntegration(PlatformIntegration):
 
         return result
 
+
+
+def _normalize_store_url(url: str | None) -> str:
+    """把用户可能填写的 Shopify 后台地址转成 API 域名。
+
+    https://admin.shopify.com/store/nexora-store-xxx
+        → https://nexora-store-xxx.myshopify.com
+    """
+    url = (url or "").strip().rstrip("/")
+    if "admin.shopify.com" in url and "/store/" in url:
+        name = url.split("/store/")[-1].split("/")[0].strip()
+        if name:
+            return f"https://{name}.myshopify.com"
+    return url
 
 
 def _parse_iso_dt(value: Any):

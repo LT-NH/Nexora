@@ -271,7 +271,8 @@ export const Stores: React.FC = () => {
     setFormStoreUrl(store.store_url || '');
     setFormApiKey(store.api_key || '');
     setFormApiSecret((store as any).api_secret || '');
-    setFormAccessToken(store.access_token || '');
+    // access_token 后端返回的是掩码值（如 shpa****e1dc），回填会把掩码当真实 token 覆盖存储 → 编辑时不回填
+    setFormAccessToken('');
     clearErrors();
     setShowModal(true);
   };
