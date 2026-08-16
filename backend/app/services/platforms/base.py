@@ -34,6 +34,7 @@ class FullSyncResult:
     products: SyncResult = field(default_factory=SyncResult)
     orders: SyncResult = field(default_factory=SyncResult)
     customers: SyncResult = field(default_factory=SyncResult)
+    discounts: SyncResult | None = None  # 仅支持折扣同步的平台填充
     started_at: datetime | None = None
     finished_at: datetime | None = None
     platform: str = ""
@@ -121,6 +122,9 @@ class PlatformIntegration(ABC):
         result.products = await self.sync_products(config, workspace_id)
         result.orders = await self.sync_orders(config, workspace_id)
         result.customers = await self.sync_customers(config, workspace_id)
+        # 可选：优惠券/折扣同步（适配器实现了 sync_discounts 才执行）
+        if hasattr(self, "sync_discounts"):
+            result.discounts = await self.sync_discounts(config, workspace_id)
 
         result.finished_at = datetime.now(timezone.utc)
         return result

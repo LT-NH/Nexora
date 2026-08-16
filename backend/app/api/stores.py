@@ -320,11 +320,13 @@ async def sync_store(
                     "products": sync_result.products.created,
                     "orders": sync_result.orders.created,
                     "customers": sync_result.customers.created,
+                    "discounts": (sync_result.discounts.created if sync_result.discounts else 0),
                 },
                 "updated": {
                     "products": sync_result.products.updated,
                     "orders": sync_result.orders.updated,
                     "customers": sync_result.customers.updated,
+                    "discounts": (sync_result.discounts.updated if sync_result.discounts else 0),
                 },
                 "errors": sync_result.all_errors,
             },
@@ -355,11 +357,13 @@ async def sync_store(
             "products": sync_result.products.created,
             "orders": sync_result.orders.created,
             "customers": sync_result.customers.created,
+            "discounts": (sync_result.discounts.created if sync_result.discounts else 0),
         },
         "updated": {
             "products": sync_result.products.updated,
             "orders": sync_result.orders.updated,
             "customers": sync_result.customers.updated,
+            "discounts": (sync_result.discounts.updated if sync_result.discounts else 0),
         },
         "errors": sync_result.all_errors,
     }

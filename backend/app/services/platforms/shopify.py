@@ -582,6 +582,133 @@ class ShopifyIntegration(PlatformIntegration):
 
         return is_new
 
+    # ------------------------------------------------------------------
+    # Discounts / Coupons
+    # ------------------------------------------------------------------
+
+    async def sync_discounts(
+        self,
+        config: dict[str, Any],
+        workspace_id: str,
+    ) -> SyncResult:
+        """Sync price rules + discount codes from Shopify into local coupons.
+
+        Requires the read_price_rules scope on the Admin API token.
+        """
+        from app.models.coupon import Coupon, CouponType
+
+        result = SyncResult()
+        store_url = (config.get("store_url") or "").rstrip("/")
+        access_token = config.get("api_key") or ""
+
+        if not store_url or not access_token:
+            result.errors.append("Missing store_url or api_key in store config")
+            return result
+
+        def _parse_dt(value: Any):
+            """Shopify 返回带时区 ISO 字符串 → 转 naive UTC datetime（SQLite 兼容）"""
+            if not value:
+                return None
+            try:
+                d = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+                if d.tzinfo is not None:
+                    d = d.astimezone(timezone.utc).replace(tzinfo=None)
+                return d
+            except Exception:
+                return None
+
+        headers = {
+            "X-Shopify-Access-Token": access_token,
+            "Content-Type": "application/json",
+        }
+        try:
+            async with httpx.AsyncClient(timeout=30, trust_env=False) as client:
+                rules = await self._fetch_all_pages(
+                    f"{store_url}/admin/api/{SHOPIFY_API_VERSION}/price_rules.json",
+                    headers,
+                    "price_rules",
+                )
+                coupons_to_add: list[Coupon] = []
+                for rule in rules:
+                    rule_id = rule.get("id")
+                    value_type = rule.get("value_type")
+                    target_type = rule.get("target_type")
+                    title = (rule.get("title") or "").strip()
+
+                    codes: list[str] = []
+                    if rule_id is not None:
+                        try:
+                            code_payload = await self._fetch_all_pages(
+                                f"{store_url}/admin/api/{SHOPIFY_API_VERSION}/price_rules/{rule_id}/discount_codes.json",
+                                headers,
+                                "discount_codes",
+                            )
+                            codes = [str(c.get("code", "")).strip() for c in code_payload if c.get("code")]
+                        except Exception:
+                            codes = []
+                    if not codes and title.startswith("CODE_"):
+                        codes = [title[len("CODE_"):].strip()]
+                    if not codes:
+                        continue
+
+                    if target_type == "shipping_line":
+                        ctype = CouponType.FREE_SHIPPING
+                        value = 0.0
+                    elif value_type == "percentage":
+                        ctype = CouponType.PERCENT
+                        value = abs(float(rule.get("value") or 0))
+                    else:
+                        ctype = CouponType.FIXED
+                        value = abs(float(rule.get("value") or 0))
+
+                    starts_at = _parse_dt(rule.get("starts_at"))
+                    ends_at = _parse_dt(rule.get("ends_at"))
+                    pre = rule.get("prerequisite_subtotal_range") or {}
+                    min_amount = float(pre.get("greater_than_or_equal_to")) if pre.get("greater_than_or_equal_to") else 0.0
+                    max_uses = int(rule.get("usage_limit") or 100)
+
+                    for code in codes:
+                        coupons_to_add.append(
+                            Coupon(
+                                workspace_id=workspace_id,
+                                code=code.upper(),
+                                type=ctype,
+                                value=value,
+                                min_order_amount=min_amount,
+                                max_uses=max_uses,
+                                is_active=True,
+                                starts_at=starts_at,
+                                expires_at=ends_at,
+                            )
+                        )
+
+            async with async_session_factory() as db:
+                existing = (
+                    await db.execute(select(Coupon).where(Coupon.workspace_id == workspace_id))
+                ).scalars().all()
+                by_code = {c.code: c for c in existing}
+                for coupon in coupons_to_add:
+                    hit = by_code.get(coupon.code)
+                    if hit is not None:
+                        hit.value = coupon.value
+                        hit.type = coupon.type
+                        hit.min_order_amount = coupon.min_order_amount
+                        hit.max_uses = coupon.max_uses
+                        hit.starts_at = coupon.starts_at
+                        hit.expires_at = coupon.expires_at
+                        result.updated += 1
+                    else:
+                        db.add(coupon)
+                        by_code[coupon.code] = coupon
+                        result.created += 1
+                await db.commit()
+        except Exception as exc:
+            logger.warning("Shopify discount sync failed: %s", exc)
+            result.errors.append(str(exc)[:200])
+
+        return result
+
+
 
 def _slugify(text: str) -> str:
     """Simple slug generator."""
