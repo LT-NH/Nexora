@@ -154,6 +154,8 @@ class ShopifyIntegration(PlatformIntegration):
                     params={"status": "any", "limit": 250},
                 )
 
+                from app.models.refund import Refund, RefundReason, RefundStatus
+
                 for shopify_order in orders:
                     try:
                         is_new = await self._upsert_order(db, workspace_id, shopify_order)
@@ -161,6 +163,60 @@ class ShopifyIntegration(PlatformIntegration):
                             result.created += 1
                         else:
                             result.updated += 1
+
+                        # 同步订单退款 → 退款售后表
+                        local_order = await db.scalar(
+                            select(Order).where(
+                                Order.workspace_id == workspace_id,
+                                Order.order_number == f"SP-{shopify_order.get('order_number') or ''}",
+                            )
+                        )
+                        shopify_refunds = shopify_order.get("refunds") or []
+                        for rf in shopify_refunds:
+                            # Shopify refunds 无 total_refunded 字段 → 从 transactions(kind=refund) 汇总
+                            txns = rf.get("transactions") or []
+                            amount = sum(
+                                float(t.get("amount") or 0)
+                                for t in txns
+                                if (t.get("kind") or "") == "refund"
+                            )
+                            if amount <= 0:
+                                # 无金额明细的退款（API 批量创建）→ 用订单总额作为展示金额
+                                amount = float(shopify_order.get("total_price") or 0)
+                            if amount <= 0 or local_order is None:
+                                continue
+                            rf_created = _parse_iso_dt(rf.get("created_at"))
+                            exists = await db.scalar(
+                                select(Refund).where(
+                                    Refund.order_id == local_order.id,
+                                    Refund.amount == amount,
+                                    Refund.created_at == rf_created,
+                                )
+                            )
+                            if exists:
+                                continue
+                            note = (rf.get("note") or "").strip()
+                            reason = RefundReason.OTHER
+                            nl = note.lower()
+                            if "damag" in nl:
+                                reason = RefundReason.DAMAGED
+                            elif "quality" in nl or "defect" in nl:
+                                reason = RefundReason.QUALITY
+                            elif "wrong" in nl or "incorrect" in nl:
+                                reason = RefundReason.WRONG_ITEM
+                            elif "not as described" in nl or "different" in nl:
+                                reason = RefundReason.NOT_AS_DESCRIBED
+                            db.add(
+                                Refund(
+                                    workspace_id=workspace_id,
+                                    order_id=local_order.id,
+                                    amount=amount,
+                                    reason=reason,
+                                    reason_detail=note or None,
+                                    status=RefundStatus.COMPLETED,
+                                    created_at=rf_created or datetime.utcnow(),
+                                )
+                            )
                     except Exception as exc:
                         result.errors.append(
                             f"Order '{shopify_order.get('name', '?')}': {exc}"
@@ -708,6 +764,19 @@ class ShopifyIntegration(PlatformIntegration):
 
         return result
 
+
+
+def _parse_iso_dt(value: Any):
+    """解析 Shopify ISO 时间 → naive UTC datetime（SQLite 兼容）"""
+    if not value:
+        return None
+    try:
+        d = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        if d.tzinfo is not None:
+            d = d.astimezone(timezone.utc).replace(tzinfo=None)
+        return d
+    except Exception:
+        return None
 
 
 def _slugify(text: str) -> str:

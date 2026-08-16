@@ -306,10 +306,15 @@ class RefundService:
 
 def _build_refund_response(refund: Refund) -> RefundResponse:
     """Build a RefundResponse from a Refund model instance."""
+    order_number = None
+    order = getattr(refund, "order", None)
+    if order is not None:
+        order_number = getattr(order, "order_number", None)
     return RefundResponse(
         id=refund.id,
         workspace_id=refund.workspace_id,
         order_id=refund.order_id,
+        order_number=order_number,
         amount=round(refund.amount, 2),
         reason=refund.reason.value if hasattr(refund.reason, "value") else str(refund.reason),
         reason_detail=refund.reason_detail,

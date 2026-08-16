@@ -40,6 +40,7 @@ class RefundResponse(BaseModel):
     id: str
     workspace_id: str
     order_id: str
+    order_number: Optional[str] = None
     amount: float
     reason: str
     reason_detail: Optional[str] = None
