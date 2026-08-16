@@ -259,7 +259,10 @@ export const storeService = {
   },
 
   async syncStore(workspaceSlug: string, storeId: string): Promise<Store> {
-    const response = await api.post<Store>(`/workspaces/${workspaceSlug}/stores/${storeId}/sync`);
+    // 全量同步（商品/订单/客户/优惠券/退款）需 20-40s，覆盖默认 15s 超时
+    const response = await api.post<Store>(`/workspaces/${workspaceSlug}/stores/${storeId}/sync`, null, {
+      timeout: 120000,
+    });
     return response.data;
   },
 

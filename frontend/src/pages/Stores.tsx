@@ -199,7 +199,9 @@ const formatDate = (dateStr: string | null, t: T) => {
   if (!dateStr) return t('never_synced');
   const d = new Date(dateStr);
   if (isNaN(d.getTime())) return t('invalid_date');
-  return d.toLocaleDateString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
+  // 后端存 naive UTC → 按 UTC 解析后再转本地时区显示（避免差 8 小时）
+  const utcMs = Date.UTC(d.getFullYear(), d.getMonth(), d.getDate(), d.getHours(), d.getMinutes(), d.getSeconds());
+  return new Date(utcMs).toLocaleDateString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
 };
 
 export const Stores: React.FC = () => {
