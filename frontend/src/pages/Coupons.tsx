@@ -155,11 +155,11 @@ export const Coupons: React.FC = () => {
     expires_at: '',
   });
 
-  const loadCoupons = React.useCallback(async () => {
+  const loadCoupons = React.useCallback(async (force = false) => {
     if (!currentWorkspace) return;
     setIsLoading(true);
     try {
-      const data = await couponService.getCoupons(currentWorkspace.slug);
+      const data = await couponService.getCoupons(currentWorkspace.slug, force ? { skipCache: true } : undefined);
       setCoupons(data);
     } catch {
       addToast('error', t('err_load_failed'));
@@ -186,7 +186,7 @@ export const Coupons: React.FC = () => {
       addToast('success', t('ok_created'));
       setShowModal(false);
       setFormData({ code: '', type: 'percent', value: 10, min_order_amount: 0, max_uses: 100, expires_at: '' });
-      loadCoupons();
+      loadCoupons(true);
     } catch {
       addToast('error', t('err_create_failed'));
     }
@@ -197,7 +197,7 @@ export const Coupons: React.FC = () => {
     try {
       await couponService.toggleCoupon(currentWorkspace.slug, couponId);
       addToast('success', t('ok_status_updated'));
-      loadCoupons();
+      loadCoupons(true);
     } catch {
       addToast('error', t('err_op_failed'));
     }
@@ -208,7 +208,7 @@ export const Coupons: React.FC = () => {
     try {
       await couponService.deleteCoupon(currentWorkspace.slug, couponId);
       addToast('success', t('ok_deleted'));
-      loadCoupons();
+      loadCoupons(true);
     } catch {
       addToast('error', t('err_delete_failed'));
     }

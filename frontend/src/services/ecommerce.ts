@@ -308,8 +308,10 @@ export const aiService = {
 // 优惠券服务
 // ============================================================
 export const couponService = {
-  async getCoupons(workspaceSlug: string): Promise<Coupon[]> {
-    const response = await api.get<Coupon[]>(`/workspaces/${workspaceSlug}/coupons`);
+  async getCoupons(workspaceSlug: string, options?: { skipCache?: boolean }): Promise<Coupon[]> {
+    const response = await api.get<Coupon[]>(`/workspaces/${workspaceSlug}/coupons`, options?.skipCache
+      ? { headers: { 'X-Skip-Cache': '1' } }
+      : undefined);
     return extractItems<Coupon[]>(response.data);
   },
 
