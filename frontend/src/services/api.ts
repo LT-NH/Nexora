@@ -56,6 +56,14 @@ const api = axios.create({
 // 需要强制刷新时可在请求头加 X-Skip-Cache: '1'。
 // =========================================================================
 const getCache = new Map<string, { exp: number; data: unknown }>();
+// 缓存 key 必须包含 query 参数，否则 ?page=1 与 ?page=2 会命中同一条缓存
+function cacheKey(cfg: { baseURL?: string; url?: string; params?: unknown }): string {
+  try {
+    return api.getUri({ baseURL: cfg.baseURL, url: cfg.url, params: cfg.params });
+  } catch {
+    return `${cfg.baseURL ?? ''}${cfg.url ?? ''}`;
+  }
+}
 const GET_TTL = 10000;
 
 // Track if we are currently refreshing the token
@@ -88,7 +96,7 @@ api.interceptors.request.use(
     const method = (config.method || 'get').toUpperCase();
     const skipCache = (config.headers as Record<string, unknown> | undefined)?.['X-Skip-Cache'] === '1';
     if (method === 'GET' && !skipCache) {
-      const url = `${config.baseURL ?? ''}${config.url ?? ''}`;
+      const url = cacheKey(config);
       const hit = getCache.get(url);
       if (hit && Date.now() < hit.exp) {
         config.adapter = async (cfg) => ({
@@ -113,7 +121,7 @@ api.interceptors.response.use(
     const method = (cfg.method || 'get').toUpperCase();
     const skipCache = (cfg.headers as Record<string, unknown> | undefined)?.['X-Skip-Cache'] === '1';
     if (method === 'GET' && !skipCache) {
-      const url = `${cfg.baseURL ?? ''}${cfg.url ?? ''}`;
+      const url = cacheKey(cfg);
       getCache.set(url, { exp: Date.now() + GET_TTL, data: response.data });
     }
     return response;
