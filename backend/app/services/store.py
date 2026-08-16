@@ -65,10 +65,21 @@ class StoreService:
             {"api_key": ..., "api_secret": ..., "access_token": ..., "store_url": ...}
         """
         fernet = _get_fernet()
+
+        def _safe_decrypt(value: str | None) -> str | None:
+            """解密；若值不是 Fernet 密文（历史明文/未加密数据）则原样返回"""
+            if not value:
+                return None
+            try:
+                return decrypt_value(value, fernet)
+            except ValueError:
+                # 明文历史数据（如早期版本未加密存储）→ 原样返回，保证可连接
+                return value
+
         return {
             "api_key": store.api_key,
-            "api_secret": decrypt_value(store.api_secret, fernet),
-            "access_token": decrypt_value(store.access_token, fernet),
+            "api_secret": _safe_decrypt(store.api_secret),
+            "access_token": _safe_decrypt(store.access_token),
             "store_url": store.store_url,
         }
 

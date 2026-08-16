@@ -5,6 +5,7 @@ import uuid
 from datetime import datetime, timezone
 
 from sqlalchemy import (
+    UniqueConstraint,
     DateTime,
     Enum,
     ForeignKey,
@@ -75,7 +76,7 @@ class Order(Base):
     )
     order_number: Mapped[str] = mapped_column(
         String(100),
-        unique=True,
+        unique=False,  # 多租户：订单号按工作空间隔离（复合唯一见 __table_args__）
         nullable=False,
         index=True,
     )
@@ -172,6 +173,10 @@ class Order(Base):
     customer: Mapped["Customer"] = relationship(
         "Customer",
         back_populates="orders",
+    )
+
+    __table_args__ = (
+        UniqueConstraint("workspace_id", "order_number", name="uq_order_workspace_number"),
     )
 
     def __repr__(self) -> str:

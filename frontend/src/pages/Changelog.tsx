@@ -11,6 +11,22 @@ interface ChangelogEntry {
 
 const changelogData: ChangelogEntry[] = [
   {
+    version: 'v4.0',
+    date: '2026年8月16日',
+    changes: [
+      '重大升级：真实 Shopify 店铺接入——移除全部模拟/种子数据，系统数据 100% 来自真实平台（nexora-store 开发商店）',
+      '新增真实数据同步：商品 43 / 订单 53 / 客户 23 全部来自 Shopify Admin API，后台「店铺管理 → 同步」自动拾取落库',
+      '新增优惠券真实同步：读取 Shopify price rules + discount codes，优惠券页展示真实折扣（买一送一 SUMMERBOGO、免运费 FREESHIPPING、黑五 8 折 BLACKFRIDAY）',
+      '新增退款售后真实同步：订单退款事件自动进入退款售后页（14 条真实退款，含金额/原因/订单号关联）',
+      'Bug 修复：商品管理翻页失效（GET 请求缓存 key 未含查询参数，?page=2 命中第一页缓存 → 缓存 key 改为完整 URL 含 params）',
+      'Bug 修复：店铺同步误报失败（全局请求超时 15s < 全量同步 20-40s → 同步请求单独放宽至 120s）',
+      'Bug 修复：店铺「上次同步」时间差 8 小时（后端存 UTC 前端按本地解析 → 按 UTC 解析后转本地显示）',
+      'Bug 修复：Shopify 适配器请求走系统代理超时（httpx trust_env=False 直连，1.3s 响应）',
+      'UI 升级：经营健康卡重排版——140px 大分数环 + 4 级字体梯度 + 5 维度网格化 + 行动清单卡片化（主题色图标/执行按钮右对齐）',
+      '工程：新增开发一键同步脚本（nexora-optimized → GitHub 自动提交推送），后续所有改动实时进仓库',
+    ],
+  },
+  {
     version: 'v3.1',
     date: '2026年8月',
     changes: [

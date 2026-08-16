@@ -48,7 +48,7 @@ class ShopifyIntegration(PlatformIntegration):
     async def validate_credentials(self, config: dict[str, Any]) -> bool:
         """Ping the Shopify shop endpoint to verify the token."""
         store_url = (config.get("store_url") or "").rstrip("/")
-        access_token = config.get("api_key") or ""
+        access_token = (config.get("api_key") or config.get("access_token") or "")
 
         if not store_url or not access_token:
             return False
@@ -78,7 +78,7 @@ class ShopifyIntegration(PlatformIntegration):
         """Sync products from Shopify into the workspace."""
         result = SyncResult()
         store_url = (config.get("store_url") or "").rstrip("/")
-        access_token = config.get("api_key") or ""
+        access_token = (config.get("api_key") or config.get("access_token") or "")
 
         if not store_url or not access_token:
             result.errors.append("Missing store_url or api_key in store config")
@@ -134,7 +134,7 @@ class ShopifyIntegration(PlatformIntegration):
         """Sync orders from Shopify into the workspace."""
         result = SyncResult()
         store_url = (config.get("store_url") or "").rstrip("/")
-        access_token = config.get("api_key") or ""
+        access_token = (config.get("api_key") or config.get("access_token") or "")
 
         if not store_url or not access_token:
             result.errors.append("Missing store_url or api_key")
@@ -247,7 +247,7 @@ class ShopifyIntegration(PlatformIntegration):
         """Sync customers from Shopify into the workspace."""
         result = SyncResult()
         store_url = (config.get("store_url") or "").rstrip("/")
-        access_token = config.get("api_key") or ""
+        access_token = (config.get("api_key") or config.get("access_token") or "")
 
         if not store_url or not access_token:
             result.errors.append("Missing store_url or api_key")
@@ -655,7 +655,7 @@ class ShopifyIntegration(PlatformIntegration):
 
         result = SyncResult()
         store_url = (config.get("store_url") or "").rstrip("/")
-        access_token = config.get("api_key") or ""
+        access_token = (config.get("api_key") or config.get("access_token") or "")
 
         if not store_url or not access_token:
             result.errors.append("Missing store_url or api_key in store config")
