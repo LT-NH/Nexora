@@ -413,6 +413,8 @@ class ShopifyIntegration(PlatformIntegration):
         price = float(first_variant.get("price", 0) or 0)
         compare_at = first_variant.get("compare_at_price")
         compare_at = float(compare_at) if compare_at else None
+        # 真实库存：Shopify variant 的 inventory_quantity
+        stock = int(first_variant.get("inventory_quantity") or 0)
 
         # Extract images
         images = [img.get("src", "") for img in sp.get("images", []) if img.get("src")]
@@ -439,6 +441,7 @@ class ShopifyIntegration(PlatformIntegration):
                 status=ProductStatus.ACTIVE,
                 images=images,
                 tags=tags,
+                stock=stock,
                 has_variants=len(variants) > 1,
             )
             db.add(product)
@@ -454,6 +457,7 @@ class ShopifyIntegration(PlatformIntegration):
             product.tags = tags
             product.weight = float(first_variant.get("weight", 0) or 0)
             product.barcode = first_variant.get("barcode") or ""
+            product.stock = stock
 
         return is_new
 
