@@ -342,7 +342,12 @@ export const HealthScoreCard: React.FC<{ slug: string }> = ({ slug }) => {
             <TrendSpark points={history} color={color} />
             {data.computed_at && (
               <span className="text-[11px] text-gray-400 dark:text-gray-500 mt-1">
-                {t('computed_at')} · {new Date(data.computed_at).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}
+                {t('computed_at')} · {(() => {
+                  // 后端存 naive UTC → 按 UTC 解析再转本地时区（避免差 8 小时）
+                  const d = new Date(data.computed_at);
+                  const utcMs = Date.UTC(d.getFullYear(), d.getMonth(), d.getDate(), d.getHours(), d.getMinutes(), d.getSeconds());
+                  return new Date(utcMs).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+                })()}
               </span>
             )}
           </div>
