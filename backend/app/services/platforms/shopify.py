@@ -778,11 +778,14 @@ class ShopifyIntegration(PlatformIntegration):
         self,
         config: dict[str, Any],
         shopify_product_id: str,
-        new_price: float,
+        new_price: float | None = None,
+        discount_pct: float | None = None,
     ) -> bool:
-        """把商品价格写回 Shopify（清仓降价等）。
+        """把商品价格写回 Shopify（清仓降价等），作用于【全部变体】。
 
-        通过 product id 查第一个 variant，PUT 更新价格。
+        - discount_pct: 每个变体按各自原价 × (1 - discount_pct/100) 更新（如 15 = 降 15%）
+        - new_price: 所有变体统一设为该价格
+        两者至少传一个；传了 discount_pct 则忽略 new_price。
         Requires write_products scope.
         """
         store_url = _normalize_store_url(config.get("store_url"))
@@ -794,8 +797,8 @@ class ShopifyIntegration(PlatformIntegration):
             "Content-Type": "application/json",
         }
         try:
-            async with httpx.AsyncClient(timeout=20, trust_env=False) as client:
-                # 1) 查 variants
+            async with httpx.AsyncClient(timeout=30, trust_env=False) as client:
+                # 1) 查全部 variants
                 vr = await client.get(
                     f"{store_url}/admin/api/{SHOPIFY_API_VERSION}/products/{shopify_product_id}/variants.json",
                     headers=headers,
@@ -806,18 +809,35 @@ class ShopifyIntegration(PlatformIntegration):
                 variants = vr.json().get("variants", [])
                 if not variants:
                     return False
-                vid = variants[0]["id"]
-                # 2) 更新价格
-                ur = await client.put(
-                    f"{store_url}/admin/api/{SHOPIFY_API_VERSION}/variants/{vid}.json",
-                    headers=headers,
-                    json={"variant": {"id": vid, "price": f"{new_price:.2f}"}},
+                # 2) 计算每个变体的目标价
+                targets: list[tuple[int, float]] = []
+                for v in variants:
+                    vid = v["id"]
+                    if discount_pct is not None:
+                        old = float(v.get("price") or 0)
+                        targets.append((vid, round(old * (1 - discount_pct / 100.0), 2)))
+                    else:
+                        targets.append((vid, round(new_price or 0, 2)))
+                # 3) 逐个 PUT（Shopify 无批量 variant 更新）
+                ok_count = 0
+                for vid, price in targets:
+                    ur = await client.put(
+                        f"{store_url}/admin/api/{SHOPIFY_API_VERSION}/variants/{vid}.json",
+                        headers=headers,
+                        json={"variant": {"id": vid, "price": f"{price:.2f}"}},
+                    )
+                    if ur.status_code == 200:
+                        ok_count += 1
+                    else:
+                        logger.warning(
+                            "Shopify variant %s price update failed: %d %s",
+                            vid, ur.status_code, ur.text[:200],
+                        )
+                logger.info(
+                    "Shopify price updated: product %s, %d/%d variants",
+                    shopify_product_id, ok_count, len(targets),
                 )
-                if ur.status_code != 200:
-                    logger.warning("Shopify price update failed: %d %s", ur.status_code, ur.text[:200])
-                    return False
-                logger.info("Shopify price updated: variant %s -> %.2f", vid, new_price)
-                return True
+                return ok_count == len(targets)
         except Exception as exc:
             logger.warning("Shopify price update error: %s", exc)
             return False

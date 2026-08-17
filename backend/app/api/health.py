@@ -508,7 +508,7 @@ async def execute_action(
             shopify_pid = product.sku[len("shopify-"):]
         if shopify_cfg and shopify_integration and shopify_pid:
             ok = await shopify_integration.update_product_price(
-                shopify_cfg, shopify_pid, new_price
+                shopify_cfg, shopify_pid, discount_pct=15.0
             )
             if ok:
                 shopify_written = True
