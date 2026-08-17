@@ -17,7 +17,7 @@ Setup guide for merchants:
 """
 
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Any
 
 import httpx
@@ -767,6 +767,129 @@ class ShopifyIntegration(PlatformIntegration):
             result.errors.append(str(exc)[:200])
 
         return result
+
+
+
+    # ------------------------------------------------------------------
+    # 反向写入 Shopify（网站操作 → 真实店铺）
+    # ------------------------------------------------------------------
+
+    async def update_product_price(
+        self,
+        config: dict[str, Any],
+        shopify_product_id: str,
+        new_price: float,
+    ) -> bool:
+        """把商品价格写回 Shopify（清仓降价等）。
+
+        通过 product id 查第一个 variant，PUT 更新价格。
+        Requires write_products scope.
+        """
+        store_url = _normalize_store_url(config.get("store_url"))
+        access_token = (config.get("api_key") or config.get("access_token") or "")
+        if not store_url or not access_token:
+            return False
+        headers = {
+            "X-Shopify-Access-Token": access_token,
+            "Content-Type": "application/json",
+        }
+        try:
+            async with httpx.AsyncClient(timeout=20, trust_env=False) as client:
+                # 1) 查 variants
+                vr = await client.get(
+                    f"{store_url}/admin/api/{SHOPIFY_API_VERSION}/products/{shopify_product_id}/variants.json",
+                    headers=headers,
+                )
+                if vr.status_code != 200:
+                    logger.warning("Shopify variants fetch failed: %d", vr.status_code)
+                    return False
+                variants = vr.json().get("variants", [])
+                if not variants:
+                    return False
+                vid = variants[0]["id"]
+                # 2) 更新价格
+                ur = await client.put(
+                    f"{store_url}/admin/api/{SHOPIFY_API_VERSION}/variants/{vid}.json",
+                    headers=headers,
+                    json={"variant": {"id": vid, "price": f"{new_price:.2f}"}},
+                )
+                if ur.status_code != 200:
+                    logger.warning("Shopify price update failed: %d %s", ur.status_code, ur.text[:200])
+                    return False
+                logger.info("Shopify price updated: variant %s -> %.2f", vid, new_price)
+                return True
+        except Exception as exc:
+            logger.warning("Shopify price update error: %s", exc)
+            return False
+
+    async def create_coupon_on_shopify(
+        self,
+        config: dict[str, Any],
+        code: str,
+        value: float,
+        min_amount: float = 0.0,
+        max_uses: int = 200,
+        expires_in_days: int = 14,
+    ) -> bool:
+        """在 Shopify 创建真实优惠券（price rule + discount code）。
+
+        Requires write_discount_codes + write_price_rules scopes.
+        """
+        store_url = _normalize_store_url(config.get("store_url"))
+        access_token = (config.get("api_key") or config.get("access_token") or "")
+        if not store_url or not access_token:
+            return False
+        headers = {
+            "X-Shopify-Access-Token": access_token,
+            "Content-Type": "application/json",
+        }
+        try:
+            async with httpx.AsyncClient(timeout=20, trust_env=False) as client:
+                starts_at = datetime.utcnow().isoformat() + "Z"
+                ends_at = (
+                    datetime.utcnow() + timedelta(days=expires_in_days)
+                ).isoformat() + "Z"
+                rule_payload = {
+                    "price_rule": {
+                        "title": f"Nexora 唤醒券 {code}",
+                        "value_type": "fixed_amount",
+                        "value": f"-{value:.2f}",
+                        "target_type": "line_item",
+                        "target_selection": "all",
+                        "allocation_method": "across",
+                        "customer_selection": "all",
+                        "once_per_customer": True,
+                        "usage_limit": max_uses,
+                        "starts_at": starts_at,
+                        "ends_at": ends_at,
+                        "prerequisite_subtotal_range": {
+                            "greater_than_or_equal_to": str(min_amount)
+                        },
+                    }
+                }
+                rr = await client.post(
+                    f"{store_url}/admin/api/{SHOPIFY_API_VERSION}/price_rules.json",
+                    headers=headers,
+                    json=rule_payload,
+                )
+                if rr.status_code not in (200, 201):
+                    logger.warning("Shopify price rule create failed: %d %s", rr.status_code, rr.text[:250])
+                    return False
+                rule_id = rr.json()["price_rule"]["id"]
+                # 2) 创建 discount code
+                cr = await client.post(
+                    f"{store_url}/admin/api/{SHOPIFY_API_VERSION}/price_rules/{rule_id}/discount_codes.json",
+                    headers=headers,
+                    json={"discount_code": {"code": code}},
+                )
+                if cr.status_code not in (200, 201):
+                    logger.warning("Shopify discount code create failed: %d %s", cr.status_code, cr.text[:250])
+                    return False
+                logger.info("Shopify coupon created: %s (rule %s)", code, rule_id)
+                return True
+        except Exception as exc:
+            logger.warning("Shopify coupon create error: %s", exc)
+            return False
 
 
 

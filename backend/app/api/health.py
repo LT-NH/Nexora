@@ -469,33 +469,93 @@ async def execute_action(
     action_type = str(body.get("type", ""))
     product_id = body.get("product_id")
 
+    # 反向写入 Shopify：找到工作空间已连接的 Shopify 店铺
+    from sqlalchemy import select as _select
+    from app.models.store import Store
+    from app.services.store import StoreService
+    from app.services.platforms import PLATFORM_REGISTRY
+
+    shopify_cfg: dict | None = None
+    shopify_integration = None
+    try:
+        store_row = (
+            await db.execute(
+                _select(Store).where(
+                    Store.workspace_id == workspace.id,
+                    Store.platform == "shopify",
+                ).order_by(Store.created_at.desc()).limit(1)
+            )
+        ).scalar_one_or_none()
+        if store_row is not None:
+            shopify_cfg = await StoreService.get_plain_credentials(store_row)
+            cls = PLATFORM_REGISTRY.get("shopify")
+            if cls is not None:
+                shopify_integration = cls()
+    except Exception:
+        shopify_cfg = None
+
     message = ""
+    shopify_written = False
     if action_type == "clearance" and product_id:
         product = await db.get(Product, product_id)
         if product is None or product.workspace_id != workspace.id:
             raise HTTPException(status_code=404, detail="商品不存在")
         old_price = float(product.price or 0)
-        product.price = round(old_price * 0.85, 2)
-        product.compare_at_price = product.compare_at_price or old_price
-        await db.commit()
-        message = f"已降价 15%：¥{old_price:.2f} → ¥{product.price:.2f}"
+        new_price = round(old_price * 0.85, 2)
+        # 1) 先写真实 Shopify（成功才落地本地）
+        shopify_pid = None
+        if product.sku and product.sku.startswith("shopify-"):
+            shopify_pid = product.sku[len("shopify-"):]
+        if shopify_cfg and shopify_integration and shopify_pid:
+            ok = await shopify_integration.update_product_price(
+                shopify_cfg, shopify_pid, new_price
+            )
+            if ok:
+                shopify_written = True
+        if shopify_written or shopify_cfg is None:
+            # 有 Shopify 连接时要求真实写入成功；无连接时仅本地（兼容纯本地环境）
+            product.price = new_price
+            product.compare_at_price = product.compare_at_price or old_price
+            await db.commit()
+            message = f"已降价 15%：¥{old_price:.2f} → ¥{new_price:.2f}"
+            if shopify_written:
+                message += "（已同步 Shopify 真实价格）"
+        else:
+            message = f"Shopify 写入失败，未执行降价（¥{old_price:.2f} 保持不变）"
     elif action_type == "retention":
         from datetime import datetime as _dt, timedelta as _td
         from app.models.coupon import Coupon
         import random as _r
         code = f"WAKE{_r.randint(1000, 9999)}"
-        coupon = Coupon(
-            workspace_id=workspace.id,
-            code=code,
-            type="fixed",
-            value=20.0,
-            min_order_amount=99.0,
-            max_uses=200,
-            expires_at=_dt.utcnow() + _td(days=14),
-        )
-        db.add(coupon)
-        await db.commit()
-        message = f"已创建唤醒券 {code}（满 99 减 20，14 天有效）"
+        # 1) 先写真实 Shopify（price rule + discount code）
+        if shopify_cfg and shopify_integration:
+            ok = await shopify_integration.create_coupon_on_shopify(
+                shopify_cfg,
+                code=code,
+                value=20.0,
+                min_amount=99.0,
+                max_uses=200,
+                expires_in_days=14,
+            )
+            if ok:
+                shopify_written = True
+            else:
+                message = "Shopify 优惠券创建失败，未在本地生成唤醒券"
+        if shopify_written or shopify_cfg is None:
+            coupon = Coupon(
+                workspace_id=workspace.id,
+                code=code,
+                type="fixed",
+                value=20.0,
+                min_order_amount=99.0,
+                max_uses=200,
+                expires_at=_dt.utcnow() + _td(days=14),
+            )
+            db.add(coupon)
+            await db.commit()
+            message = f"已创建唤醒券 {code}（满 99 减 20，14 天有效）"
+            if shopify_written:
+                message += "（已同步 Shopify 真实优惠券）"
     else:
         message = "该动作已引导至对应页面处理。"
 
