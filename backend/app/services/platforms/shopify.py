@@ -842,6 +842,137 @@ class ShopifyIntegration(PlatformIntegration):
             logger.warning("Shopify price update error: %s", exc)
             return False
 
+
+    async def sync_product_to_shopify(
+        self,
+        config: dict[str, Any],
+        shopify_product_id: str,
+        updates: dict[str, Any],
+    ) -> tuple[bool, list[str]]:
+        """把商品管理页的编辑字段写回 Shopify（双向同步）。
+
+        字段映射（只更新 updates 中出现的键）：
+          name → title, description → body_html, category → product_type,
+          brand → vendor, tags → tags, status → status (active/draft/archived)
+          price / compare_at_price / sku / weight / barcode → 第一个变体
+          stock → inventory_levels (需 location_id)
+        返回 (是否全部成功, 错误信息列表)。
+        """
+        store_url = _normalize_store_url(config.get("store_url"))
+        access_token = (config.get("api_key") or config.get("access_token") or "")
+        if not store_url or not access_token:
+            return False, ["未配置 Shopify 店铺凭据"]
+        headers = {
+            "X-Shopify-Access-Token": access_token,
+            "Content-Type": "application/json",
+        }
+        errors: list[str] = []
+        try:
+            async with httpx.AsyncClient(timeout=30, trust_env=False) as client:
+                # 1) product 级字段
+                product_payload: dict[str, Any] = {}
+                if "name" in updates:
+                    product_payload["title"] = str(updates["name"])
+                if "description" in updates:
+                    product_payload["body_html"] = updates["description"] or ""
+                if "category" in updates:
+                    product_payload["product_type"] = updates["category"] or ""
+                if "brand" in updates:
+                    product_payload["vendor"] = updates["brand"] or ""
+                if "tags" in updates:
+                    tg = updates["tags"] or []
+                    product_payload["tags"] = ", ".join(
+                        t if isinstance(t, str) else str(t.get("name", t))
+                        for t in tg
+                    ) if tg else ""
+                if "status" in updates:
+                    product_payload["status"] = str(updates["status"])
+                if product_payload:
+                    pr = await client.put(
+                        f"{store_url}/admin/api/{SHOPIFY_API_VERSION}/products/{shopify_product_id}.json",
+                        headers=headers,
+                        json={"product": product_payload},
+                    )
+                    if pr.status_code != 200:
+                        errors.append(f"商品信息同步失败: {pr.text[:150]}")
+
+                # 2) 变体级字段（price/compare_at_price/sku/weight/barcode）
+                variant_keys = {
+                    "price": "price",
+                    "compare_at_price": "compare_at_price",
+                    "sku": "sku",
+                    "weight": "weight",
+                    "barcode": "barcode",
+                }
+                variant_updates = {
+                    sk: updates[k] for k, sk in variant_keys.items() if k in updates
+                }
+                if variant_updates:
+                    vr = await client.get(
+                        f"{store_url}/admin/api/{SHOPIFY_API_VERSION}/products/{shopify_product_id}/variants.json",
+                        headers=headers,
+                    )
+                    if vr.status_code == 200:
+                        variants = vr.json().get("variants", [])
+                        if variants:
+                            vid = variants[0]["id"]
+                            vpayload = {"variant": {"id": vid, **variant_updates}}
+                            ur = await client.put(
+                                f"{store_url}/admin/api/{SHOPIFY_API_VERSION}/variants/{vid}.json",
+                                headers=headers,
+                                json=vpayload,
+                            )
+                            if ur.status_code != 200:
+                                errors.append(f"价格/规格同步失败: {ur.text[:150]}")
+                        else:
+                            errors.append("Shopify 商品无变体")
+                    else:
+                        errors.append(f"变体查询失败: {vr.status_code}")
+
+                # 3) 库存 → inventory_levels（需 location_id）
+                if "stock" in updates:
+                    vr2 = await client.get(
+                        f"{store_url}/admin/api/{SHOPIFY_API_VERSION}/products/{shopify_product_id}/variants.json",
+                        headers=headers,
+                    )
+                    if vr2.status_code == 200:
+                        variants = vr2.json().get("variants", [])
+                        if variants:
+                            iid = variants[0].get("inventory_item_id")
+                            if iid:
+                                lr = await client.get(
+                                    f"{store_url}/admin/api/{SHOPIFY_API_VERSION}/inventory_levels.json",
+                                    params={"inventory_item_ids": str(iid)},
+                                    headers=headers,
+                                )
+                                levels = lr.json().get("inventory_levels", []) if lr.status_code == 200 else []
+                                if levels:
+                                    loc_id = levels[0]["location_id"]
+                                    sr = await client.post(
+                                        f"{store_url}/admin/api/{SHOPIFY_API_VERSION}/inventory_levels/set.json",
+                                        headers=headers,
+                                        json={
+                                            "location_id": loc_id,
+                                            "inventory_item_id": iid,
+                                            "available": int(updates["stock"]),
+                                        },
+                                    )
+                                    if sr.status_code not in (200, 201):
+                                        errors.append(f"库存同步失败: {sr.text[:150]}")
+                                else:
+                                    errors.append("未找到库存位置（location）")
+                            else:
+                                errors.append("变体无 inventory_item_id")
+                        else:
+                            errors.append("Shopify 商品无变体（库存）")
+                    else:
+                        errors.append(f"变体查询失败(库存): {vr2.status_code}")
+
+                return len(errors) == 0, errors
+        except Exception as exc:
+            logger.warning("Shopify product sync error: %s", exc)
+            return False, [str(exc)[:150]]
+
     async def create_coupon_on_shopify(
         self,
         config: dict[str, Any],

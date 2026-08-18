@@ -72,6 +72,7 @@ const D = {
     price_required: '价格不能为空',
     price_invalid: '请输入有效的价格',
     product_updated: '商品已更新',
+    shopify_sync_warn: 'Shopify 同步提示',
     product_created: '商品已创建',
     op_failed: '操作失败',
     pls_retry: '请稍后重试',
@@ -232,6 +233,7 @@ const D = {
     price_required: 'Price is required',
     price_invalid: 'Please enter a valid price',
     product_updated: 'Product updated',
+    shopify_sync_warn: 'Shopify sync notice',
     product_created: 'Product created',
     op_failed: 'Operation failed',
     pls_retry: 'Please try again later',
@@ -667,8 +669,12 @@ export const Products: React.FC = () => {
       });
 
       if (editingProduct) {
-        await productService.updateProduct(currentWorkspace.slug, { id: editingProduct.id, ...payload } as any);
+        const resp: any = await productService.updateProduct(currentWorkspace.slug, { id: editingProduct.id, ...payload } as any);
         addToast('success', t('product_updated'));
+        // 双向同步：提示 Shopify 写入结果
+        if (resp?.shopify_sync_warning) {
+          addToast('warning', t('shopify_sync_warn'), resp.shopify_sync_warning);
+        }
       } else {
         await productService.createProduct(currentWorkspace.slug, payload as any);
         addToast('success', t('product_created'));

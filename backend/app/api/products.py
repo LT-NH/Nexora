@@ -202,9 +202,45 @@ async def update_product(
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> ProductResponse:
     workspace, _ = await _require_member(slug, principal, db, WorkspaceRole.MEMBER)
-    return await ProductService.update_product(
+    resp = await ProductService.update_product(
         db, workspace, product_id, update_data, user_id=principal.user_id,
     )
+
+    # 双向同步：编辑字段写回 Shopify（仅对 Shopify 来源商品 + 已连接店铺）
+    try:
+        from app.models.product import Product
+        from app.models.store import Store
+        from app.services.store import StoreService
+        from app.services.platforms import PLATFORM_REGISTRY
+
+        product = await db.get(Product, product_id)
+        sync_keys = [
+            "name", "description", "category", "brand", "tags", "status",
+            "price", "compare_at_price", "sku", "weight", "barcode", "stock",
+        ]
+        if product is not None and product.sku and product.sku.startswith("shopify-")                 and any(k in update_data.model_dump(exclude_unset=True) for k in sync_keys):
+            store_row = (
+                await db.execute(
+                    select(Store).where(
+                        Store.workspace_id == workspace.id,
+                        Store.platform == "shopify",
+                    ).order_by(Store.created_at.desc()).limit(1)
+                )
+            ).scalar_one_or_none()
+            if store_row is not None:
+                cfg = await StoreService.get_plain_credentials(store_row)
+                integ_cls = PLATFORM_REGISTRY.get("shopify")
+                if integ_cls is not None:
+                    shopify_pid = product.sku[len("shopify-"):]
+                    ok, errors = await integ_cls().sync_product_to_shopify(
+                        cfg, shopify_pid, update_data.model_dump(exclude_unset=True)
+                    )
+                    if not ok:
+                        resp.shopify_sync_warning = "已保存本地，但 Shopify 同步失败：" + "; ".join(errors)
+    except Exception as exc:
+        resp.shopify_sync_warning = f"Shopify 同步异常: {str(exc)[:120]}"
+
+    return resp
 
 
 @router.delete(

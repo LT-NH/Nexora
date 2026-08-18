@@ -67,6 +67,7 @@ class ProductResponse(BaseModel):
     weight: Optional[float] = None
     status: str
     has_variants: bool
+    shopify_sync_warning: Optional[str] = None  # 双向同步失败时的提示
     tags: list[Any] = []
     images: list[Any] = []
     created_at: datetime
