@@ -17,6 +17,7 @@ from app.models.webhook import Webhook
 from app.models.permission import PermissionGroup, PermissionGroupMember, WorkspacePermission
 from app.models.refund import Refund
 from app.models.payment import Payment
+from app.models.ai_insight import AiInsight
 
 __all__ = [
     "User",

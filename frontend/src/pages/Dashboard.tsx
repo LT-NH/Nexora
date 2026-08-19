@@ -73,6 +73,7 @@ import { SkeletonStatCard, StatCard } from '@/components/ui/StatCard';
 import { CountUp } from '@/components/ui/CountUp';
 import { useWebSocketNotifications } from '@/hooks/useWebSocketNotifications';
 import { HealthScoreCard } from '@/components/HealthScoreCard';
+import { AiDecisionPanel } from '@/components/AiDecisionPanel';
 import { WeeklyReviewCard } from '@/components/WeeklyReviewCard';
 import { SalesTrendChart } from '@/components/charts/SalesTrendChart';
 import { OrderStatusChart } from '@/components/charts/OrderStatusChart';
@@ -921,6 +922,7 @@ export const Dashboard: React.FC = () => {
 
       {/* 经营健康引擎（核心卖点） */}
       <HealthScoreCard slug={currentWorkspace?.slug || ''} />
+      <AiDecisionPanel slug={currentWorkspace?.slug || ''} />
 
       {/* 经营周会 */}
       <WeeklyReviewCard slug={currentWorkspace?.slug || ''} />

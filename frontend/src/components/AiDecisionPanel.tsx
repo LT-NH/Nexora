@@ -1,0 +1,324 @@
+import React, { useEffect, useState } from 'react';
+import {
+  Brain, PackageX, RefreshCw, ShoppingCart, Sparkles, Target, TrendingDown, UserX, CheckCircle2, XCircle, ChevronDown, ChevronUp, CalendarClock, Zap,
+} from 'lucide-react';
+import { useToast } from '@/components/ui/Toast';
+import api from '@/services/api';
+import { usePageT, useI18n } from '@/i18n';
+
+interface AiInsightItem {
+  id: string;
+  insight_type: string;
+  title: string;
+  detail: string;
+  confidence: number;
+  action_type: string;
+  action_params: string;
+  status: string;
+  suggested_at?: string;
+}
+
+const D = {
+  zh: {
+    title: 'AI 决策助手',
+    subtitle: '主动洞察 · 点击执行 · 闭环验证',
+    today: '今日运营摘要',
+    no_insight: '今日无待处理洞察，经营状态良好',
+    execute: '执行',
+    executing: '执行中…',
+    executed: '已执行',
+    feedback_title: '回访验证',
+    improved: '已改善',
+    not_improved: '未改善',
+    feedback_note: '30 天后回访该建议命中情况',
+    hit_rate: '建议命中率',
+    predictions: '未来 7 天预测',
+    predict_stockout: '预计缺货',
+    predict_churn: '客户流失风险',
+    no_predict: '未来 7 天无缺货风险',
+    no_churn: '暂无流失风险客户',
+    exec_done: '执行成功',
+    feedback_saved: '反馈已记录，谢谢',
+    conf: '置信度',
+  },
+  en: {
+    title: 'AI Decision Assistant',
+    subtitle: 'Proactive insights · click to execute · loop verified',
+    today: "Today's business summary",
+    no_insight: 'No pending insights today — business looks good',
+    execute: 'Execute',
+    executing: 'Executing…',
+    executed: 'Executed',
+    feedback_title: 'Follow-up',
+    improved: 'Improved',
+    not_improved: 'Not improved',
+    feedback_note: 'Revisit this insight in 30 days',
+    hit_rate: 'Insight hit rate',
+    predictions: 'Next 7 days forecast',
+    predict_stockout: 'Stockout risk',
+    predict_churn: 'Churn risk',
+    no_predict: 'No stockout risk in next 7 days',
+    no_churn: 'No churn-risk customers',
+    exec_done: 'Executed',
+    feedback_saved: 'Feedback saved, thanks',
+    conf: 'confidence',
+  },
+};
+
+const typeTheme: Record<string, { bg: string; fg: string; icon: any }> = {
+  stockout: { bg: 'bg-rose-50 dark:bg-rose-500/15', fg: 'text-rose-600 dark:text-rose-400', icon: PackageX },
+  refund: { bg: 'bg-amber-50 dark:bg-amber-500/15', fg: 'text-amber-600 dark:text-amber-400', icon: TrendingDown },
+  overstock: { bg: 'bg-orange-50 dark:bg-orange-500/15', fg: 'text-orange-600 dark:text-orange-400', icon: RefreshCw },
+  churn: { bg: 'bg-violet-50 dark:bg-violet-500/15', fg: 'text-violet-600 dark:text-violet-400', icon: UserX },
+  growth: { bg: 'bg-emerald-50 dark:bg-emerald-500/15', fg: 'text-emerald-600 dark:text-emerald-400', icon: TrendingDown },
+};
+
+export const AiDecisionPanel: React.FC<{ slug: string }> = ({ slug }) => {
+  const t = usePageT(D);
+  const { lang } = useI18n();
+  const { addToast } = useToast();
+  const [insights, setInsights] = useState<AiInsightItem[]>([]);
+  const [metrics, setMetrics] = useState<any>(null);
+  const [stats, setStats] = useState<{ hit_rate: number | null; total_executed: number } | null>(null);
+  const [predictions, setPredictions] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  const [executingId, setExecutingId] = useState<string | null>(null);
+  const [showPred, setShowPred] = useState(false);
+
+  const load = async () => {
+    setLoading(true);
+    try {
+      const [sum, st, pred] = await Promise.all([
+        api.get(`/workspaces/${slug}/ai/daily-summary`, { timeout: 20000 }),
+        api.get(`/workspaces/${slug}/ai/insights/stats`, { timeout: 10000 }),
+        api.get(`/workspaces/${slug}/ai/predictions`, { timeout: 15000 }),
+      ]);
+      setInsights(sum.data.insights || []);
+      setMetrics(sum.data.metrics || null);
+      setStats(st.data);
+      setPredictions(pred.data);
+    } catch {
+      // 静默：AI 面板失败不影响工作台
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { load(); /* eslint-disable-next-line */ }, [slug]);
+
+  const handleExecute = async (ins: AiInsightItem) => {
+    setExecutingId(ins.id);
+    try {
+      const res = await api.post(`/workspaces/${slug}/ai/insights/${ins.id}/execute`, {}, { timeout: 60000 });
+      addToast('success', t('exec_done'), res.data?.message || '');
+      setInsights(prev => prev.map(i => (i.id === ins.id ? { ...i, status: 'executed' } : i)));
+      load();
+    } catch {
+      addToast('error', t('exec_done'), '');
+    } finally {
+      setExecutingId(null);
+    }
+  };
+
+  const handleFeedback = async (ins: AiInsightItem, improved: boolean) => {
+    try {
+      await api.post(`/workspaces/${slug}/ai/insights/${ins.id}/feedback`, { improved });
+      addToast('success', t('feedback_saved'), '');
+      load();
+    } catch {
+      addToast('error', t('feedback_saved'), '');
+    }
+  };
+
+  if (loading && insights.length === 0) {
+    return (
+      <div className="rounded-2xl bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 p-5">
+        <div className="animate-pulse space-y-3">
+          <div className="h-5 w-40 bg-gray-200 dark:bg-gray-700 rounded" />
+          <div className="h-16 bg-gray-100 dark:bg-gray-800 rounded-xl" />
+          <div className="h-16 bg-gray-100 dark:bg-gray-800 rounded-xl" />
+        </div>
+      </div>
+    );
+  }
+
+  const hitRate = stats?.hit_rate;
+
+  return (
+    <div className="rounded-2xl bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 shadow-sm overflow-hidden">
+      {/* Header */}
+      <div className="flex items-center justify-between px-5 pt-4 pb-1">
+        <div className="flex items-center gap-2.5">
+          <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-violet-500 to-fuchsia-500 flex items-center justify-center shadow-sm shadow-violet-500/20">
+            <Brain size={17} className="text-white" />
+          </div>
+          <div>
+            <h3 className="text-base font-bold tracking-tight text-slate-900 dark:text-gray-100 leading-none">
+              {t('title')}
+            </h3>
+            <p className="text-[12px] text-gray-400 dark:text-gray-500 mt-1">{t('subtitle')}</p>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          {hitRate !== null && hitRate !== undefined ? (
+            <div className="flex items-center gap-1.5 text-[12px] font-semibold px-2.5 py-1 rounded-full bg-emerald-50 dark:bg-emerald-500/15 text-emerald-600 dark:text-emerald-400">
+              <Target size={12} />
+              {t('hit_rate')} {hitRate}%
+            </div>
+          ) : (
+            <span className="text-[11px] text-gray-400 dark:text-gray-500 px-1">{t('hit_rate')} —</span>
+          )}
+          <button onClick={() => setShowPred(s => !s)} className="p-2 rounded-lg text-gray-400 hover:text-violet-500 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors" title={t('predictions')}>
+            {showPred ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+          </button>
+        </div>
+      </div>
+
+      {/* Today's summary */}
+      <div className="px-5 pt-3">
+        <div className="flex items-center gap-2 mb-2">
+          <Sparkles size={13} className="text-violet-500" />
+          <p className="text-[13px] font-bold text-gray-600 dark:text-gray-300 tracking-wide">{t('today')}</p>
+          <span className="h-px flex-1 bg-gray-100 dark:bg-gray-700/60" />
+        </div>
+        <div className="space-y-2.5">
+          {insights.length === 0 && (
+            <p className="text-[13px] text-gray-400 flex items-center gap-1.5">
+              <CheckCircle2 size={14} className="text-emerald-500" />
+              {t('no_insight')}
+            </p>
+          )}
+          {insights.map(ins => {
+            const theme = typeTheme[ins.insight_type] || typeTheme.stockout;
+            const Icon = theme.icon;
+            const executed = ins.status === 'executed';
+            return (
+              <div key={ins.id} className="rounded-xl border border-gray-100 dark:border-gray-700/60 bg-gray-50/60 dark:bg-gray-800/40 px-3.5 py-3 flex items-start gap-3 hover:border-gray-200 dark:hover:border-gray-600 transition-all">
+                <span className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${theme.bg} ${theme.fg}`}>
+                  <Icon size={16} />
+                </span>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-sm font-semibold text-slate-800 dark:text-gray-100 truncate">{ins.title}</p>
+                    <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-gray-100 dark:bg-gray-700/50 text-gray-500 dark:text-gray-400 flex-shrink-0">
+                      {t('conf')} {Math.round(ins.confidence * 100)}%
+                    </span>
+                  </div>
+                  <p className="text-[12px] text-gray-500 dark:text-gray-400 mt-0.5 leading-relaxed line-clamp-2">{ins.detail}</p>
+                  <div className="flex items-center gap-2 mt-2">
+                    {!executed ? (
+                      <button
+                        onClick={() => handleExecute(ins)}
+                        disabled={executingId !== null}
+                        className="inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-lg bg-violet-600 text-white hover:bg-violet-700 disabled:opacity-50 transition-colors"
+                      >
+                        <Zap size={11} className={executingId === ins.id ? 'animate-pulse' : ''} />
+                        {executingId === ins.id ? t('executing') : t('execute')}
+                      </button>
+                    ) : (
+                      <span className="text-[11px] font-medium text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
+                        <CheckCircle2 size={12} />
+                        {t('executed')}
+                      </span>
+                    )}
+                    <span className="text-[10px] text-gray-400 dark:text-gray-500 flex items-center gap-1">
+                      <CalendarClock size={11} />
+                      {t('feedback_note')}
+                    </span>
+                    {executed && (
+                      <div className="flex items-center gap-1 ml-auto">
+                        <button
+                          onClick={() => handleFeedback(ins, true)}
+                          className="text-[11px] font-medium px-2 py-0.5 rounded-md bg-emerald-50 dark:bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-100 transition-colors"
+                        >
+                          <CheckCircle2 size={11} className="inline mr-0.5" />
+                          {t('improved')}
+                        </button>
+                        <button
+                          onClick={() => handleFeedback(ins, false)}
+                          className="text-[11px] font-medium px-2 py-0.5 rounded-md bg-rose-50 dark:bg-rose-500/15 text-rose-500 hover:bg-rose-100 transition-colors"
+                        >
+                          <XCircle size={11} className="inline mr-0.5" />
+                          {t('not_improved')}
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Predictions (collapsible) */}
+      {showPred && (
+        <div className="px-5 pb-4 mt-1">
+          <div className="rounded-xl border border-gray-100 dark:border-gray-700/60 bg-gray-50/60 dark:bg-gray-800/40 p-3.5">
+            <div className="flex items-center gap-2 mb-2.5">
+              <CalendarClock size={13} className="text-sky-500" />
+              <p className="text-[13px] font-bold text-gray-600 dark:text-gray-300">{t('predictions')}</p>
+              <span className="h-px flex-1 bg-gray-100 dark:bg-gray-700/60" />
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <p className="text-[11px] font-semibold text-rose-500 flex items-center gap-1 mb-1.5">
+                  <PackageX size={11} />
+                  {t('predict_stockout')}
+                </p>
+                <div className="space-y-1">
+                  {(!predictions?.stockout_7d || predictions.stockout_7d.length === 0) && (
+                    <p className="text-[12px] text-gray-400">{t('no_predict')}</p>
+                  )}
+                  {predictions?.stockout_7d?.slice(0, 4).map((s: any, i: number) => (
+                    <div key={i} className="flex items-center justify-between text-[12px]">
+                      <span className="text-gray-600 dark:text-gray-300 truncate max-w-[180px]">{s.name}</span>
+                      <span className={`font-semibold flex-shrink-0 ${s.severity === 'critical' || s.severity === 'high' ? 'text-rose-500' : 'text-amber-500'}`}>
+                        {s.days_left <= 0 ? '已缺货' : `${s.days_left} 天后`} · {s.eta}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <p className="text-[11px] font-semibold text-violet-500 flex items-center gap-1 mb-1.5">
+                  <UserX size={11} />
+                  {t('predict_churn')}
+                </p>
+                <div className="space-y-1">
+                  {(!predictions?.churn_risk || predictions.churn_risk.length === 0) && (
+                    <p className="text-[12px] text-gray-400">{t('no_churn')}</p>
+                  )}
+                  {predictions?.churn_risk?.slice(0, 4).map((c: any, i: number) => (
+                    <div key={i} className="flex items-center justify-between text-[12px]">
+                      <span className="text-gray-600 dark:text-gray-300 truncate max-w-[180px]">{c.name}</span>
+                      <span className={`font-semibold flex-shrink-0 ${c.risk === 'high' ? 'text-rose-500' : 'text-amber-500'}`}>
+                        {c.days_since_last} 天未下单
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Metrics strip */}
+      {metrics && (
+        <div className="px-5 pb-4 pt-1 grid grid-cols-3 gap-3">
+          {[
+            { label: lang === 'zh' ? '退款率' : 'Refund rate', value: `${metrics.refund_rate}%`, color: metrics.refund_rate >= 8 ? 'text-rose-500' : 'text-emerald-500' },
+            { label: lang === 'zh' ? '断货风险' : 'Stockout', value: `${metrics.stockout_count}`, color: metrics.stockout_count > 0 ? 'text-amber-500' : 'text-emerald-500' },
+            { label: lang === 'zh' ? '库存积压' : 'Overstock', value: `${metrics.overstock_count}`, color: metrics.overstock_count > 0 ? 'text-orange-500' : 'text-emerald-500' },
+          ].map((m, i) => (
+            <div key={i} className="rounded-lg bg-gray-50 dark:bg-gray-800/60 px-3 py-2 text-center">
+              <p className={`text-lg font-bold tabular-nums leading-none ${m.color}`}>{m.value}</p>
+              <p className="text-[10px] text-gray-400 dark:text-gray-500 mt-1">{m.label}</p>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
