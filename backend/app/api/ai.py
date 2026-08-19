@@ -727,3 +727,42 @@ async def ai_chat_stream(
             "X-Accel-Buffering": "no",
         },
     )
+
+
+# ----------------------------------------------------------------------
+# 7. 销售 AI 分析（趋势判断 + AI 分析覆盖）
+# ----------------------------------------------------------------------
+
+@router.post("/analyze-sales", summary="销售 AI 分析：趋势 / 预测 / 覆盖订单数")
+async def ai_analyze_sales(
+    slug: str,
+    body: dict,
+    principal: Annotated[AuthContext, Depends(get_principal)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> dict:
+    from app.services.ai import AIService
+
+    workspace, _ = await _require_member(slug, principal, db, WorkspaceRole.VIEWER)
+    period = str(body.get("period") or "30d")
+    days_map = {"7d": 7, "30d": 30, "90d": 90}
+    days = days_map.get(period, 30)
+    since = datetime.utcnow() - timedelta(days=days)
+
+    rows = (
+        await db.execute(
+            select(Order.total, Order.created_at)
+            .where(Order.workspace_id == workspace.id, Order.created_at >= since)
+        )
+    ).all()
+
+    # 喂给 analyze_sales_trend 所需字段（total_amount + created_at）
+    orders_for_ai = [
+        {"total_amount": float(r[0] or 0), "created_at": r[1].isoformat() if r[1] else None}
+        for r in rows
+    ]
+
+    result = await AIService.analyze_sales_trend(orders_for_ai)
+    # 前端 Enterprise 面板需要的字段：总参与订单数
+    result["total_orders_analyzed"] = len(orders_for_ai)
+    result["period"] = period
+    return result
