@@ -15,7 +15,7 @@ from app.database import get_db
 from app.middleware.auth import AuthContext, get_principal
 from app.models.ai_insight import AiInsight
 from app.models.customer import Customer
-from app.models.order import Order
+from app.models.order import Order, OrderItem
 from app.models.product import Product
 from app.models.workspace import Workspace, WorkspaceRole
 
@@ -464,3 +464,210 @@ async def predictions(
         "churn_risk": churn_predictions,
         "note": "基于近 7 天订单动销与复购间隔预测，仅供参考",
     }
+
+
+# ----------------------------------------------------------------------
+# 5. 自然语言 BI 问答（千问）
+# ----------------------------------------------------------------------
+
+def _detect_intent(q: str) -> str:
+    q = q.lower()
+    if any(k in q for k in ["营收", "销售", "收入", "revenue", "sales", "卖了多少", "赚"]):
+        return "revenue"
+    if any(k in q for k in ["排行", "top", "最好", "冠军", "卖得好", "最畅销"]):
+        return "ranking"
+    if any(k in q for k in ["库存", "缺货", "补货", "stock", "积压"]):
+        return "stock"
+    if any(k in q for k in ["退款", "退货", "refund", "售后"]):
+        return "refund"
+    if any(k in q for k in ["客户", "流失", "复购", "customer", "churn"]):
+        return "customer"
+    return "general"
+
+
+async def _collect_biz_snapshot(db: AsyncSession, ws_id: str) -> str:
+    """生成店铺数据快照文本（供千问回答使用）。"""
+    now = datetime.utcnow()
+    since7 = now - timedelta(days=7)
+    since30 = now - timedelta(days=30)
+
+    rev7 = (
+        await db.execute(
+            select(func.coalesce(func.sum(Order.total), 0)).where(
+                Order.workspace_id == ws_id, Order.created_at >= since7,
+            )
+        )
+    ).scalar_one() or 0
+    rev30 = (
+        await db.execute(
+            select(func.coalesce(func.sum(Order.total), 0)).where(
+                Order.workspace_id == ws_id, Order.created_at >= since30,
+            )
+        )
+    ).scalar_one() or 0
+    orders30 = (
+        await db.execute(
+            select(func.count(Order.id)).where(
+                Order.workspace_id == ws_id, Order.created_at >= since30,
+            )
+        )
+    ).scalar_one()
+    # 商品 Top5（按订单明细聚合）
+    top_rows = (
+        await db.execute(
+            select(OrderItem.product_name, func.sum(OrderItem.total_price))
+            .join(Order, Order.id == OrderItem.order_id)
+            .where(Order.workspace_id == ws_id)
+            .group_by(OrderItem.product_name)
+            .order_by(func.sum(OrderItem.total_price).desc())
+            .limit(5)
+        )
+    ).all()
+    top_text = "、".join(f"{r[0]}(¥{float(r[1] or 0):,.0f})" for r in top_rows) or "暂无"
+    # 库存风险
+    products = (await db.execute(select(Product).where(Product.workspace_id == ws_id))).scalars().all()
+    low_stock = [p.name for p in products if (p.stock or 0) <= 5][:5]
+    low_text = "、".join(low_stock) or "无"
+    # 退款率
+    refund30 = (
+        await db.execute(
+            select(func.count(Order.id)).where(
+                Order.workspace_id == ws_id,
+                Order.created_at >= since30,
+                Order.status.in_(["refunded", "partially_refunded"]),
+            )
+        )
+    ).scalar_one()
+    refund_rate = round(refund30 / orders30 * 100, 1) if orders30 else 0.0
+
+    return (
+        f"店铺数据快照（真实数据）：近 7 天营收 ¥{float(rev7):,.0f}；"
+        f"近 30 天营收 ¥{float(rev30):,.0f}、订单 {orders30} 笔、退款率 {refund_rate}%。"
+        f"畅销商品 Top5：{top_text}。低库存商品：{low_text}。"
+    )
+
+
+@router.post("/chat", summary="自然语言 BI 问答（千问）")
+async def ai_chat(
+    slug: str,
+    body: dict,
+    principal: Annotated[AuthContext, Depends(get_principal)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> dict:
+    from app.services.ai import _qwen_chat
+    from app.models.order import OrderItem
+
+    workspace, _ = await _require_member(slug, principal, db, WorkspaceRole.VIEWER)
+    question = str(body.get("question") or body.get("message") or "")
+    history = body.get("history") or []
+    if not question:
+        raise HTTPException(status_code=400, detail="问题不能为空")
+
+    snapshot = await _collect_biz_snapshot(db, workspace.id)
+    intent = _detect_intent(question)
+
+    messages = [
+        {
+            "role": "system",
+            "content": (
+                "你是电商经营分析助手，基于店铺真实数据回答，简洁专业，中文回复。"
+                "先给出结论，再给 1-2 条可执行建议。"
+            ),
+        },
+        *history[-6:],
+        {"role": "user", "content": f"{snapshot}\n\n问题：{question}"},
+    ]
+
+    answer_text = ""
+    suggestion = ""
+    chart_type: str | None = None
+    try:
+        raw = await _qwen_chat(messages)
+        answer_text = raw
+        suggestion = ""
+    except Exception as exc:
+        answer_text = (
+            f"抱歉，AI 暂时不可用（{str(exc)[:80]}）。\n"
+            f"基于数据快照：{snapshot}"
+        )
+
+    # 图表类型映射（前端展示）
+    if intent == "ranking":
+        chart_type = "bar"
+    elif intent in ("revenue", "customer"):
+        chart_type = "line"
+    elif intent in ("stock", "refund"):
+        chart_type = "list"
+
+    data: list = []
+    try:
+        from app.models.order import OrderItem as _OI
+        if intent == "ranking":
+            rows = (
+                await db.execute(
+                    select(_OI.product_name, func.sum(_OI.total_price))
+                    .join(Order, Order.id == _OI.order_id)
+                    .where(Order.workspace_id == workspace.id)
+                    .group_by(_OI.product_name)
+                    .order_by(func.sum(_OI.total_price).desc())
+                    .limit(8)
+                )
+            ).all()
+            data = [{"商品": r[0] or "未知", "销售额": float(r[1] or 0)} for r in rows]
+    except Exception:
+        pass
+
+    return {
+        "intent": intent,
+        "answer_text": answer_text,
+        "data": data,
+        "chart_type": chart_type,
+        "suggestion": suggestion,
+    }
+
+
+@router.get("/weekly-summary", summary="AI 周报摘要")
+async def ai_weekly_summary(
+    slug: str,
+    principal: Annotated[AuthContext, Depends(get_principal)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> dict:
+    workspace, _ = await _require_member(slug, principal, db, WorkspaceRole.VIEWER)
+    snapshot = await _collect_biz_snapshot(db, workspace.id)
+    return {
+        "summary": snapshot,
+        "report_data": {"source": "real_data", "generated_at": datetime.utcnow().isoformat()},
+    }
+
+
+@router.get("/pricing", summary="AI 定价建议")
+async def ai_pricing(
+    slug: str,
+    principal: Annotated[AuthContext, Depends(get_principal)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> dict:
+    workspace, _ = await _require_member(slug, principal, db, WorkspaceRole.VIEWER)
+    products = (
+        await db.execute(
+            select(Product).where(Product.workspace_id == workspace.id).order_by(Product.stock.asc()).limit(6)
+        )
+    ).scalars().all()
+    items = []
+    for p in products:
+        price = float(p.price or 0)
+        if (p.stock or 0) > 120:
+            suggestion = "库存积压，建议降价 10-15% 清仓"
+        elif (p.stock or 0) <= 5:
+            suggestion = "库存偏低，维持现价并尽快补货"
+        elif price <= 0:
+            suggestion = "建议按成本价上浮 30-50% 定价"
+        else:
+            suggestion = "价格健康，可小幅提价 5% 测试"
+        items.append({
+            "product_id": p.id,
+            "name": p.name,
+            "current_price": price,
+            "suggestion": suggestion,
+            "reason": f"当前库存 {p.stock or 0} 件",
+        })
+    return {"items": items}

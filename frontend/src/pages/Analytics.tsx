@@ -362,6 +362,10 @@ export const Analytics: React.FC = () => {
   const [orderStatus, setOrderStatus] = useState<any[]>([]);
   const [customerInsight, setCustomerInsight] = useState<any[]>([]);
   const [cohorts, setCohorts] = useState<any[]>([]);
+  // Cohort 有效数据判定：至少一个群有跨月留存率（retention[i>0] 非空）才算有数据
+  const hasCohortData = cohorts.some((c: any) =>
+    (c.retention || []).some((v: any, i: number) => i > 0 && v !== null && v !== undefined),
+  );
   const [cohortMonths, setCohortMonths] = useState<string[]>([]);
   const [hourly, setHourly] = useState<any[]>([]);
   const [topProducts, setTopProducts] = useState<any[]>([]);
@@ -952,15 +956,12 @@ export const Analytics: React.FC = () => {
           )}
         </Card>
 
-        <Card title={t('cohort_title')} subtitle={t('cohort_subtitle')} className="animated-border">
-          {cohorts.length > 0 ? (
+        {/* Cohort 留存分析：无有效留存数据（如仅一个首购月、无跨月留存）时整体隐藏，不占版面 */}
+        {hasCohortData && (
+          <Card title={t('cohort_title')} subtitle={t('cohort_subtitle')} className="animated-border">
             <CohortRetentionChart cohorts={cohorts} months={cohortMonths} />
-          ) : (
-            <div className="h-[300px] flex items-center justify-center text-gray-500 dark:text-gray-400 text-sm">
-              {t('no_customer_data')}
-            </div>
-          )}
-        </Card>
+          </Card>
+        )}
       </div>
       )}
 
