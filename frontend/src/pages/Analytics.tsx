@@ -509,7 +509,8 @@ export const Analytics: React.FC = () => {
         allOrders.forEach((order: any) => {
           const items = order.items || [];
           items.forEach((item: any) => {
-            const pid = item.product_id || item.productId;
+            // 兜底：product_id 缺失时用商品名聚合（旧数据也能出排行）
+            const pid = item.product_id || item.productId || item.product_name || item.productName || 'unknown';
             if (!pid) return;
             if (!productSales[pid]) {
               productSales[pid] = {

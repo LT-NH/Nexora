@@ -510,6 +510,27 @@ class ShopifyIntegration(PlatformIntegration):
             f"{customer_data.get('first_name', '')} {customer_data.get('last_name', '')}"
         ).strip()
 
+        # 关联本地客户：优先 Shopify customer id（存在 notes 里），email 兜底
+        customer_id = None
+        if customer_data.get("id"):
+            local_c = await db.scalar(
+                select(Customer).where(
+                    Customer.workspace_id == workspace_id,
+                    Customer.notes == f"Shopify ID: {customer_data['id']}",
+                )
+            )
+            if local_c is not None:
+                customer_id = local_c.id
+        if customer_id is None and customer_data.get("email"):
+            local_c = await db.scalar(
+                select(Customer).where(
+                    Customer.workspace_id == workspace_id,
+                    Customer.email == customer_data["email"],
+                )
+            )
+            if local_c is not None:
+                customer_id = local_c.id
+
         shipping_addr = so.get("shipping_address", {}) or {}
         shipping_address = {
             "name": shipping_addr.get("name", ""),
@@ -533,6 +554,7 @@ class ShopifyIntegration(PlatformIntegration):
                 workspace_id=workspace_id,
                 order_number=f"SP-{order_number}",
                 status=status,
+                customer_id=customer_id,
                 customer_name=customer_name or None,
                 customer_email=customer_data.get("email") or None,
                 subtotal=subtotal,
@@ -559,6 +581,8 @@ class ShopifyIntegration(PlatformIntegration):
             order.discount = discount
             order.customer_name = customer_name or order.customer_name
             order.customer_email = customer_data.get("email") or order.customer_email
+            if customer_id is not None:
+                order.customer_id = customer_id
             order.shipping_address = shipping_address
             order.notes = so.get("note") or order.notes
             await db.flush()
@@ -568,9 +592,21 @@ class ShopifyIntegration(PlatformIntegration):
         # Insert (or re-insert) line items
         line_items = so.get("line_items", [])
         for li in line_items:
+            # 关联本地商品（Shopify line_item.product_id → 本地 sku=shopify-{id}）
+            product_id = None
+            if li.get("product_id"):
+                local_p = await db.scalar(
+                    select(Product).where(
+                        Product.workspace_id == workspace_id,
+                        Product.sku == f"shopify-{li['product_id']}",
+                    )
+                )
+                if local_p is not None:
+                    product_id = local_p.id
             item = OrderItem(
                 id=str(uuid.uuid4()),
                 order_id=order.id,
+                product_id=product_id,
                 product_name=li.get("title", "") or li.get("name", ""),
                 sku=li.get("sku") or None,
                 quantity=int(li.get("quantity", 1)),

@@ -1,17 +1,9 @@
 import { useRef, useEffect } from 'react';
-import * as echarts from 'echarts/core';
-import { LineChart, BarChart, PieChart, RadarChart, ScatterChart, HeatmapChart } from 'echarts/charts';
-import { TitleComponent, TooltipComponent, GridComponent, LegendComponent, DataZoomComponent, VisualMapComponent, RadarComponent as RadarComp } from 'echarts/components';
-import { SVGRenderer } from 'echarts/renderers';
+// 全量引入 ECharts：避免与页面中「全量 echarts」组件（如 TopProductsChart）混用时
+// 重复注册 axisPointer 等模块导致 "CartesianAxisPointer exists" 崩溃
+import * as echarts from 'echarts';
 import type { EChartsOption } from 'echarts';
 import { useTheme } from './useTheme';
-
-echarts.use([
-  LineChart, BarChart, PieChart, RadarChart, ScatterChart, HeatmapChart,
-  TitleComponent, TooltipComponent, GridComponent, LegendComponent,
-  DataZoomComponent, VisualMapComponent, RadarComp,
-  SVGRenderer,
-]);
 
 /**
  * useEChart —— 封装 ECharts 的初始化、主题响应、增量更新与 resize 监听，
