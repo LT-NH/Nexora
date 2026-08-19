@@ -671,3 +671,59 @@ async def ai_pricing(
             "reason": f"当前库存 {p.stock or 0} 件",
         })
     return {"items": items}
+
+
+# ----------------------------------------------------------------------
+# 6. 流式聊天（SSE，右下角悬浮 AI 助手）
+# ----------------------------------------------------------------------
+
+@router.post("/chat/stream", summary="流式聊天（SSE，悬浮 AI 助手）")
+async def ai_chat_stream(
+    slug: str,
+    body: dict,
+    principal: Annotated[AuthContext, Depends(get_principal)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    from starlette.responses import StreamingResponse
+    from app.services.ai import _qwen_chat
+
+    workspace, _ = await _require_member(slug, principal, db, WorkspaceRole.VIEWER)
+    prompt = str(body.get("prompt") or body.get("question") or "")
+    history = body.get("messages") or body.get("history") or []
+    if not prompt:
+        raise HTTPException(status_code=400, detail="问题不能为空")
+
+    snapshot = await _collect_biz_snapshot(db, workspace.id)
+    messages = [
+        {
+            "role": "system",
+            "content": (
+                "你是电商经营分析助手，基于店铺真实数据回答，简洁专业，中文回复。"
+                "先给结论，再给 1-2 条可执行建议。回答控制在 150 字内。"
+            ),
+        },
+        *history[-6:],
+        {"role": "user", "content": f"{snapshot}\n\n问题：{prompt}"},
+    ]
+
+    async def event_stream():
+        try:
+            full = await _qwen_chat(messages)
+        except Exception as exc:
+            full = f"抱歉，AI 暂时不可用（{str(exc)[:60]}）。\n数据快照：{snapshot}"
+        # 分块推送（前端逐块拼接，效果等同流式）
+        chunk_size = 24
+        for i in range(0, len(full), chunk_size):
+            piece = full[i : i + chunk_size]
+            yield f"data: {json.dumps({'content': piece}, ensure_ascii=False)}\n\n"
+        yield "data: [DONE]\n\n"
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
