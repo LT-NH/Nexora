@@ -265,6 +265,9 @@ class ProductService:
                     detail=f"SKU '{update_dict['sku']}' already exists in this workspace.",
                 )
 
+        # 记录库存变化前的旧值（用于流水）
+        _old_stock = product.stock or 0
+
         for field, value in update_dict.items():
             if field == "status" and value is not None:
                 setattr(product, field, ProductStatus(value))
@@ -274,6 +277,20 @@ class ProductService:
                 setattr(product, field, value.strip())
             else:
                 setattr(product, field, value)
+
+        # 库存流水：stock 有变化时记录"何进何出"
+        if "stock" in update_dict and update_dict["stock"] is not None:
+            from app.services.inventory_log import record_movement
+            await record_movement(
+                db=db,
+                workspace_id=workspace.id,
+                product_id=product.id,
+                change=int(update_dict["stock"]) - _old_stock,
+                stock_after=int(update_dict["stock"]),
+                movement_type="adjustment",
+                reason="商品管理手动调整库存",
+                created_by=user_id,
+            )
 
         product.updated_at = datetime.now(timezone.utc)
         await db.flush()

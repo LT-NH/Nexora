@@ -315,6 +315,121 @@ async def rfm_analysis(
         analyzed_at=datetime.now(timezone.utc),
     )
 
+@router.get("/value-segments", summary="客户价值分层（可直接用的分组列表）")
+async def value_segments(
+    slug: str,
+    principal: Annotated[AuthContext, Depends(get_principal)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> dict:
+    from datetime import datetime as _dt, timezone as _tz
+    from app.models.customer import Customer
+
+    workspace, _ = await _require_member(slug, principal, db, WorkspaceRole.VIEWER)
+    customers = (
+        await db.execute(
+            select(Customer).where(Customer.workspace_id == workspace.id)
+        )
+    ).scalars().all()
+
+    now = _dt.now(_tz.utc)
+    groups: dict[str, list] = {
+        k: [] for k in ("champions", "loyal", "potential", "at_risk", "lost")
+    }
+
+    for c in customers:
+        total_orders = c.total_orders or 0
+        total_spent = float(c.total_spent or 0)
+        last_at = c.last_order_at
+        days_since = (now - last_at.replace(tzinfo=_tz.utc)).days if last_at else 999
+        # 简化 RFM 打分
+        r = 5 if days_since <= 7 else 4 if days_since <= 14 else 3 if days_since <= 30 else 2 if days_since <= 60 else 1
+        f = 5 if total_orders >= 10 else 4 if total_orders >= 5 else 3 if total_orders >= 3 else 2 if total_orders >= 2 else 1
+        m = 5 if total_spent >= 20000 else 4 if total_spent >= 10000 else 3 if total_spent >= 5000 else 2 if total_spent >= 1000 else 1
+        seg = _classify_segment(r, f, m)
+        if seg not in groups:
+            continue
+        groups[seg].append({
+            "id": c.id,
+            "name": c.name or c.email or "匿名客户",
+            "email": c.email,
+            "total_orders": total_orders,
+            "total_spent": round(total_spent, 2),
+            "days_since_last": days_since if last_at else None,
+        })
+
+    return {
+        "segments": [
+            {
+                "key": k,
+                "label": _SEGMENT_LABELS.get(k, k),
+                "count": len(groups[k]),
+                "customers": groups[k][:20],
+            }
+            for k in groups
+        ],
+    }
+
+
+@router.post("/value-segments/{segment}/marketing", summary="对客户分组一键发营销（创建唤醒券）")
+async def segment_marketing(
+    slug: str,
+    segment: str,
+    principal: Annotated[AuthContext, Depends(get_principal)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> dict:
+    from datetime import datetime as _dt, timedelta as _td
+    from app.models.coupon import Coupon
+    from app.models.store import Store
+    from app.services.store import StoreService
+    from app.services.platforms import PLATFORM_REGISTRY
+    import random
+
+    workspace, _ = await _require_member(slug, principal, db, WorkspaceRole.MEMBER)
+    if segment not in _SEGMENT_LABELS:
+        raise HTTPException(status_code=400, detail="未知客户分组")
+
+    code = f"VIP{random.randint(1000, 9999)}" if segment in ("champions", "loyal") else f"WAKE{random.randint(1000, 9999)}"
+
+    # 真实 Shopify 建券（若已连接）
+    shopify_written = False
+    try:
+        store_row = (
+            await db.execute(
+                select(Store).where(
+                    Store.workspace_id == workspace.id, Store.platform == "shopify",
+                ).order_by(Store.created_at.desc()).limit(1)
+            )
+        ).scalar_one_or_none()
+        if store_row is not None:
+            cfg = await StoreService.get_plain_credentials(store_row)
+            integ_cls = PLATFORM_REGISTRY.get("shopify")
+            if integ_cls is not None:
+                shopify_written = await integ_cls().create_coupon_on_shopify(
+                    cfg, code=code, value=20.0, min_amount=99.0, max_uses=300, expires_in_days=14,
+                )
+    except Exception:
+        pass
+
+    # 本地建券
+    db.add(Coupon(
+        workspace_id=workspace.id,
+        code=code,
+        type="fixed",
+        value=20.0,
+        min_order_amount=99.0,
+        max_uses=300,
+        expires_at=_dt.utcnow() + _td(days=14),
+    ))
+    await db.commit()
+
+    return {
+        "created": True,
+        "code": code,
+        "segment": segment,
+        "message": f"已为「{_SEGMENT_LABELS[segment]}」创建唤醒券 {code}（满 99 减 20）"
+                   + ("，并同步 Shopify 真实优惠券" if shopify_written else ""),
+    }
+
 
 @router.get(
     "/{customer_id}",
@@ -548,3 +663,15 @@ def _classify_segment(r: int, f: int, m: int) -> str:
         return "at_risk"
     else:
         return "lost"
+
+# ----------------------------------------------------------------------
+# 客户价值分层（可直接用的分组 + 一键营销）
+# ----------------------------------------------------------------------
+
+_SEGMENT_LABELS = {
+    "champions": "高价值客户",
+    "loyal": "忠诚客户",
+    "potential": "潜力客户",
+    "at_risk": "流失风险",
+    "lost": "已流失",
+}

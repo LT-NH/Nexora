@@ -39,6 +39,9 @@ const D = {
     ok_updated: '店铺已更新',
     ok_added: '店铺已添加',
     ok_deleted: '店铺已删除',
+    undo: '撤销',
+
+    restored_msg: '已恢复',
     err_delete_failed: '删除失败',
     sync_done: '同步完成',
     sync_result: '新增 商品{cp}/订单{co}/客户{cc}；更新 商品{up}/订单{uo}/客户{uc}',
@@ -113,6 +116,9 @@ const D = {
     ok_updated: 'Store updated',
     ok_added: 'Store added',
     ok_deleted: 'Store deleted',
+    undo: 'Undo',
+
+    restored_msg: 'Restored',
     err_delete_failed: 'Delete failed',
     sync_done: 'Sync completed',
     sync_result: 'New: products {cp}/orders {co}/customers {cc}; updated: products {up}/orders {uo}/customers {uc}',
@@ -331,8 +337,23 @@ export const Stores: React.FC = () => {
     if (!currentWorkspace) return;
     if (!window.confirm(t('delete_confirm').replace('{name}', store.name))) return;
     try {
+      const snapshot = { ...store };
       await storeService.deleteStore(currentWorkspace.slug, store.id);
-      addToast('success', t('ok_deleted'));
+      addToast('success', t('ok_deleted'), '', {
+        label: t('undo'),
+        onClick: async () => {
+          try {
+            await storeService.createStore(currentWorkspace.slug, {
+              name: snapshot.name,
+              platform: snapshot.platform,
+              store_url: snapshot.store_url || '',
+              api_key: snapshot.api_key || '',
+            } as any);
+            addToast('success', t('restored_msg'));
+            fetchStores();
+          } catch { /* 恢复失败静默 */ }
+        },
+      });
       fetchStores();
     } catch (err: any) {
       addToast('error', t('err_delete_failed'), err?.response?.data?.detail || t('pls_retry'));

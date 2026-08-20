@@ -2,6 +2,7 @@ import React, { useEffect, useState, useCallback, useRef, useMemo } from 'react'
 import {
   Search,
   X,
+  Printer,
   ChevronLeft,
   ChevronRight,
   ShoppingBag,
@@ -79,6 +80,14 @@ const D = {
     batch_restore_failed: '部分订单恢复失败，请手动重新创建',
     batch_delete_failed: '批量删除失败',
     batch_delete_partial: '部分订单删除失败',
+    batch_print: '批量打单',
+    print: '打印',
+    print_card: '发货单',
+    print_receiver: '收货人',
+    print_address: '地址',
+    print_items: '商品',
+    print_total: '金额',
+    print_date: '日期',
     st_pending: '待确认',
     st_confirmed: '已确认',
     st_processing: '处理中',
@@ -488,6 +497,8 @@ export const Orders: React.FC = () => {
 
   // ---------- 批量选择 ----------
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [showPrint, setShowPrint] = useState(false);
+  const [printOrders, setPrintOrders] = useState<any[]>([]);
   const [isBatchDeleting, setIsBatchDeleting] = useState(false);
 
   // ---------- 搜索防抖 ----------
@@ -834,6 +845,13 @@ export const Orders: React.FC = () => {
   };
 
   // ---------- 批量删除 ----------
+  const handleBatchPrint = () => {
+    const sel = orders.filter((o: any) => selectedIds.has(o.id));
+    if (sel.length === 0) return;
+    setPrintOrders(sel);
+    setShowPrint(true);
+  };
+
   const handleBatchDelete = async () => {
     if (!currentWorkspace || selectedIds.size === 0) return;
     setIsBatchDeleting(true);
@@ -1131,6 +1149,14 @@ export const Orders: React.FC = () => {
                       e.target.value = '';
                     }}
                   >
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleBatchPrint}
+                    leftIcon={<Printer size={13} />}
+                  >
+                    {t('batch_print')}
+                  </Button>
                     <option value="">{t('batch_change')}</option>
                     <option value="confirmed">{t('mark_confirmed')}</option>
                     <option value="processing">{t('mark_processing')}</option>
@@ -2014,6 +2040,40 @@ export const Orders: React.FC = () => {
           isLoading={deleteLoading}
         />
       </Modal>
+      {/* 批量打单（打印视图） */}
+      {showPrint && (
+        <div className="fixed inset-0 z-50 bg-white dark:bg-gray-900 overflow-y-auto print-area" onClick={() => setShowPrint(false)}>
+          <div className="sticky top-0 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700 z-10 px-6 py-3 flex items-center justify-between print:hidden" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-base font-bold text-slate-900 dark:text-gray-100">{t('batch_print')}（{printOrders.length} 单）</h3>
+            <div className="flex items-center gap-2">
+              <Button variant="primary" size="sm" onClick={() => window.print()} leftIcon={<Printer size={13} />}>
+                {t('print')}
+              </Button>
+              <Button variant="ghost" size="sm" onClick={() => setShowPrint(false)}>{t('close')}</Button>
+            </div>
+          </div>
+          <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-4" onClick={(e) => e.stopPropagation()}>
+            {printOrders.map((o: any, idx: number) => (
+              <div key={o.id} className="rounded-xl border border-gray-300 dark:border-gray-600 p-4 print-card">
+                <div className="flex items-center justify-between border-b border-dashed border-gray-300 dark:border-gray-600 pb-2 mb-2">
+                  <div>
+                    <p className="text-sm font-bold text-slate-900 dark:text-gray-100">Nexora</p>
+                    <p className="text-[10px] text-gray-400">{t('print_card')} #{idx + 1}</p>
+                  </div>
+                  <span className="text-sm font-semibold text-gray-700 dark:text-gray-200">{o.order_number}</span>
+                </div>
+                <div className="text-xs text-gray-600 dark:text-gray-300 space-y-0.5">
+                  <p><b>{t('print_receiver')}：</b>{o.customer_name || '-'}　{o.customer_phone || (o.shipping_address?.phone || '')}</p>
+                  <p><b>{t('print_address')}：</b>{o.shipping_address ? [o.shipping_address.province, o.shipping_address.city, o.shipping_address.detail].filter(Boolean).join(' ') : '-'}</p>
+                  <p className="mt-1"><b>{t('print_items')}：</b>{Array.isArray(o.items) ? o.items.map((i: any) => `${i.product_name}×${i.quantity}`).join('、') : '-'}</p>
+                  <p><b>{t('print_total')}：</b>¥{Number(o.total || 0).toLocaleString('zh-CN', { minimumFractionDigits: 2 })}　<b>{t('print_date')}：</b>{o.created_at ? new Date(o.created_at.replace('+00:00', 'Z')).toLocaleDateString('zh-CN') : '-'}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
+
   );
 };

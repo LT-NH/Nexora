@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import {
   Search,
   X,
+  Send,
   User,
   Phone,
   Mail,
@@ -24,6 +25,7 @@ import { Badge } from '@/components/ui/Badge';
 import { Table } from '@/components/ui/Table';
 import { Modal, ModalFooter } from '@/components/ui/Modal';
 import { customerService } from '@/services/ecommerce';
+import api from '@/services/api';
 import type { Customer, CustomerTag, RFMAnalysis } from '@/types/ecommerce';
 import { usePageT, type Lang } from '@/i18n';
 
@@ -43,6 +45,9 @@ const D = {
     ok_updated: '客户信息已更新',
     ok_created: '客户已创建',
     ok_deleted: '客户已删除',
+    undo: '撤销',
+
+    restored_msg: '已恢复',
     err_delete_failed: '删除失败',
     load_failed_title: '加载失败',
     btn_retry: '重试',
@@ -67,6 +72,10 @@ const D = {
     btn_clear: '清除',
     empty_title: '暂无客户',
     empty_desc: '点击「添加客户」按钮创建你的第一个客户',
+    customers_unit: '位客户',
+    send_marketing: '发营销',
+    marketing_done: '营销已创建',
+    marketing_fail: '营销创建失败',
     pager_total: '共 {total} 条记录，第 {page} / {pages} 页',
     aria_prev: '上一页',
     aria_next: '下一页',
@@ -129,6 +138,9 @@ const D = {
     ok_updated: 'Customer updated',
     ok_created: 'Customer created',
     ok_deleted: 'Customer deleted',
+    undo: 'Undo',
+
+    restored_msg: 'Restored',
     err_delete_failed: 'Delete failed',
     load_failed_title: 'Load failed',
     btn_retry: 'Retry',
@@ -153,6 +165,10 @@ const D = {
     btn_clear: 'Clear',
     empty_title: 'No customers',
     empty_desc: 'Click "Add customer" to create your first customer',
+    customers_unit: 'customers',
+    send_marketing: 'Send',
+    marketing_done: 'Marketing created',
+    marketing_fail: 'Failed to create',
     pager_total: '{total} records, page {page} / {pages}',
     aria_prev: 'Previous page',
     aria_next: 'Next page',
@@ -270,6 +286,9 @@ export const Customers: React.FC = () => {
 
   // --- Detail panel states ---
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
+  const [segments, setSegments] = useState<any[]>([]);
+  const [segmentsLoading, setSegmentsLoading] = useState(true);
+  const [marketingSeg, setMarketingSeg] = useState<string | null>(null);
   const [showDetail, setShowDetail] = useState(false);
   const [detailLoading, setDetailLoading] = useState(false);
 
@@ -350,6 +369,7 @@ export const Customers: React.FC = () => {
 
   useEffect(() => {
     fetchCustomers();
+    loadSegments();
     fetchRFM();
   }, [fetchCustomers, fetchRFM]);
 
@@ -462,12 +482,54 @@ export const Customers: React.FC = () => {
     setShowDeleteModal(true);
   };
 
+  const loadSegments = async () => {
+    if (!currentWorkspace) return;
+    setSegmentsLoading(true);
+    try {
+      const res: any = await api.get(`/workspaces/${currentWorkspace.slug}/customers/value-segments`);
+      setSegments(res.data?.segments || []);
+    } catch {
+      setSegments([]);
+    } finally {
+      setSegmentsLoading(false);
+    }
+  };
+
+  const handleSegmentMarketing = async (segKey: string) => {
+    if (!currentWorkspace || marketingSeg) return;
+    setMarketingSeg(segKey);
+    try {
+      const res: any = await api.post(`/workspaces/${currentWorkspace.slug}/customers/value-segments/${segKey}/marketing`, {});
+      addToast('success', t('marketing_done'), res.data?.message || '');
+    } catch {
+      addToast('error', t('marketing_fail'));
+    } finally {
+      setMarketingSeg(null);
+    }
+  };
+
   const handleDeleteConfirm = async () => {
     if (!currentWorkspace || !deletingCustomer) return;
     setDeleteLoading(true);
     try {
+      const snapshot = { ...deletingCustomer };
       await customerService.deleteCustomer(currentWorkspace.slug, deletingCustomer.id);
-      addToast('success', t('ok_deleted'));
+      addToast('success', t('ok_deleted'), '', {
+        label: t('undo'),
+        onClick: async () => {
+          try {
+            const { id, createdAt, updatedAt, total_orders, total_spent, last_order_at, ...rest } = snapshot as any;
+            const createData = {
+              name: rest.name || '恢复客户',
+              email: rest.email || undefined,
+              phone: rest.phone || undefined,
+            };
+            await customerService.createCustomer(currentWorkspace.slug, createData as any);
+            addToast('success', t('restored_msg'));
+            fetchCustomers();
+          } catch { /* 恢复失败静默 */ }
+        },
+      });
       setShowDeleteModal(false);
       setDeletingCustomer(null);
       // If the deleted customer was shown in detail, close the panel
@@ -649,6 +711,30 @@ export const Customers: React.FC = () => {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className={showDetail ? 'lg:col-span-2' : 'lg:col-span-3'}>
           <Card padding={false}>
+      {/* 客户价值分层 */}
+      {!segmentsLoading && segments.length > 0 && (
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-4">
+          {segments.map((seg: any) => (
+            <div key={seg.key} className="rounded-xl border border-gray-100 dark:border-gray-700 bg-white dark:bg-gray-800 p-4 hover:shadow-md transition-shadow">
+              <p className="text-sm font-bold text-slate-900 dark:text-gray-100">{seg.label}</p>
+              <p className="text-2xl font-bold text-primary-600 dark:text-primary-400 mt-1 tabular-nums">{seg.count}</p>
+              <p className="text-[11px] text-gray-400 mt-0.5">{t('customers_unit')}</p>
+              <Button
+                variant="outline"
+                size="sm"
+                className="mt-2 w-full"
+                onClick={() => handleSegmentMarketing(seg.key)}
+                isLoading={marketingSeg === seg.key}
+                disabled={seg.count === 0}
+                leftIcon={<Send size={12} />}
+              >
+                {t('send_marketing')}
+              </Button>
+            </div>
+          ))}
+        </div>
+      )}
+
             <Table
               columns={columns}
               data={customers}

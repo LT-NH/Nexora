@@ -189,6 +189,140 @@ async def get_product(
     return await ProductService.get_product(db, workspace, product_id)
 
 
+@router.post(
+    "/batch-edit",
+    summary="批量编辑商品（改价 / 库存 / 分类），含 Shopify 反向同步",
+)
+async def batch_edit_products(
+    slug: str,
+    body: dict,
+    principal: Annotated[AuthContext, Depends(get_principal)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> dict:
+    workspace, _ = await _require_member(slug, principal, db, WorkspaceRole.MEMBER)
+    ids = body.get("ids") or []
+    if not ids:
+        raise HTTPException(status_code=400, detail="请选择至少一个商品")
+    updates: dict = {}
+    if "price" in body:
+        updates["price"] = float(body["price"])
+    if "stock" in body:
+        updates["stock"] = int(body["stock"])
+    if "category" in body:
+        updates["category"] = str(body["category"])
+    if "status" in body:
+        updates["status"] = str(body["status"])
+    if not updates:
+        raise HTTPException(status_code=400, detail="请提供要修改的字段（价格/库存/分类/状态）")
+
+    # Shopify 反向同步配置
+    from app.models.store import Store
+    from app.services.store import StoreService
+    from app.services.platforms import PLATFORM_REGISTRY
+
+    shopify_cfg = None
+    integ = None
+    try:
+        store_row = (
+            await db.execute(
+                select(Store).where(
+                    Store.workspace_id == workspace.id,
+                    Store.platform == "shopify",
+                ).order_by(Store.created_at.desc()).limit(1)
+            )
+        ).scalar_one_or_none()
+        if store_row is not None:
+            shopify_cfg = await StoreService.get_plain_credentials(store_row)
+            integ_cls = PLATFORM_REGISTRY.get("shopify")
+            if integ_cls is not None:
+                integ = integ_cls()
+    except Exception:
+        pass
+
+    from app.models.product import Product
+    updated = 0
+    sync_failures: list[str] = []
+    for pid in ids:
+        product = await db.get(Product, pid)
+        if product is None or product.workspace_id != workspace.id:
+            continue
+        _old_stock = product.stock or 0
+        for k, v in updates.items():
+            setattr(product, k, v)
+        if "stock" in updates:
+            from app.services.inventory_log import record_movement
+            await record_movement(
+                db=db, workspace_id=workspace.id, product_id=product.id,
+                change=int(updates["stock"]) - _old_stock,
+                stock_after=int(updates["stock"]),
+                movement_type="adjustment",
+                reason="批量编辑调整库存",
+                created_by=principal.user_id,
+            )
+        await db.flush()
+        # Shopify 反向同步（仅对 Shopify 来源商品）
+        if integ and shopify_cfg and product.sku and product.sku.startswith("shopify-"):
+            ok, _errs = await integ.sync_product_to_shopify(
+                shopify_cfg, product.sku[len("shopify-"):], updates
+            )
+            if not ok:
+                sync_failures.append(product.name)
+        updated += 1
+    await db.commit()
+
+    return {
+        "updated": updated,
+        "sync_failures": sync_failures,
+        "message": f"已批量更新 {updated} 个商品" + (f"，{len(sync_failures)} 个 Shopify 同步失败" if sync_failures else "（含 Shopify 真实同步）"),
+    }
+
+
+@router.get(
+    "/{product_id}/movements",
+    summary="库存操作流水（进/出/调整轨迹）",
+)
+async def get_inventory_movements(
+    slug: str,
+    product_id: str,
+    principal: Annotated[AuthContext, Depends(get_principal)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    limit: int = 30,
+) -> dict:
+    from app.models.inventory_movement import InventoryMovement
+    from app.models.product import Product
+
+    workspace, _ = await _require_member(slug, principal, db, WorkspaceRole.VIEWER)
+    product = await db.get(Product, product_id)
+    if product is None or product.workspace_id != workspace.id:
+        raise HTTPException(status_code=404, detail="商品不存在")
+    rows = (
+        await db.execute(
+            select(InventoryMovement)
+            .where(
+                InventoryMovement.workspace_id == workspace.id,
+                InventoryMovement.product_id == product_id,
+            )
+            .order_by(InventoryMovement.created_at.desc())
+            .limit(min(limit, 100))
+        )
+    ).scalars().all()
+    return {
+        "items": [
+            {
+                "id": r.id,
+                "change": r.change,
+                "stock_after": r.stock_after,
+                "movement_type": r.movement_type,
+                "reason": r.reason,
+                "created_at": r.created_at.isoformat() if r.created_at else None,
+            }
+            for r in rows
+        ],
+        "total": len(rows),
+    }
+
+
+
 @router.put(
     "/{product_id}",
     response_model=ProductResponse,
@@ -241,6 +375,7 @@ async def update_product(
         resp.shopify_sync_warning = f"Shopify 同步异常: {str(exc)[:120]}"
 
     return resp
+
 
 
 @router.delete(

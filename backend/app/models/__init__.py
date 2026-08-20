@@ -18,6 +18,7 @@ from app.models.permission import PermissionGroup, PermissionGroupMember, Worksp
 from app.models.refund import Refund
 from app.models.payment import Payment
 from app.models.ai_insight import AiInsight
+from app.models.inventory_movement import InventoryMovement
 
 __all__ = [
     "User",

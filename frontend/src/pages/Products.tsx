@@ -5,6 +5,9 @@ import {
   Edit3,
   Trash2,
   Package,
+  Tag,
+  Check,
+  History,
   X,
   Layers,
   Sparkles,
@@ -143,6 +146,15 @@ const D = {
     selected_count: '已选择 {n} 项',
     deselect: '取消选择',
     batch_delete: '批量删除',
+    batch_edit: '批量编辑',
+    batch_edit_title: '批量编辑商品',
+    batch_price: '批量改价',
+    batch_stock: '批量改库存',
+    batch_category: '批量改分类',
+    batch_edit_done: '批量更新完成',
+    batch_edit_fail: '批量更新失败',
+    stock_movements: '库存流水',
+    no_movements: '暂无库存变动记录',
     empty_products: '暂无商品',
     empty_products_desc: '点击「添加商品」按钮创建你的第一个商品',
     total_pages: '共 {total} 条，第 {page}/{totalPages} 页',
@@ -414,6 +426,12 @@ export const Products: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [isBatchDeleting, setIsBatchDeleting] = useState(false);
+  const [batchField, setBatchField] = useState<'price' | 'stock' | 'category' | null>(null);
+  const [batchValue, setBatchValue] = useState('');
+  const [isBatchEditing, setIsBatchEditing] = useState(false);
+  const [stockMovements, setStockMovements] = useState<any[]>([]);
+  const [showMovements, setShowMovements] = useState(false);
+  const [movementsLoading, setMovementsLoading] = useState(false);
 
   // Search with debounce — initialized from URL params
   const [searchQuery, setSearchQuery] = useState(searchParams.get('q') || '');
@@ -722,6 +740,41 @@ export const Products: React.FC = () => {
         }
       },
     });
+  };
+
+  const openStockMovements = async (product: any) => {
+    if (!currentWorkspace) return;
+    setMovementsLoading(true);
+    setShowMovements(true);
+    try {
+      const res: any = await api.get(`/workspaces/${currentWorkspace.slug}/products/${product.id}/movements`);
+      setStockMovements(res.data?.items || []);
+    } catch {
+      setStockMovements([]);
+    } finally {
+      setMovementsLoading(false);
+    }
+  };
+
+  const handleBatchEdit = async () => {
+    if (!currentWorkspace || !batchField || selectedIds.size === 0) return;
+    setIsBatchEditing(true);
+    try {
+      const payload: any = { ids: [...selectedIds] };
+      if (batchField === 'price') payload.price = parseFloat(batchValue);
+      else if (batchField === 'stock') payload.stock = parseInt(batchValue, 10);
+      else if (batchField === 'category') payload.category = batchValue.trim();
+      const res: any = await api.post(`/workspaces/${currentWorkspace.slug}/products/batch-edit`, payload);
+      addToast('success', t('batch_edit_done'), res.data?.message || '');
+      setBatchField(null);
+      setBatchValue('');
+      setSelectedIds(new Set());
+      fetchProducts();
+    } catch (err: any) {
+      addToast('error', t('batch_edit_fail'), err?.response?.data?.detail || '');
+    } finally {
+      setIsBatchEditing(false);
+    }
   };
 
   const handleBatchDelete = async () => {
@@ -1151,6 +1204,7 @@ export const Products: React.FC = () => {
         <Button variant="ghost" size="sm" onClick={() => openVariantModal(p)} leftIcon={<Layers size={14} />}>
           {t('variant')}
         </Button>
+        <Button variant="ghost" size="sm" onClick={() => openStockMovements(p)} leftIcon={<History size={13} />} aria-label="库存流水" title="库存流水" />
         <Button variant="ghost" size="sm" onClick={() => openEditModal(p)} leftIcon={<Edit3 size={14} />} aria-label={t('edit_product_aria')} />
         <Button variant="ghost" size="sm" onClick={() => handleDeleteProduct(p)} leftIcon={<Trash2 size={14} className="text-red-500" />} aria-label={t('delete_product_aria')} />
       </div>
@@ -1294,6 +1348,30 @@ export const Products: React.FC = () => {
                     onClick={() => setSelectedIds(new Set())}
                   >
                     {t('deselect')}
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setBatchField('price')}
+                    leftIcon={<span className="text-xs">¥</span>}
+                  >
+                    {t('batch_price')}
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setBatchField('stock')}
+                    leftIcon={<Package size={13} />}
+                  >
+                    {t('batch_stock')}
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setBatchField('category')}
+                    leftIcon={<Tag size={13} />}
+                  >
+                    {t('batch_category')}
                   </Button>
                   <Button
                     variant="danger"
@@ -1751,6 +1829,67 @@ export const Products: React.FC = () => {
           />
         </div>
       </Modal>
+      {/* 批量编辑模态 */}
+      {batchField && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => setBatchField(null)}>
+          <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-6 w-full max-w-sm" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-lg font-bold text-slate-900 dark:text-gray-100 mb-1">{t('batch_edit_title')}</h3>
+            <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">{t('selected_count').replace('{n}', String(selectedIds.size))}</p>
+            <label className="block text-sm font-medium text-gray-600 dark:text-gray-300 mb-1.5">
+              {batchField === 'price' ? t('label_price') : batchField === 'stock' ? t('label_stock') : t('label_category')}
+            </label>
+            <input
+              type={batchField === 'category' ? 'text' : 'number'}
+              value={batchValue}
+              onChange={(e) => setBatchValue(e.target.value)}
+              placeholder={batchField === 'category' ? t('label_category') : batchField === 'price' ? '0.00' : '0'}
+              autoFocus
+              className="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-gray-50 dark:bg-gray-800 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-primary-200 mb-4"
+            />
+            <div className="flex justify-end gap-2">
+              <Button variant="ghost" size="sm" onClick={() => setBatchField(null)}>{t('cancel')}</Button>
+              <Button size="sm" onClick={handleBatchEdit} isLoading={isBatchEditing} leftIcon={<Check size={14} />}>
+                {t('confirm')}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 库存流水弹窗 */}
+      {showMovements && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => setShowMovements(false)}>
+          <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl w-full max-w-md p-5" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-base font-bold text-slate-900 dark:text-gray-100">{t('stock_movements')}</h3>
+              <button onClick={() => setShowMovements(false)} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200">
+                <X size={18} />
+              </button>
+            </div>
+            {movementsLoading ? (
+              <div className="py-8 text-center text-sm text-gray-400">{t('loading')}</div>
+            ) : stockMovements.length === 0 ? (
+              <div className="py-8 text-center text-sm text-gray-400">{t('no_movements')}</div>
+            ) : (
+              <div className="space-y-2 max-h-80 overflow-y-auto">
+                {stockMovements.map((m: any) => (
+                  <div key={m.id} className="flex items-center justify-between rounded-lg bg-gray-50 dark:bg-gray-700/40 px-3 py-2 text-sm">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className={`font-bold flex-shrink-0 ${m.change >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
+                        {m.change >= 0 ? '+' : ''}{m.change}
+                      </span>
+                      <span className="text-gray-500 dark:text-gray-400 truncate">{m.reason || m.movement_type}</span>
+                    </div>
+                    <span className="text-gray-400 text-xs flex-shrink-0">
+                      库存 {m.stock_after} · {m.created_at ? new Date(m.created_at.replace('+00:00', 'Z')).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }) : ''}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 };

@@ -37,6 +37,9 @@ const D = {
     ok_status_updated: '状态已更新',
     err_op_failed: '操作失败',
     ok_deleted: '优惠券已删除',
+    undo: '撤销',
+
+    restored_msg: '已恢复',
     err_delete_failed: '删除失败',
     delete_confirm: '确定要删除该优惠券吗？',
     coupons_title: '优惠券管理',
@@ -86,6 +89,9 @@ const D = {
     ok_status_updated: 'Status updated',
     err_op_failed: 'Operation failed',
     ok_deleted: 'Coupon deleted',
+    undo: 'Undo',
+
+    restored_msg: 'Restored',
     err_delete_failed: 'Delete failed',
     delete_confirm: 'Delete this coupon?',
     coupons_title: 'Coupon Management',
@@ -206,8 +212,25 @@ export const Coupons: React.FC = () => {
   const handleDelete = async (couponId: string) => {
     if (!currentWorkspace || !confirm(t('delete_confirm'))) return;
     try {
+      const snapshot = { ...(coupons.find(c => c.id === couponId) || {}) };
       await couponService.deleteCoupon(currentWorkspace.slug, couponId);
-      addToast('success', t('ok_deleted'));
+      addToast('success', t('ok_deleted'), '', {
+        label: t('undo'),
+        onClick: async () => {
+          try {
+            await couponService.createCoupon(currentWorkspace.slug, {
+              code: snapshot.code || 'UNDO',
+              type: snapshot.type || 'fixed',
+              value: snapshot.value || 0,
+              min_order_amount: snapshot.min_order_amount || 0,
+              max_uses: snapshot.max_uses || 100,
+              expires_at: snapshot.expires_at || undefined,
+            } as any);
+            addToast('success', t('restored_msg'));
+            loadCoupons(true);
+          } catch { /* 恢复失败静默 */ }
+        },
+      });
       loadCoupons(true);
     } catch {
       addToast('error', t('err_delete_failed'));
