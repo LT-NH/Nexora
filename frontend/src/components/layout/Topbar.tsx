@@ -157,7 +157,12 @@ const MobileSearchButton: React.FC = () => {
 
   const handleResultClick = (path: string) => {
     setShowOverlay(false);
-    navigate(path);
+    setQuery('');
+    // 相同路径时加时间戳强制路由变化（否则 React Router 不重新渲染）
+    const target = window.location.pathname === path.split('?')[0]
+      ? `${path}${path.includes('?') ? '&' : '?'}ts=${Date.now()}`
+      : path;
+    navigate(target);
   };
 
   return (
@@ -313,7 +318,11 @@ const SearchBar: React.FC = () => {
   const handleResultClick = (path: string) => {
     setShowResults(false);
     setQuery('');
-    navigate(path);
+    // 相同路径时加时间戳强制路由变化（否则 React Router 不重新渲染）
+    const target = window.location.pathname === path.split('?')[0]
+      ? `${path}${path.includes('?') ? '&' : '?'}ts=${Date.now()}`
+      : path;
+    navigate(target);
   };
 
   return (
