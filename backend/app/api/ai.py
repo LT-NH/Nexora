@@ -640,12 +640,15 @@ async def ai_weekly_summary(
     }
 
 
-@router.get("/pricing", summary="AI 定价建议")
+@router.get("/pricing", summary="AI 定价建议（千问真实分析）")
 async def ai_pricing(
     slug: str,
     principal: Annotated[AuthContext, Depends(get_principal)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> dict:
+    from app.services.ai import _get_qwen_config, _extract_json
+    import httpx as _httpx
+
     workspace, _ = await _require_member(slug, principal, db, WorkspaceRole.VIEWER)
     products = (
         await db.execute(
@@ -653,23 +656,93 @@ async def ai_pricing(
         )
     ).scalars().all()
     items = []
+    if not products:
+        return {"items": []}
+
+    # 商品数据快照（真实数据：名称/价格/成本/库存/销量）
+    prod_snapshot = []
     for p in products:
         price = float(p.price or 0)
-        if (p.stock or 0) > 120:
-            suggestion = "库存积压，建议降价 10-15% 清仓"
-        elif (p.stock or 0) <= 5:
-            suggestion = "库存偏低，维持现价并尽快补货"
-        elif price <= 0:
-            suggestion = "建议按成本价上浮 30-50% 定价"
-        else:
-            suggestion = "价格健康，可小幅提价 5% 测试"
-        items.append({
-            "product_id": p.id,
+        prod_snapshot.append({
             "name": p.name,
-            "current_price": price,
-            "suggestion": suggestion,
-            "reason": f"当前库存 {p.stock or 0} 件",
+            "price": price,
+            "cost": float(p.cost_price or 0),
+            "stock": p.stock or 0,
+            "low_stock_threshold": p.low_stock_threshold or 10,
+            "category": p.category or "",
         })
+
+    # 千问逐个商品生成差异化定价建议（直调 API，30s 超时，避免 6s 超时降级）
+    try:
+        key, model, base_url = _get_qwen_config()
+        if not key:
+            raise RuntimeError("no qwen key")
+        prompt = f"""你是资深电商定价分析师。请基于以下商品的真实数据，对每个商品给出定价建议。
+
+商品数据（JSON）：
+{json.dumps(prod_snapshot, ensure_ascii=False)}
+
+规则背景：
+- 库存 > 120 且成本 < 售价 60%：可降价清仓，建议具体降幅百分比
+- 库存 <= 低库存阈值：不建议降价，建议提价或维持并补货
+- 毛利（售价-成本）过低：建议提价
+- 每个商品必须给出不同的、有依据的建议
+
+返回严格 JSON 数组（不要 markdown），每个元素格式：
+{{"name": "商品名", "suggestion": "建议动作，如：降价 15% 至 ¥399 清仓", "reason": "一句话依据，引用具体数据"}}
+必须覆盖所有 {len(prod_snapshot)} 个商品。"""
+
+        async with _httpx.AsyncClient(timeout=30, trust_env=False) as _client:
+            _resp = await _client.post(
+                f"{base_url}/chat/completions",
+                headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
+                json={
+                    "model": model,
+                    "messages": [
+                        {"role": "system", "content": "你是电商定价分析师，只返回 JSON 数组，全程使用中文。"},
+                        {"role": "user", "content": prompt},
+                    ],
+                    "temperature": 0.4,
+                    "max_tokens": 2000,
+                },
+            )
+        if _resp.status_code == 200:
+            _data = _resp.json()
+            raw = _data["choices"][0]["message"]["content"]
+        else:
+            raw = ""
+        ai_items = _extract_json(raw)
+        if isinstance(ai_items, list):
+            ai_map = {str(i.get("name", "")).strip(): i for i in ai_items if isinstance(i, dict)}
+            for p in products:
+                ai = ai_map.get(str(p.name).strip())
+                items.append({
+                    "product_id": p.id,
+                    "name": p.name,
+                    "current_price": float(p.price or 0),
+                    "suggestion": (ai or {}).get("suggestion") or "维持现价",
+                    "reason": (ai or {}).get("reason") or f"当前库存 {p.stock or 0} 件",
+                })
+    except Exception:
+        # 降级：规则兜底（千问不可用时）
+        for p in products:
+            price = float(p.price or 0)
+            if (p.stock or 0) > 120:
+                suggestion = "库存积压，建议降价 10-15% 清仓"
+            elif (p.stock or 0) <= 5:
+                suggestion = "库存偏低，维持现价并尽快补货"
+            elif price <= 0:
+                suggestion = "建议按成本价上浮 30-50% 定价"
+            else:
+                suggestion = "价格健康，可小幅提价 5% 测试"
+            items.append({
+                "product_id": p.id,
+                "name": p.name,
+                "current_price": price,
+                "suggestion": suggestion,
+                "reason": f"当前库存 {p.stock or 0} 件",
+            })
+
     return {"items": items}
 
 

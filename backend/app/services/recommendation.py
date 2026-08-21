@@ -91,7 +91,8 @@ async def get_recommendations(
                 "name": products[pid].name,
                 "price": float(products[pid].price),
                 "score": score,
-                "reason": "买过相似商品",
+                # 真实依据：与哪些热销商品一起购买过 N 次
+                "reason": f"与热销商品共现 {int(score)} 次（基于 {len(orders)} 笔订单分析）",
             }
             for pid, score in sorted_recs
             if pid in products
