@@ -742,3 +742,108 @@ html.dark {
   0%, 100% { filter: brightness(1); }
   50% { filter: brightness(1.25); }
 }
+
+/* ==========================================================================
+   DESIGN SYSTEM — 全局设计规范（2026-08-22 强化）
+   ========================================================================== */
+
+/* 1. 可访问性：全局焦点规范（键盘导航可见） */
+:focus-visible {
+  outline: 2px solid rgba(14, 165, 233, 0.85);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+/* 2. 平滑滚动（尊重 reduced-motion） */
+html { scroll-behavior: smooth; }
+
+/* 3. 品牌文本选择 */
+::selection { background: rgba(124, 58, 237, 0.16); }
+
+/* 4. 轻量滚动条（WebKit） */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: rgba(120, 120, 128, 0.28);
+  border-radius: 8px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+::-webkit-scrollbar-thumb:hover { background-color: rgba(120, 120, 128, 0.45); }
+
+/* 5. Hero 标题入场：上浮 + 模糊渐显（smooth clip reveal） */
+@keyframes heroTitleIn {
+  0%   { opacity: 0; transform: translateY(30px); filter: blur(8px); }
+  100% { opacity: 1; transform: translateY(0);    filter: blur(0); }
+}
+.animate-hero-title { animation: heroTitleIn 0.9s cubic-bezier(0.22, 1, 0.36, 1) both; }
+.animate-hero-title-delay-1 { animation-delay: 0.12s; }
+.animate-hero-title-delay-2 { animation-delay: 0.24s; }
+
+/* 6. 渐变光 sweep（标题高亮词） */
+@keyframes gradientSweep {
+  0%   { background-position: 0% 50%; }
+  50%  { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+.animate-gradient-sweep {
+  background-size: 200% 200%;
+  animation: gradientSweep 6s ease-in-out infinite;
+}
+
+/* 7. CTA 呼吸：主按钮悬浮呼吸（阴影 + 微上浮） */
+@keyframes ctaBreathe {
+  0%, 100% { box-shadow: 0 10px 30px -8px rgba(124, 58, 237, 0.35); transform: translateY(0); }
+  50%      { box-shadow: 0 20px 44px -10px rgba(124, 58, 237, 0.55); transform: translateY(-3px); }
+}
+.animate-cta-breathe { animation: ctaBreathe 3.5s ease-in-out infinite; }
+
+/* 8. 通用 reveal（不依赖组件，滚动显现） */
+.reveal {
+  opacity: 0;
+  transform: translateY(28px);
+  transition: opacity 0.7s ease, transform 0.7s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.reveal.is-visible { opacity: 1; transform: translateY(0); }
+
+/* 9. 卡片抬升通用（hover 反馈一致化） */
+.card-hover {
+  transition: transform 0.3s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.3s ease, border-color 0.3s ease;
+  will-change: transform;
+}
+.card-hover:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 18px 40px -16px rgba(15, 23, 42, 0.18);
+}
+
+/* 10. 导航链接下划线动画 */
+.nav-link { position: relative; }
+.nav-link::after {
+  content: '';
+  position: absolute;
+  left: 0; bottom: -4px;
+  width: 100%; height: 2px;
+  border-radius: 2px;
+  background: linear-gradient(90deg, #8b5cf6, #d946ef);
+  transform: scaleX(0);
+  transform-origin: left;
+  transition: transform 0.3s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.nav-link:hover::after { transform: scaleX(1); }
+
+/* 11. 可访问性：全面尊重 prefers-reduced-motion */
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  .animate-hero-title,
+  .animate-hero-title-delay-1,
+  .animate-hero-title-delay-2,
+  .animate-gradient-sweep,
+  .animate-cta-breathe,
+  .reveal,
+  .card-hover {
+    animation: none !important;
+    transition: none !important;
+    opacity: 1 !important;
+    transform: none !important;
+  }
+}

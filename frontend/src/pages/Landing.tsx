@@ -706,13 +706,13 @@ export const Landing: React.FC = () => {
             <div className="hidden md:flex items-center gap-8">
               <a
                 href="#features"
-                className="text-sm font-medium text-[#6e6e73] hover:text-[#1d1d1f] transition-colors duration-200"
+                className="nav-link text-sm font-medium text-[#6e6e73] hover:text-[#1d1d1f] transition-colors duration-200"
               >
                 功能特性
               </a>
               <a
                 href="#pricing"
-                className="text-sm font-medium text-[#6e6e73] hover:text-[#1d1d1f] transition-colors duration-200"
+                className="nav-link text-sm font-medium text-[#6e6e73] hover:text-[#1d1d1f] transition-colors duration-200"
               >
                 定价方案
               </a>
@@ -799,7 +799,7 @@ export const Landing: React.FC = () => {
                 <h1 className="mt-8 text-5xl sm:text-7xl lg:text-8xl text-[#1d1d1f] leading-[1.04] tracking-tight">
                   <span className="font-light tracking-tight">一个面板，</span>
                   <br />
-                  <span className="font-semibold bg-gradient-to-r from-violet-600 via-purple-600 to-fuchsia-500 bg-clip-text text-transparent">
+                  <span className="font-semibold bg-gradient-to-r from-violet-600 via-purple-600 to-fuchsia-500 bg-clip-text text-transparent animate-gradient-sweep">
                     管理全部电商渠道
                   </span>
                   <span className="font-light italic text-[#6e6e73]">。</span>
@@ -812,7 +812,7 @@ export const Landing: React.FC = () => {
               </Reveal>
               <Reveal delay={450}>
                 <div className="mt-9 flex flex-wrap items-center justify-center lg:justify-start gap-4">
-                  <Link to="/register">
+                  <Link to="/register" className="animate-cta-breathe inline-block">
                     <Button
                       variant="primary"
                       size="lg"
