@@ -100,6 +100,35 @@ async def _compute_indicators(db: AsyncSession, ws_id: str):
     }
 
 
+async def _qwen_enhance(prompt: str) -> str | None:
+    """直调千问（30s 超时、中文、提取 content），失败返回 None。"""
+    import httpx as _httpx
+    try:
+        from app.services.ai import _get_qwen_config
+        key, model, base_url = _get_qwen_config()
+        if not key:
+            return None
+        async with _httpx.AsyncClient(timeout=30, trust_env=False) as _client:
+            _resp = await _client.post(
+                f"{base_url}/chat/completions",
+                headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
+                json={
+                    "model": model,
+                    "messages": [
+                        {"role": "system", "content": "你是资深电商运营专家，全程使用中文，只返回要求的内容。"},
+                        {"role": "user", "content": prompt},
+                    ],
+                    "temperature": 0.5,
+                    "max_tokens": 1500,
+                },
+            )
+        if _resp.status_code != 200:
+            return None
+        return _resp.json()["choices"][0]["message"]["content"]
+    except Exception:
+        return None
+
+
 def _build_insights(ws_id: str, ind: dict) -> list[dict]:
     """基于指标生成今日 3 条决策结论（主动推送）。"""
     out: list[dict] = []
@@ -202,6 +231,29 @@ async def daily_summary(
         ins["id"] = row.id
         ins["status"] = "pending"
         new_insights.append(ins)
+    # 千问润色：把规则结论改写成更有洞察的标题/详情（失败则保留规则模板）
+    if new_insights:
+        try:
+            from app.services.ai import _extract_json
+            _prompt = (
+                "以下是系统基于真实数据生成的 3 条运营结论（JSON 数组）。"
+                "请把每条改写成更有洞察力、更具体的标题和详情，"
+                "保留每条的 insight_type 和 action_type 不变，中文回复。\n"
+                + json.dumps(new_insights, ensure_ascii=False)
+                + "\n返回严格 JSON 数组，元素格式：{\"insight_type\": 原值, \"action_type\": 原值, \"title\": 新标题, \"detail\": 新详情}"
+            )
+            _raw = await _qwen_enhance(_prompt)
+            _polished = _extract_json(_raw) if _raw else None
+            if isinstance(_polished, list):
+                _map = {str(i.get("insight_type")): i for i in _polished if isinstance(i, dict)}
+                for _ins in new_insights:
+                    _p = _map.get(_ins["insight_type"])
+                    if _p and _p.get("title") and _p.get("detail"):
+                        _ins["title"] = _p["title"]
+                        _ins["detail"] = _p["detail"]
+        except Exception:
+            pass
+
     await db.commit()
 
     # 今日可见：本次生成的 + 24h 内已有未完成的
@@ -458,11 +510,25 @@ async def predictions(
                 })
     churn_predictions = sorted(churn_predictions, key=lambda x: -x["days_since_last"])[:6]
 
+    # 千问解读未来 7 天风险（失败则保留通用说明）
+    forecast_note = "基于近 7 天订单动销与复购间隔预测，仅供参考"
+    try:
+        _prompt = (
+            "未来 7 天缺货风险商品：" + (json.dumps(stockout_predictions[:3], ensure_ascii=False) if stockout_predictions else "无")
+            + "；客户流失风险：" + (json.dumps(churn_predictions[:3], ensure_ascii=False) if churn_predictions else "无")
+            + "\n\n请用一句话解读最需要优先处理的风险（80 字内），直接输出。"
+        )
+        _raw = await _qwen_enhance(_prompt)
+        if _raw:
+            forecast_note = _raw.strip()
+    except Exception:
+        pass
+
     return {
         "generated_at": now.isoformat(),
         "stockout_7d": stockout_predictions,
         "churn_risk": churn_predictions,
-        "note": "基于近 7 天订单动销与复购间隔预测，仅供参考",
+        "note": forecast_note,
     }
 
 
@@ -626,7 +692,7 @@ async def ai_chat(
     }
 
 
-@router.get("/weekly-summary", summary="AI 周报摘要")
+@router.get("/weekly-summary", summary="AI 周报摘要（千问真实分析）")
 async def ai_weekly_summary(
     slug: str,
     principal: Annotated[AuthContext, Depends(get_principal)],
@@ -634,9 +700,22 @@ async def ai_weekly_summary(
 ) -> dict:
     workspace, _ = await _require_member(slug, principal, db, WorkspaceRole.VIEWER)
     snapshot = await _collect_biz_snapshot(db, workspace.id)
+
+    # 千问基于真实数据生成周报摘要（趋势/亮点/风险/下周建议）
+    summary = snapshot
+    try:
+        _raw = await _qwen_enhance(
+            "以下是店铺本周真实数据快照：\n" + snapshot
+            + "\n\n请生成一份简洁的周报摘要（120 字内），包含：本周经营表现、1 个亮点、1 个风险、1 条下周行动建议。直接输出正文，不要标题。"
+        )
+        if _raw:
+            summary = _raw.strip()
+    except Exception:
+        pass
+
     return {
-        "summary": snapshot,
-        "report_data": {"source": "real_data", "generated_at": datetime.utcnow().isoformat()},
+        "summary": summary,
+        "report_data": {"source": "real_data+qwen", "generated_at": datetime.utcnow().isoformat()},
     }
 
 
