@@ -854,3 +854,11 @@ html { scroll-behavior: smooth; }
 .brand-accent-bar { background: var(--brand-color, #0EA5E9) !important; }
 .brand-active::before { background: var(--brand-color, #0EA5E9) !important; }
 .brand-text { color: var(--brand-color, #0EA5E9); }
+
+/* ==========================================================================
+   TYPOGRAPHY v2 — 戏剧化字阶（大更大、小更小）
+   ========================================================================== */
+.page-title-v2 { font-size: 24px; font-weight: 800; letter-spacing: -0.02em; line-height: 1.2; }
+.stat-value-v2 { font-size: 28px; font-weight: 800; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; line-height: 1.1; }
+.body-text-v2 { font-size: 14px; line-height: 1.65; }
+.hint-text-v2 { font-size: 12px; letter-spacing: 0; }

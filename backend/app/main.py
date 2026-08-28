@@ -10,7 +10,7 @@ import asyncio
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 
-from fastapi import Depends, FastAPI
+from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse
@@ -23,6 +23,8 @@ from app.database import async_session_factory, get_db, init_db
 from app.middleware.rate_limit import RateLimitMiddleware
 from app.middleware.request_id import RequestMiddleware
 from app.middleware.performance import PerformanceMiddleware
+from app.middleware.observability import MetricsMiddleware, metrics_response
+from app.middleware.auth import require_superadmin
 from app.models.subscription import SubscriptionPlan
 from app.utils.exceptions import register_exception_handlers
 from app.utils.logging import get_logger, setup_logging
@@ -77,8 +79,11 @@ async def lifespan(app: FastAPI):
         # Send weekly reports every Monday at 8:00 AM
         from app.services.report import send_all_weekly_reports
         scheduler.add_job(send_all_weekly_reports, "cron", day_of_week="mon", hour=8, minute=0)
+        # AI 自动巡检：每天 9:00 生成经营体检结论
+        from app.services.patrol import run_ai_patrol
+        scheduler.add_job(run_ai_patrol, "cron", hour=9, minute=0)
         scheduler.start()
-        logger.info("Scheduled daily backup at 03:00 and weekly reports on Monday 08:00.")
+        logger.info("Scheduled daily backup 03:00, weekly reports Mon 08:00, AI patrol 09:00.")
     except Exception as e:
         logger.warning("Failed to start backup scheduler: %s", str(e))
 
@@ -212,8 +217,36 @@ app.add_middleware(RequestMiddleware)
 # Performance Monitoring Middleware
 app.add_middleware(PerformanceMiddleware)
 
+# Prometheus Metrics Middleware (request counters / latency histograms)
+app.add_middleware(MetricsMiddleware)
+
 # Include API router
 app.include_router(api_router)
+
+
+async def _check_db(session: AsyncSession) -> bool:
+    """Return ``True`` if the database responds to a simple query."""
+    try:
+        await session.execute(text("SELECT 1"))
+        return True
+    except Exception:
+        return False
+
+
+async def _check_redis() -> bool:
+    """Return ``True`` if Redis responds to a PING.
+
+    Uses the shared async Redis client from ``app.utils.redis``. A failure
+    to import or connect (e.g. Redis not configured) is treated as
+    "unavailable" rather than raising.
+    """
+    try:
+        from app.utils.redis import get_redis
+        client = await get_redis()
+        await client.ping()
+        return True
+    except Exception:
+        return False
 
 
 # Health check endpoint
@@ -225,33 +258,107 @@ app.include_router(api_router)
 async def health_check(session: AsyncSession = Depends(get_db)) -> dict:
     """Health check endpoint for monitoring and load balancers.
 
-    Checks database connectivity and returns service metadata.
+    Checks database and Redis connectivity and returns service metadata.
     """
-    db_ok = False
-    try:
-        await session.execute(text("SELECT 1"))
-        db_ok = True
-    except Exception:
-        pass
+    db_ok = await _check_db(session)
+    redis_ok = await _check_redis()
+    healthy = db_ok and redis_ok
     return {
-        "status": "healthy" if db_ok else "degraded",
+        "status": "healthy" if healthy else "degraded",
         "version": "1.0.0",
         "service": "nexora-api",
         "database": "connected" if db_ok else "unavailable",
+        "redis": "connected" if redis_ok else "unavailable",
         "timestamp": datetime.now(timezone.utc).isoformat()
     }
 
 
+@app.get(
+    "/live",
+    summary="Liveness probe",
+    tags=["System"],
+)
+async def liveness() -> dict:
+    """Liveness probe.
+
+    Returns 200 as long as the process is running. Performs no dependency
+    checks so that transient backend outages do not cause the pod to be
+    killed during rolling restarts.
+    """
+    return {"status": "alive"}
+
+
+@app.get(
+    "/ready",
+    summary="Readiness probe",
+    tags=["System"],
+)
+async def readiness(session: AsyncSession = Depends(get_db)) -> JSONResponse:
+    """Readiness probe.
+
+    Returns 200 when the database is reachable. Redis is treated as an
+    optional dependency: if it is not configured, the instance is still
+    ready (SQLite is the default storage and Redis is only an accelerator).
+    """
+    db_ok = await _check_db(session)
+    redis_ok = await _check_redis()
+    ready = db_ok  # Redis is optional; only the DB gates readiness
+    return JSONResponse(
+        status_code=200 if ready else 503,
+        content={
+            "status": "ready" if ready else "not ready",
+            "database": "connected" if db_ok else "unavailable",
+            "redis": "connected" if redis_ok else "unavailable",
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        },
+    )
+
+
 # ---------------------------------------------------------------------------
-# Metrics endpoint (performance monitoring)
+# Metrics endpoint (Prometheus + process monitoring)
 # ---------------------------------------------------------------------------
 @app.get(
     "/metrics",
-    summary="Service metrics",
+    summary="Prometheus metrics",
+    tags=["System"],
+)
+async def metrics(
+    request: Request,
+    authorization: str | None = Header(default=None),
+):
+    """Return Prometheus-format application metrics.
+
+    If ``settings.METRICS_TOKEN`` is configured, the request must carry
+    ``Authorization: Bearer <token>``.
+    """
+    token = settings.METRICS_TOKEN
+    if token:
+        expected = f"Bearer {token}"
+        if authorization != expected:
+            raise HTTPException(status_code=401, detail="Invalid metrics token")
+    return metrics_response()
+
+
+# Alias under the API prefix so the frontend's `api.get('/metrics/process')`
+# (which prepends /api/v1) resolves correctly.
+@app.get(
+    "/api/v1/metrics/process",
+    summary="Process metrics (API prefix alias)",
     tags=["System"],
     response_model=dict,
 )
-async def metrics():
+async def process_metrics_api():
+    """API-prefixed alias of /metrics/process for the dashboard card."""
+    return await process_metrics()
+
+
+@app.get(
+    "/metrics/process",
+    summary="Process metrics",
+    tags=["System"],
+    response_model=dict,
+)
+async def process_metrics():
     """Return process-level performance metrics (memory, CPU, connections)."""
     try:
         import psutil
@@ -271,19 +378,6 @@ async def metrics():
         }
 
 
-# Alias under the API prefix so the frontend's `api.get('/metrics/process')`
-# (which prepends /api/v1) resolves correctly.
-@app.get(
-    "/api/v1/metrics/process",
-    summary="Process metrics (API prefix alias)",
-    tags=["System"],
-    response_model=dict,
-)
-async def process_metrics_api():
-    """API-prefixed alias of /metrics for the dashboard card."""
-    return await metrics()
-
-
 # ---------------------------------------------------------------------------
 # Weekly report manual trigger endpoint
 # ---------------------------------------------------------------------------
@@ -292,10 +386,22 @@ async def process_metrics_api():
     summary="Manually trigger weekly reports",
     tags=["System"],
 )
-async def trigger_report():
-    """Manually trigger sending weekly reports to all workspace owners."""
+async def trigger_report(_user=Depends(require_superadmin)):
+    """Manually trigger sending weekly reports to all workspace owners.
+
+    Requires superadmin privileges.
+    """
     from app.services.report import send_all_weekly_reports
-    asyncio.create_task(send_all_weekly_reports())
+
+    async def _safe_send_weekly_reports() -> None:
+        """Run the weekly reports, logging any error instead of letting it
+        vanish as an un-retrieved task exception."""
+        try:
+            await send_all_weekly_reports()
+        except Exception:
+            logger.exception("Error sending weekly reports.")
+
+    asyncio.create_task(_safe_send_weekly_reports())
     return {"status": "started"}
 
 
@@ -307,8 +413,11 @@ async def trigger_report():
     summary="Trigger manual database backup",
     tags=["System"],
 )
-async def trigger_backup():
-    """Trigger a manual database backup. Returns the path and last backup time."""
+async def trigger_backup(_user=Depends(require_superadmin)):
+    """Trigger a manual database backup. Returns the path and last backup time.
+
+    Requires superadmin privileges.
+    """
     try:
         import sys
         import os as _os
@@ -325,9 +434,11 @@ async def trigger_backup():
             "path": result,
         }
     except Exception as e:
+        # Log the real error internally but never leak it to the client.
+        logger.exception("Manual backup failed: %s", str(e))
         return JSONResponse(
             status_code=500,
-            content={"status": "error", "detail": str(e)},
+            content={"status": "error", "detail": "备份操作失败，请检查日志"},
         )
 
 
@@ -336,8 +447,11 @@ async def trigger_backup():
     summary="Get last backup time",
     tags=["System"],
 )
-async def backup_status():
-    """Return the timestamp of the most recent database backup."""
+async def backup_status(_user=Depends(require_superadmin)):
+    """Return the timestamp of the most recent database backup.
+
+    Requires superadmin privileges.
+    """
     try:
         import sys
         import os as _os
@@ -351,9 +465,11 @@ async def backup_status():
             "last_backup": last,
         }
     except Exception as e:
+        # Log the real error internally but never leak it to the client.
+        logger.exception("Failed to get backup status: %s", str(e))
         return JSONResponse(
             status_code=500,
-            content={"last_backup": None, "error": str(e)},
+            content={"last_backup": None, "error": "获取备份状态失败"},
         )
 
 

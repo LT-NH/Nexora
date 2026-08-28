@@ -73,5 +73,6 @@ async def get_db() -> AsyncSession:  # type: ignore[misc]
 
 async def init_db() -> None:
     """Create all tables in the database. Safe to call on startup."""
+    import app.models  # noqa: F401  — 确保所有模型注册到 metadata
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)

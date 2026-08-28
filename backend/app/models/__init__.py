@@ -19,6 +19,7 @@ from app.models.refund import Refund
 from app.models.payment import Payment
 from app.models.ai_insight import AiInsight
 from app.models.inventory_movement import InventoryMovement
+from app.models.agent_task import AgentTask
 
 __all__ = [
     "User",

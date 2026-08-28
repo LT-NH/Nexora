@@ -918,3 +918,80 @@ async def ai_analyze_sales(
     result["total_orders_analyzed"] = len(orders_for_ai)
     result["period"] = period
     return result
+
+
+# ----------------------------------------------------------------------
+# Agent 对话式指挥（一句话 → 工具执行 → 审计）
+# ----------------------------------------------------------------------
+
+@router.post("/agent/command", summary="Agent 执行自然语言经营指令")
+async def agent_command(
+    slug: str,
+    body: dict,
+    principal: Annotated[AuthContext, Depends(get_principal)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> dict:
+    from app.services.agent_orchestrator import run_command
+
+    workspace, _ = await _require_member(slug, principal, db, WorkspaceRole.MEMBER)
+    instruction = str(body.get("instruction") or "").strip()
+    if not instruction:
+        raise HTTPException(status_code=400, detail="指令不能为空")
+    auto = bool(body.get("auto", False))
+    task = await run_command(db, workspace, principal.user_id, instruction, auto=auto)
+    return {
+        "task_id": task.id,
+        "status": task.status,
+        "steps": json.loads(task.steps_json or "[]"),
+        "reply": task.reply,
+    }
+
+
+@router.get("/agent/tasks", summary="Agent 任务历史")
+async def agent_tasks(
+    slug: str,
+    principal: Annotated[AuthContext, Depends(get_principal)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    limit: int = 10,
+) -> dict:
+    from sqlalchemy import select as _select
+    from app.models.agent_task import AgentTask
+
+    workspace, _ = await _require_member(slug, principal, db, WorkspaceRole.VIEWER)
+    rows = (
+        await db.execute(
+            _select(AgentTask)
+            .where(AgentTask.workspace_id == workspace.id)
+            .order_by(AgentTask.created_at.desc())
+            .limit(min(limit, 50))
+        )
+    ).scalars().all()
+    return {
+        "tasks": [
+            {
+                "id": r.id,
+                "instruction": r.instruction,
+                "status": r.status,
+                "steps": json.loads(r.steps_json or "[]"),
+                "reply": r.reply,
+                "created_at": r.created_at.isoformat() if r.created_at else None,
+            }
+            for r in rows
+        ],
+    }
+
+
+@router.post("/agent/tasks/{task_id}/confirm", summary="确认执行挂起的破坏性步骤")
+async def agent_confirm(
+    slug: str,
+    task_id: str,
+    principal: Annotated[AuthContext, Depends(get_principal)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> dict:
+    from app.services.agent_orchestrator import confirm_pending
+
+    workspace, _ = await _require_member(slug, principal, db, WorkspaceRole.MEMBER)
+    task = await confirm_pending(db, workspace, principal.user_id, task_id)
+    if task is None:
+        raise HTTPException(status_code=404, detail="任务不存在")
+    return {"task_id": task.id, "status": task.status, "reply": task.reply}

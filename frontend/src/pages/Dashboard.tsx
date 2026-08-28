@@ -3,6 +3,9 @@ import {
   Users,
   Key,
   CreditCard,
+  Wallet,
+  Coins,
+  Percent,
   Calendar,
   Activity,
   Plus,
@@ -415,6 +418,7 @@ export const Dashboard: React.FC = () => {
   const { currentWorkspace } = useWorkspace();
   const navigate = useNavigate();
   const { addToast } = useToast();
+  const [profitData, setProfitData] = useState<any>(null);
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -528,6 +532,9 @@ export const Dashboard: React.FC = () => {
             )
           : 0;
 
+        api.get(`/workspaces/${slug}/reports/profit-analysis`, { timeout: 30000 })
+          .then(res => { if (!cancelled) setProfitData(res.data); })
+          .catch(() => {});
         setStats({
           total_members: members.length,
           active_api_keys: activeApiKeys,
@@ -752,35 +759,38 @@ export const Dashboard: React.FC = () => {
         </div>
       </div>
 
-      {/* Stats Grid */}
+      {/* AI 结论摘要条（第一屏焦点） */}
+      <AiDecisionPanel slug={currentWorkspace?.slug || ''} />
+
+      {/* 经营 KPI（真实利润数据） */}
       <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-4 gap-4" aria-live="polite">
         <StatCard
           className="glass-card card-glow"
-          icon={<Users size={22} className="text-primary-600" />}
-          label={t('stat_total_members')}
-          value={stats?.total_members || 0}
-          subtext={t('stat_total_members_sub')}
+          icon={<Wallet size={22} className="text-emerald-600" />}
+          label="总营收"
+          value={`¥${(profitData?.revenue ?? 0).toLocaleString('zh-CN', { maximumFractionDigits: 0 })}`}
+          subtext={`${profitData?.order_items_count ?? 0} 条订单明细`}
         />
         <StatCard
           className="glass-card card-glow"
-          icon={<Key size={22} className="text-primary-600" />}
-          label={t('stat_active_api_keys')}
-          value={stats?.active_api_keys || 0}
-          subtext={t('stat_active_api_keys_sub')}
+          icon={<Coins size={22} className="text-amber-600" />}
+          label="总毛利"
+          value={`¥${(profitData?.profit ?? 0).toLocaleString('zh-CN', { maximumFractionDigits: 0 })}`}
+          subtext={`成本 ¥${(profitData?.cost ?? 0).toLocaleString('zh-CN', { maximumFractionDigits: 0 })}`}
         />
         <StatCard
           className="glass-card card-glow"
-          icon={<CreditCard size={22} className="text-primary-600" />}
-          label={t('stat_subscription_status')}
-          value={getStatusBadge(stats?.subscription_status || 'incomplete')}
-          subtext={t('stat_subscription_sub')}
+          icon={<Percent size={22} className="text-violet-600" />}
+          label="毛利率"
+          value={`${profitData?.margin ?? 0}%`}
+          subtext="毛利 ÷ 营收"
         />
         <StatCard
           className="glass-card card-glow"
           icon={<Calendar size={22} className="text-primary-600" />}
-          label={t('stat_days_remaining')}
-          value={stats?.days_remaining || 0}
-          subtext={t('stat_days_remaining_sub')}
+          label="账户状态"
+          value={getStatusBadge(stats?.subscription_status || 'incomplete')}
+          subtext={`剩余 ${stats?.days_remaining ?? 0} 天`}
         />
       </div>
 
@@ -922,7 +932,6 @@ export const Dashboard: React.FC = () => {
 
       {/* 经营健康引擎（核心卖点） */}
       <HealthScoreCard slug={currentWorkspace?.slug || ''} />
-      <AiDecisionPanel slug={currentWorkspace?.slug || ''} />
 
       {/* 经营周会 */}
       <WeeklyReviewCard slug={currentWorkspace?.slug || ''} />

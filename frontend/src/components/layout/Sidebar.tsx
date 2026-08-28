@@ -29,25 +29,48 @@ import { Avatar } from '@/components/ui/Avatar';
 import { Dropdown } from '@/components/ui/Dropdown';
 import { useI18n, translations } from '@/i18n';
 
-const navItems = [
-  { to: '/dashboard', label: '仪表板', icon: LayoutDashboard },
-  { to: '/ai-center', label: 'AI 指挥台', icon: Sparkles },
-  { to: '/products', label: '商品管理', icon: Package },
-  { to: '/orders', label: '订单管理', icon: ShoppingBag },
-  { to: '/customers', label: '客户 CRM', icon: UserCheck },
-  { to: '/stores', label: '店铺管理', icon: Store },
-  { to: '/coupons', label: '优惠券', icon: Tag },
-  { to: '/refunds', label: '退款售后', icon: RotateCcw },
-  { to: '/ai-chat', label: 'AI 智能助手', icon: Sparkles },
-  { to: '/payments', label: '收款管理', icon: Wallet },
-  { to: '/permissions', label: '权限管理', icon: Shield },
-  { to: '/webhooks', label: 'Webhooks', icon: Webhook },
-  { to: '/profit', label: '利润分析', icon: Coins },
-  { to: '/team', label: '团队', icon: Users },
-  { to: '/billing', label: '计费', icon: CreditCard },
-  { to: '/api-keys', label: 'API 密钥', icon: Key },
-  { to: '/settings', label: '设置', icon: Settings },
+interface NavItem { to: string; label: string; icon: React.ElementType }
+interface NavGroup { title: string; items: NavItem[] }
+const navGroups: NavGroup[] = [
+  {
+    title: '经营中枢',
+    items: [
+      { to: '/dashboard', label: '仪表板', icon: LayoutDashboard },
+      { to: '/ai-center', label: 'AI 指挥台', icon: Sparkles },
+      { to: '/profit', label: '利润分析', icon: Coins },
+      { to: '/ai-chat', label: 'AI 智能助手', icon: Sparkles },
+    ],
+  },
+  {
+    title: '交易与客户',
+    items: [
+      { to: '/orders', label: '订单管理', icon: ShoppingBag },
+      { to: '/customers', label: '客户 CRM', icon: UserCheck },
+      { to: '/refunds', label: '退款售后', icon: RotateCcw },
+      { to: '/payments', label: '收款管理', icon: Wallet },
+    ],
+  },
+  {
+    title: '商品与渠道',
+    items: [
+      { to: '/products', label: '商品管理', icon: Package },
+      { to: '/stores', label: '店铺管理', icon: Store },
+      { to: '/coupons', label: '优惠券', icon: Tag },
+      { to: '/webhooks', label: 'Webhooks', icon: Webhook },
+    ],
+  },
+  {
+    title: '系统',
+    items: [
+      { to: '/permissions', label: '权限管理', icon: Shield },
+      { to: '/team', label: '团队', icon: Users },
+      { to: '/billing', label: '计费', icon: CreditCard },
+      { to: '/api-keys', label: 'API 密钥', icon: Key },
+      { to: '/settings', label: '设置', icon: Settings },
+    ],
+  },
 ];
+const navItems: NavItem[] = navGroups.flatMap((g) => g.items);
 
 // 主导航中可被 i18n 翻译的路径 → 翻译键
 const navKeyByPath: Record<string, keyof typeof translations.zh> = {
@@ -165,8 +188,12 @@ export const Sidebar: React.FC<SidebarProps> = ({ onNavigate }) => {
       </div>
 
       {/* Navigation */}
-      <nav className="flex-1 px-3 py-4 space-y-0.5 overflow-y-auto" role="navigation">
-        {navItems.map((item) => (
+      <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto" role="navigation">
+        {navGroups.map((group) => (
+          <div key={group.title} className="mb-2">
+            <p className="px-3 pt-2 pb-1 text-[10px] font-bold uppercase tracking-wider text-gray-400 dark:text-gray-500 select-none">{group.title}</p>
+            <div className="space-y-0.5">
+        {group.items.map((item) => (
           <NavLink
             key={item.to}
             to={item.to}
@@ -182,6 +209,9 @@ export const Sidebar: React.FC<SidebarProps> = ({ onNavigate }) => {
             <item.icon size={18} />
             {translateLabel(item.to, item.label, tt)}
           </NavLink>
+            ))}
+          </div>
+          </div>
         ))}
       </nav>
 
