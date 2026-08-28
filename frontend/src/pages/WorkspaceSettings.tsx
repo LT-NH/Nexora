@@ -280,13 +280,15 @@ export const WorkspaceSettings: React.FC = () => {
     }
     setIsSaving(true);
     try {
-      const updated = await workspaceService.updateWorkspace(currentWorkspace.slug, {
+      const payload: Record<string, unknown> = {
         name,
         logo_url: logoUrl,
-        brand_name: brandName,
         brand_color: brandColor,
         brand_dark_mode: brandDark,
-      });
+      };
+      // 品牌名为空时不提交（避免后端 min_length=1 校验 422）
+      if (brandName.trim()) payload.brand_name = brandName.trim();
+      const updated = await workspaceService.updateWorkspace(currentWorkspace.slug, payload as any);
       setWorkspace(updated);
       addToast('success', t('settings_saved'), t('settings_saved_msg'));
     } catch (err: any) {
