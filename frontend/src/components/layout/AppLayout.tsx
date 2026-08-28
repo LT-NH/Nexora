@@ -27,7 +27,6 @@ const pageTitleKeys: Record<string, keyof typeof translations.zh> = {
   '/webhooks': 'webhooks',
   '/ai-chat': 'ai_chat',
   '/payments': 'payments',
-  '/branding': 'branding',
 };
 
 /** Maps the current pathname to breadcrumb items. */

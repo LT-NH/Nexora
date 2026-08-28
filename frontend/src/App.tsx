@@ -94,11 +94,11 @@ const AIChat = React.lazy(() =>
 const Payments = React.lazy(() =>
   import('@/pages/Payments').then((m) => ({ default: m.Payments }))
 );
-const Branding = React.lazy(() =>
-  import('@/pages/Branding').then((m) => ({ default: m.Branding }))
-);
 const ForgotPassword = React.lazy(() =>
   import('@/pages/ForgotPassword').then((m) => ({ default: m.ForgotPassword }))
+);
+const Profit = React.lazy(() =>
+  import('@/pages/Profit').then((m) => ({ default: m.Profit }))
 );
 const ResetPassword = React.lazy(() =>
   import('@/pages/ResetPassword').then((m) => ({ default: m.ResetPassword }))
@@ -201,6 +201,7 @@ const App: React.FC = () => {
         >
           <Route path="/dashboard" element={<RouteErrorBoundary><Dashboard /></RouteErrorBoundary>} />
           <Route path="/team" element={<RouteErrorBoundary><Team /></RouteErrorBoundary>} />
+          <Route path="/profit" element={<RouteErrorBoundary><Profit /></RouteErrorBoundary>} />
           <Route path="/billing" element={<RouteErrorBoundary><Billing /></RouteErrorBoundary>} />
           <Route path="/api-keys" element={<RouteErrorBoundary><ApiKeys /></RouteErrorBoundary>} />
           <Route path="/settings" element={<RouteErrorBoundary><WorkspaceSettings /></RouteErrorBoundary>} />
@@ -216,7 +217,6 @@ const App: React.FC = () => {
           <Route path="/refunds" element={<RouteErrorBoundary><Refunds /></RouteErrorBoundary>} />
           <Route path="/ai-chat" element={<RouteErrorBoundary><AIChat /></RouteErrorBoundary>} />
           <Route path="/payments" element={<RouteErrorBoundary><Payments /></RouteErrorBoundary>} />
-          <Route path="/branding" element={<RouteErrorBoundary><Branding /></RouteErrorBoundary>} />
           <Route
             path="/admin"
             element={

@@ -20,7 +20,7 @@ import {
   RotateCcw,
   Sparkles,
   Wallet,
-  Palette,
+  Coins,
 } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { useWorkspace } from '@/hooks/useWorkspace';
@@ -41,7 +41,7 @@ const navItems = [
   { to: '/payments', label: '收款管理', icon: Wallet },
   { to: '/permissions', label: '权限管理', icon: Shield },
   { to: '/webhooks', label: 'Webhooks', icon: Webhook },
-  { to: '/branding', label: '品牌定制', icon: Palette },
+  { to: '/profit', label: '利润分析', icon: Coins },
   { to: '/team', label: '团队', icon: Users },
   { to: '/billing', label: '计费', icon: CreditCard },
   { to: '/api-keys', label: 'API 密钥', icon: Key },
@@ -60,7 +60,6 @@ const navKeyByPath: Record<string, keyof typeof translations.zh> = {
   '/settings': 'settings',
   '/ai-chat': 'ai_chat',
   '/payments': 'payments',
-  '/branding': 'branding',
   '/team': 'team',
   '/billing': 'billing',
   '/api-keys': 'api_keys',

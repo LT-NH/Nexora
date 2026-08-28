@@ -212,6 +212,8 @@ async def batch_edit_products(
         updates["category"] = str(body["category"])
     if "status" in body:
         updates["status"] = str(body["status"])
+    if "cost_price" in body:
+        updates["cost_price"] = float(body["cost_price"])
     if not updates:
         raise HTTPException(status_code=400, detail="请提供要修改的字段（价格/库存/分类/状态）")
 
