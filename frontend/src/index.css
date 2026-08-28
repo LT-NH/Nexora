@@ -847,3 +847,10 @@ html { scroll-behavior: smooth; }
     transform: none !important;
   }
 }
+
+/* ==========================================================================
+   BRANDING — 品牌定制生效层（useBranding 设置 --brand-color 后消费）
+   ========================================================================== */
+.brand-accent-bar { background: var(--brand-color, #0EA5E9) !important; }
+.brand-active::before { background: var(--brand-color, #0EA5E9) !important; }
+.brand-text { color: var(--brand-color, #0EA5E9); }

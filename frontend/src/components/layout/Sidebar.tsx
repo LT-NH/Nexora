@@ -129,10 +129,17 @@ export const Sidebar: React.FC<SidebarProps> = ({ onNavigate }) => {
 
   return (
     <aside className="w-64 bg-white dark:bg-gray-900 border-r border-gray-300 dark:border-gray-700 flex flex-col h-full">
-      {/* Logo */}
+      <div className="h-1 w-full brand-accent-bar flex-shrink-0" />
+      {/* Logo（支持品牌定制：brand_logo_url / brand_name）*/}
       <div className="flex items-center gap-2.5 px-5 h-16 border-b border-gray-300 dark:border-gray-700 flex-shrink-0">
-        <img src="/nexora-logo.png" alt="Nexora" className="h-9 w-9 object-contain" />
-        <span className="text-lg font-bold text-slate-900 dark:text-gray-100">Nexora</span>
+        {currentWorkspace?.brand_logo_url ? (
+          <img src={currentWorkspace.brand_logo_url} alt={currentWorkspace?.brand_name || 'Nexora'} className="h-9 w-9 object-contain" />
+        ) : (
+          <img src="/nexora-logo.png" alt="Nexora" className="h-9 w-9 object-contain" />
+        )}
+        <span className="text-lg font-bold text-slate-900 dark:text-gray-100 truncate">
+          {currentWorkspace?.brand_name || 'Nexora'}
+        </span>
       </div>
 
       {/* Workspace Selector */}
@@ -165,7 +172,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ onNavigate }) => {
             className={({ isActive }: { isActive: boolean }) =>
               `flex items-center gap-3 px-3 py-3 rounded-lg text-sm font-medium transition-all duration-200 relative ${
                 isActive
-                  ? 'bg-gradient-to-r from-primary-50 to-indigo-50 dark:from-primary-900/30 dark:to-indigo-900/30 text-primary-700 dark:text-primary-300 shadow-sm before:absolute before:left-0 before:top-1/2 before:-translate-y-1/2 before:w-0.5 before:h-5 before:bg-primary-500 before:rounded-full'
+                  ? 'brand-active bg-gradient-to-r from-primary-50 to-indigo-50 dark:from-primary-900/30 dark:to-indigo-900/30 text-primary-700 dark:text-primary-300 shadow-sm before:absolute before:left-0 before:top-1/2 before:-translate-y-1/2 before:w-0.5 before:h-5 before:rounded-full'
                   : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800 hover:text-slate-900 dark:hover:text-gray-200'
               }`
             }
