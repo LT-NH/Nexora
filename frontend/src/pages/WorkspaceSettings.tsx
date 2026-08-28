@@ -43,6 +43,14 @@ const D = {
     logo_label: '图标',
     upload_logo: '上传图标',
     save_changes: '保存更改',
+    brand_appearance: '品牌外观（白标）',
+    brand_appearance_sub: '品牌名与主题色会实时应用到侧边栏品牌条与激活菜单',
+    brand_name_label: '品牌名称',
+    brand_name_placeholder: '例如：Nexora',
+    brand_color_label: '品牌主题色',
+    brand_dark_label: '默认深色模式',
+    brand_preview_hint: '预览：下方为当前品牌色在侧边栏的呈现',
+    brand_color_custom: '自定义颜色',
     new_order_notification: '新订单通知',
     low_stock_notification: '库存预警',
     payment_notification: '付款确认',
@@ -105,6 +113,14 @@ const D = {
     logo_label: 'Logo',
     upload_logo: 'Upload logo',
     save_changes: 'Save Changes',
+    brand_appearance: 'Branding (White Label)',
+    brand_appearance_sub: 'Brand name & color apply live to the sidebar accent bar and active menu',
+    brand_name_label: 'Brand name',
+    brand_name_placeholder: 'e.g. Nexora',
+    brand_color_label: 'Brand color',
+    brand_dark_label: 'Dark mode by default',
+    brand_preview_hint: 'Preview: brand color as rendered in the sidebar',
+    brand_color_custom: 'Custom color',
     new_order_notification: 'New order notifications',
     low_stock_notification: 'Low stock alerts',
     payment_notification: 'Payment confirmations',
@@ -164,6 +180,9 @@ export const WorkspaceSettings: React.FC = () => {
   const navigate = useNavigate();
   const [name, setName] = useState('');
   const [logoUrl, setLogoUrl] = useState<string | null>(null);
+  const [brandName, setBrandName] = useState('');
+  const [brandColor, setBrandColor] = useState('#0EA5E9');
+  const [brandDark, setBrandDark] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
@@ -264,6 +283,9 @@ export const WorkspaceSettings: React.FC = () => {
       const updated = await workspaceService.updateWorkspace(currentWorkspace.slug, {
         name,
         logo_url: logoUrl,
+        brand_name: brandName,
+        brand_color: brandColor,
+        brand_dark_mode: brandDark,
       });
       setWorkspace(updated);
       addToast('success', t('settings_saved'), t('settings_saved_msg'));
@@ -393,6 +415,56 @@ export const WorkspaceSettings: React.FC = () => {
                 {t('upload_logo')}
               </Button>
             </>
+            </div>
+          </div>
+          {/* 品牌外观（白标）——融合原品牌定制 */}
+          <div className="pt-5 border-t border-gray-100 dark:border-gray-800">
+            <h3 className="text-sm font-semibold text-slate-900 dark:text-gray-100">{t('brand_appearance')}</h3>
+            <p className="text-xs text-gray-500 mt-0.5 mb-4">{t('brand_appearance_sub')}</p>
+            <div className="space-y-4">
+              <Input
+                label={t('brand_name_label')}
+                value={brandName}
+                onChange={(e) => setBrandName(e.target.value)}
+                placeholder={t('brand_name_placeholder')}
+              />
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1.5">{t('brand_color_label')}</label>
+                <div className="flex items-center gap-3 flex-wrap">
+                  {['#0EA5E9', '#8B5CF6', '#EB9D2A', '#10B981', '#F43F5E', '#111827'].map((c) => (
+                    <button
+                      key={c}
+                      type="button"
+                      onClick={() => setBrandColor(c)}
+                      className={`w-8 h-8 rounded-full border-2 transition-all ${brandColor === c ? 'border-slate-900 scale-110 dark:border-white' : 'border-transparent hover:scale-110'}`}
+                      style={{ background: c }}
+                      aria-label={c}
+                    />
+                  ))}
+                  <input
+                    type="color"
+                    value={brandColor}
+                    onChange={(e) => setBrandColor(e.target.value)}
+                    className="w-8 h-8 rounded-full border border-gray-300 cursor-pointer"
+                    title={t('brand_color_custom')}
+                  />
+                  <span className="text-xs text-gray-400 font-mono">{brandColor}</span>
+                </div>
+                {/* 实时预览：品牌色条 */}
+                <div className="mt-3">
+                  <div className="h-2 w-24 rounded-full" style={{ background: brandColor }} />
+                  <p className="text-[11px] text-gray-400 mt-1">{t('brand_preview_hint')}</p>
+                </div>
+              </div>
+              <label className="flex items-center justify-between rounded-lg border border-gray-200 dark:border-gray-700 px-3 py-2.5 cursor-pointer">
+                <span className="text-sm text-gray-700 dark:text-gray-300">{t('brand_dark_label')}</span>
+                <input
+                  type="checkbox"
+                  checked={brandDark}
+                  onChange={(e) => setBrandDark(e.target.checked)}
+                  className="w-4 h-4 accent-[#0EA5E9]"
+                />
+              </label>
             </div>
           </div>
           <div className="flex justify-end">
