@@ -56,6 +56,7 @@ const navKeyByPath: Record<string, keyof typeof translations.zh> = {
   '/customers': 'customers',
   '/stores': 'stores',
   '/coupons': 'coupons',
+  '/profit': 'profit',
   '/refunds': 'refunds',
   '/settings': 'settings',
   '/ai-chat': 'ai_chat',
