@@ -30,12 +30,12 @@ export const StatCard: React.FC<StatCardProps> = ({
   trendLabel = '较上周',
 }) => (
   <div
-    className={`group bg-white dark:bg-gray-800 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm p-6 hover:shadow-md hover:border-primary-200 dark:hover:border-primary-700 transition-all duration-200 card-lift ${className}`}
+    className={`group bg-white dark:bg-gray-800 rounded-[14px] border border-[#E4E6DC] dark:border-gray-700 shadow-sm p-6 hover:shadow-lg hover:shadow-[#23251D]/10 hover:border-[#D6D9CD] dark:hover:border-gray-600 transition-all duration-200 card-lift ${className}`}
   >
     <div className="flex items-center justify-between">
       <div>
-        <p className="text-sm font-medium text-gray-500 dark:text-gray-400">{label}</p>
-        <p className="mt-2 text-3xl font-bold text-slate-900 dark:text-gray-100 animate-number">{value}</p>
+        <p className="text-[13px] font-semibold text-[#6B7280] dark:text-gray-400">{label}</p>
+        <p className="mt-2 text-[26px] font-extrabold tracking-tight text-[#111827] dark:text-gray-100 tabular-nums animate-number">{value}</p>
         {subtext && (
           <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">{subtext}</p>
         )}

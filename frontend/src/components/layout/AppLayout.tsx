@@ -66,7 +66,7 @@ export const AppLayout: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-950 relative overflow-hidden">
+    <div className="min-h-screen bg-[#F6F7F1] dark:bg-gray-950 relative overflow-hidden">
       {/* Subtle colorful blobs behind glass cards */}
       <div className="fixed top-0 right-0 w-[600px] h-[600px] bg-indigo-200/15 rounded-full blur-[150px] pointer-events-none z-0" />
       <div className="fixed bottom-0 left-0 w-[500px] h-[500px] bg-violet-200/10 rounded-full blur-[120px] pointer-events-none z-0" />

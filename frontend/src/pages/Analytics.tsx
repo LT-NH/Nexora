@@ -726,15 +726,15 @@ export const Analytics: React.FC = () => {
         </div>
         <div className="flex items-center gap-2">
           {/* Period selector */}
-          <div className="inline-flex p-0.5 bg-gray-100 dark:bg-gray-800 rounded-lg" role="radiogroup" aria-label={t('period_aria')}>
+          <div className="inline-flex gap-1" role="radiogroup" aria-label={t('period_aria')}>
             {(['7d', '30d', '90d'] as Period[]).map(p => (
               <button
                 key={p}
                 onClick={() => setPeriod(p)}
-                className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all duration-200 ${
+                className={`px-4 py-1.5 text-xs font-semibold rounded-full border transition-all duration-200 ${
                   period === p
-                    ? 'bg-white dark:bg-gray-700 text-primary-600 dark:text-primary-400 shadow-sm'
-                    : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'
+                    ? 'bg-[#EB9D2A] border-[#EB9D2A] text-white shadow-sm'
+                    : 'bg-white dark:bg-gray-800 border-[#D6D9CD] dark:border-gray-600 text-gray-500 dark:text-gray-400 hover:bg-[#F5F6F0] dark:hover:bg-gray-700'
                 }`}
                 role="radio"
                 aria-checked={period === p}
