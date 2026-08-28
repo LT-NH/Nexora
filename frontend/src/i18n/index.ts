@@ -8,6 +8,7 @@ import { useSyncExternalStore } from 'react';
 export const translations = {
   zh: {
     dashboard: '工作台',
+    ai_center: 'AI 指挥台',
     orders: '订单管理',
     products: '商品管理',
     customers: '客户管理',
@@ -74,6 +75,7 @@ export const translations = {
   },
   en: {
     dashboard: 'Dashboard',
+    ai_center: 'AI Command Center',
     orders: 'Orders',
     products: 'Products',
     customers: 'Customers',

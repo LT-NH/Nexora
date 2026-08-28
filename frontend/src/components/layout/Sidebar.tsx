@@ -31,6 +31,7 @@ import { useI18n, translations } from '@/i18n';
 
 const navItems = [
   { to: '/dashboard', label: '仪表板', icon: LayoutDashboard },
+  { to: '/ai-center', label: 'AI 指挥台', icon: Sparkles },
   { to: '/products', label: '商品管理', icon: Package },
   { to: '/orders', label: '订单管理', icon: ShoppingBag },
   { to: '/customers', label: '客户 CRM', icon: UserCheck },
@@ -51,6 +52,7 @@ const navItems = [
 // 主导航中可被 i18n 翻译的路径 → 翻译键
 const navKeyByPath: Record<string, keyof typeof translations.zh> = {
   '/dashboard': 'dashboard',
+  '/ai-center': 'ai_center',
   '/products': 'products',
   '/orders': 'orders',
   '/customers': 'customers',

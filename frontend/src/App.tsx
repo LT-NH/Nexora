@@ -100,6 +100,9 @@ const ForgotPassword = React.lazy(() =>
 const Profit = React.lazy(() =>
   import('@/pages/Profit').then((m) => ({ default: m.Profit }))
 );
+const AICommandCenter = React.lazy(() =>
+  import('@/pages/AICommandCenter').then((m) => ({ default: m.AICommandCenter }))
+);
 const ResetPassword = React.lazy(() =>
   import('@/pages/ResetPassword').then((m) => ({ default: m.ResetPassword }))
 );
@@ -200,6 +203,7 @@ const App: React.FC = () => {
           }
         >
           <Route path="/dashboard" element={<RouteErrorBoundary><Dashboard /></RouteErrorBoundary>} />
+          <Route path="/ai-center" element={<RouteErrorBoundary><AICommandCenter /></RouteErrorBoundary>} />
           <Route path="/team" element={<RouteErrorBoundary><Team /></RouteErrorBoundary>} />
           <Route path="/profit" element={<RouteErrorBoundary><Profit /></RouteErrorBoundary>} />
           <Route path="/billing" element={<RouteErrorBoundary><Billing /></RouteErrorBoundary>} />
