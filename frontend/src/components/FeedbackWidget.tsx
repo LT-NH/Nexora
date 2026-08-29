@@ -97,7 +97,7 @@ const FeedbackWidget: React.FC = () => {
                 <button
                   onClick={() => { setMode('feedback'); setNpsScore(null); }}
                   className={`flex-1 py-1.5 text-xs font-medium rounded-md transition-colors ${
-                    mode === 'feedback' ? 'bg-white shadow-sm text-blue-600' : 'text-gray-500'
+                    mode === 'feedback' ? 'bg-white shadow-sm text-primary-600' : 'text-gray-500'
                   }`}
                 >
                   <MessageSquare size={12} className="inline mr-1" />
@@ -106,7 +106,7 @@ const FeedbackWidget: React.FC = () => {
                 <button
                   onClick={() => setMode('nps')}
                   className={`flex-1 py-1.5 text-xs font-medium rounded-md transition-colors ${
-                    mode === 'nps' ? 'bg-white shadow-sm text-blue-600' : 'text-gray-500'
+                    mode === 'nps' ? 'bg-white shadow-sm text-primary-600' : 'text-gray-500'
                   }`}
                 >
                   <Star size={12} className="inline mr-1" />

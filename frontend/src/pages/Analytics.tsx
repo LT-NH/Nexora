@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
+import { PageHeader } from '@/components/ui/PageHeader';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { SkeletonStatCard, StatCard } from '@/components/ui/StatCard';
 import { SalesTrendChart } from '@/components/charts/SalesTrendChart';
@@ -41,7 +42,7 @@ const D = {
     alert_surge_prefix: '今日订单量异常活跃，高于周均 ',
     alert_surge_suffix: '%以上',
     alert_analyzed_prefix: '累计分析 ',
-    alert_analyzed_suffix: ' 笔订单，置信度: ',
+    alert_analyzed_suffix: ' 笔订单，置信度 ',
     conf_low: '低',
     conf_medium: '中',
     vs_yesterday: '昨日',
@@ -78,7 +79,7 @@ const D = {
     today: '今日',
     week: '本周',
     month: '本月',
-    sales_suffix: '销售',
+    sales_suffix: '销售额',
     orders_unit: '笔订单',
     sales_trend_title: '销售趋势',
     sales_trend_subtitle: '每日销售额与订单量趋势',
@@ -99,18 +100,18 @@ const D = {
     top_products_title: '商品销售排行',
     top_products_subtitle: 'Top 8 销售额最高商品',
     no_product_data: '暂无商品数据',
-    customer_segments_title: '客户价值分群',
+    customer_segments_title: '客户价值分层',
     customer_segments_subtitle: '基于 RFM 模型的客户分层运营',
     no_customer_data: '暂无客户数据',
     cohort_title: 'Cohort 留存分析',
-    cohort_subtitle: '按首购月份分群 · 各月留存率（%）',
+    cohort_subtitle: '按首购月份分组 · 各月留存率（%）',
     ai_insights_title: 'AI 智能洞察',
     ai_insights_subtitle: '基于您近期销售数据的多维度解读',
     trend_up: '增长趋势',
     trend_down: '下降趋势',
     trend_stable: '稳定趋势',
     forecast_label: '趋势预测',
-    forecast_7d_prefix: '未来 7 天预期（置信度 ',
+    forecast_7d_prefix: '未来 7 天预期（置信度',
     forecast_7d_suffix: '）',
     peak_day_title: '高峰日',
     peak_day_desc: '建议提前备货和安排客服',
@@ -125,24 +126,24 @@ const D = {
     insight_sales_performance: '销售表现',
     sales_insight_orders_prefix: '共完成',
     sales_insight_orders_suffix: ' 笔订单，',
-    sales_insight_rev_prefix: '总营收 ',
+    sales_insight_rev_prefix: '总营收',
     sales_insight_aov_prefix: '，客单价 ',
     sales_insight_champion_prefix: '。销售冠军贡献了 ',
-    sales_insight_champion_suffix: ' 的营收。',
+    sales_insight_champion_suffix: ' 的营收最高',
     insight_customer_structure: '客户结构',
     cust_insight_prefix: '累计',
-    cust_insight_mid: ' 名客户，RFM 分群为',
-    cust_insight_suffix: ' 类。',
+    cust_insight_mid: ' 名客户，RFM 分群为 ',
+    cust_insight_suffix: ' 类客户',
     cust_insight_largest: '最大群体',
     cust_insight_paren_open: '（',
     cust_insight_people: '人',
-    cust_insight_paren_close: '）。',
+    cust_insight_paren_close: '）',
     insight_product_health: '商品健康度',
     prod_health_prefix: '共有',
     prod_health_mid: ' 个商品在售。头部 8 个商品贡献了总营收的 ',
-    prod_health_suffix: '，呈现典型的"长尾分布"。',
+    prod_health_suffix: '，呈现典型的 "长尾分布" 特征',
     insight_operations: '运营建议',
-    ops_prefix: '订单高峰集中在',
+    ops_prefix: '订单高峰集中在 ',
     ops_suffix: ' 时段。建议在高峰前 1-2 小时安排客服值班、提前推送优惠活动，并对 VIP 客户做定向复购召回。',
     aov_trend_title: '客单价趋势',
     aov_trend_subtitle: '每日平均客单价变化曲线',
@@ -154,15 +155,15 @@ const D = {
     demand_forecast: '需求预测',
     df_prefix: '未来 7 天预估营收',
     df_conf: '，置信度: ',
-    df_end: '。',
+    df_end: '）',
     df_trend_down: '当前呈下降趋势，建议加强促销力度。',
     df_trend_up: '当前呈增长趋势，建议保持运营节奏。',
     df_trend_stable: '趋势稳定，可维持现有策略。',
     pricing_optimization: '定价优化',
     po_prefix: '当前客单价为',
     po_mid: '，已分析',
-    po_suffix: '笔订单。',
-    po_low_prefix: '建议设置满 ',
+    po_suffix: '笔订单',
+    po_low_prefix: '建议设置',
     po_low_suffix: ' 元包邮以提升客单价。',
     po_high_aov: '建议对高价值客户推送组合优惠包，提升复购率。',
     platform_manual: '手动',
@@ -513,7 +514,7 @@ export const Analytics: React.FC = () => {
         allOrders.forEach((order: any) => {
           const items = order.items || [];
           items.forEach((item: any) => {
-            // 兜底：product_id 缺失时用商品名聚合（旧数据也能出排行）
+            // 兜底：product_id 缺失时用商品名聚合（旧数据也能出排行榜）
             const pid = item.product_id || item.productId || item.product_name || item.productName || 'unknown';
             if (!pid) return;
             if (!productSales[pid]) {
@@ -713,47 +714,51 @@ export const Analytics: React.FC = () => {
       <div className="absolute inset-0 bg-tech-dots opacity-30 pointer-events-none -z-10" />
 
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div>
-          <div className="flex items-center gap-3 mb-1">
-            <h2 className="text-2xl font-bold gradient-text">{t('analytics_title')}</h2>
+      <PageHeader
+        title={
+          <span className="flex items-center gap-3">
+            <span className="gradient-text">{t('analytics_title')}</span>
             <span className="glow-dot" />
-          </div>
-          <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+          </span>
+        }
+        subtitle={
+          <>
             <span className="font-medium text-gray-700 dark:text-gray-300">{currentWorkspace?.name}</span>
             {' '}{t('header_subtitle')}
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          {/* Period selector */}
-          <div className="inline-flex gap-1" role="radiogroup" aria-label={t('period_aria')}>
-            {(['7d', '30d', '90d'] as Period[]).map(p => (
-              <button
-                key={p}
-                onClick={() => setPeriod(p)}
-                className={`px-4 py-1.5 text-xs font-semibold rounded-full border transition-all duration-200 ${
-                  period === p
-                    ? 'bg-[#EB9D2A] border-[#EB9D2A] text-white shadow-sm'
-                    : 'bg-white dark:bg-gray-800 border-[#D6D9CD] dark:border-gray-600 text-gray-500 dark:text-gray-400 hover:bg-[#F5F6F0] dark:hover:bg-gray-700'
-                }`}
-                role="radio"
-                aria-checked={period === p}
-              >
-                {p === '7d' ? t('period_7d') : p === '30d' ? t('period_30d') : t('period_90d')}
-              </button>
-            ))}
+          </>
+        }
+        actions={
+          <div className="flex items-center gap-2">
+            {/* Period selector */}
+            <div className="inline-flex gap-1" role="radiogroup" aria-label={t('period_aria')}>
+              {(['7d', '30d', '90d'] as Period[]).map(p => (
+                <button
+                  key={p}
+                  onClick={() => setPeriod(p)}
+                  className={`px-4 py-1.5 text-xs font-semibold rounded-full border transition-all duration-200 ${
+                    period === p
+                      ? 'bg-primary-600 border-primary-600 text-white shadow-sm'
+                      : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-600 text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700'
+                  }`}
+                  role="radio"
+                  aria-checked={period === p}
+                >
+                  {p === '7d' ? t('period_7d') : p === '30d' ? t('period_30d') : t('period_90d')}
+                </button>
+              ))}
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              leftIcon={<RefreshCw size={16} />}
+              onClick={() => fetchDataRef.current()}
+              className="magnetic"
+            >
+              {t('btn_refresh')}
+            </Button>
           </div>
-          <Button
-            variant="outline"
-            size="sm"
-            leftIcon={<RefreshCw size={16} />}
-            onClick={() => fetchDataRef.current()}
-            className="magnetic"
-          >
-            {t('btn_refresh')}
-          </Button>
-        </div>
-      </div>
+        }
+      />
 
       {/* Enterprise badge */}
       {plan === 'enterprise' && (
@@ -774,14 +779,14 @@ export const Analytics: React.FC = () => {
           </div>
           
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-            <Card title={t('ai_forecast_title')} subtitle={t('ai_forecast_subtitle')} className="animated-border border-amber-200 dark:border-amber-800" aria-label={t('ai_forecast_aria')} role="img">
+            <Card title={t('ai_forecast_title')} subtitle={t('ai_forecast_subtitle')} className="animated-border border-primary-200 dark:border-primary-800" aria-label={t('ai_forecast_aria')} role="img">
               {salesTrend.length > 0 ? (
                 <EnterpriseForecastChart data={forecastData} />
               ) : (
                 <EmptyState title={t('no_forecast_data')} description={t('no_forecast_data_desc')} />
               )}
             </Card>
-            <Card title={t('heatmap_title')} subtitle={t('heatmap_subtitle')} className="animated-border border-amber-200 dark:border-amber-800" aria-label={t('heatmap_aria')} role="img">
+            <Card title={t('heatmap_title')} subtitle={t('heatmap_subtitle')} className="border-primary-200 dark:border-primary-800" aria-label={t('heatmap_aria')} role="img">
               <EnterpriseHeatmapChart data={
                 heatmap.length > 0 && heatmap.some(([, , v]) => v > 0)
                   ? heatmap
@@ -791,7 +796,7 @@ export const Analytics: React.FC = () => {
           </div>
 
           {/* Smart Alert */}
-          <Card className="animated-border border-amber-200 dark:border-amber-800 mb-6 bg-gradient-to-r from-amber-50/50 to-orange-50/50 dark:from-amber-900/10 dark:to-orange-900/10">
+          <Card className="border-amber-200 dark:border-amber-800 mb-6 bg-gradient-to-r from-amber-50/50 to-orange-50/50 dark:from-amber-900/10 dark:to-orange-900/10">
             <div className="flex items-start gap-4">
               <div className="w-10 h-10 rounded-lg bg-amber-100 dark:bg-amber-900/40 flex items-center justify-center flex-shrink-0">
                 <Zap size={20} className="text-amber-600 dark:text-amber-400" />
@@ -826,7 +831,7 @@ export const Analytics: React.FC = () => {
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard
           icon={<DollarSign size={22} className="text-white" />}
-          iconGradient="from-primary-500 to-indigo-500 shadow-primary-500/20"
+          iconGradient="from-primary-500 to-purple-500 shadow-primary-500/20"
           label={t('stat_total_revenue')}
           value={formatCurrency(stats?.total_revenue || 0)}
           trend={todayGrowth}
@@ -888,7 +893,7 @@ export const Analytics: React.FC = () => {
       {/* ── Row 1: Sales trend + Hourly distribution (Pro+) ── */}
       {plan !== 'free' && (
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <Card title={t('sales_trend_title')} subtitle={t('sales_trend_subtitle')} className="animated-border" aria-label={t('sales_trend_aria')} role="img">
+        <Card title={t('sales_trend_title')} subtitle={t('sales_trend_subtitle')} className="" aria-label={t('sales_trend_aria')} role="img">
           {salesTrend.length > 0 ? (
             <SalesTrendChart data={salesTrend} />
           ) : (
@@ -896,7 +901,7 @@ export const Analytics: React.FC = () => {
           )}
         </Card>
 
-        <Card title={t('hourly_title')} subtitle={t('hourly_subtitle')} className="animated-border" aria-label={t('hourly_aria')} role="img">
+        <Card title={t('hourly_title')} subtitle={t('hourly_subtitle')} className="" aria-label={t('hourly_aria')} role="img">
           <HourlyDistributionChart data={hourly} />
         </Card>
       </div>
@@ -905,7 +910,7 @@ export const Analytics: React.FC = () => {
       {/* ── Row 2: Order status (all tiers) + Platform revenue (Pro+) ── */
       /* For Free tier, order status shown as standalone card */ }
       {plan === 'free' ? (
-        <Card title={t('order_status_title')} subtitle={t('order_status_subtitle')} className="animated-border">
+        <Card title={t('order_status_title')} subtitle={t('order_status_subtitle')} className="">
           {orderStatus.length > 0 ? (
             <OrderStatusChart data={orderStatus.map((s) => ({ ...s, name: t(s.name) }))} />
           ) : (
@@ -914,7 +919,7 @@ export const Analytics: React.FC = () => {
         </Card>
       ) : (
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <Card title={t('order_status_title')} subtitle={t('order_status_subtitle')} className="animated-border" aria-label={t('order_status_aria')} role="img">
+        <Card title={t('order_status_title')} subtitle={t('order_status_subtitle')} className="" aria-label={t('order_status_aria')} role="img">
           {orderStatus.length > 0 ? (
             <OrderStatusChart data={orderStatus.map((s) => ({ ...s, name: t(s.name) }))} />
           ) : (
@@ -922,7 +927,7 @@ export const Analytics: React.FC = () => {
           )}
         </Card>
 
-        <Card title={t('platform_title')} subtitle={t('platform_subtitle')} className="animated-border">
+        <Card title={t('platform_title')} subtitle={t('platform_subtitle')} className="">
           <PlatformRevenueChart data={platformRevenue} />
         </Card>
       </div>
@@ -936,7 +941,7 @@ export const Analytics: React.FC = () => {
       {/* ── Row 3: Top products + Customer segments (Pro+) ── */}
       {plan !== 'free' && (
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <Card title={t('top_products_title')} subtitle={t('top_products_subtitle')} className="animated-border">
+        <Card title={t('top_products_title')} subtitle={t('top_products_subtitle')} className="">
           {topProducts.length > 0 ? (
             <TopProductsChart data={topProducts} />
           ) : (
@@ -946,7 +951,7 @@ export const Analytics: React.FC = () => {
           )}
         </Card>
 
-        <Card title={t('customer_segments_title')} subtitle={t('customer_segments_subtitle')} className="animated-border">
+        <Card title={t('customer_segments_title')} subtitle={t('customer_segments_subtitle')} className="">
           {customerInsight.length > 0 ? (
             <CustomerInsightChart data={customerInsight} />
           ) : (
@@ -958,7 +963,7 @@ export const Analytics: React.FC = () => {
 
         {/* Cohort 留存分析：无有效留存数据（如仅一个首购月、无跨月留存）时整体隐藏，不占版面 */}
         {hasCohortData && (
-          <Card title={t('cohort_title')} subtitle={t('cohort_subtitle')} className="animated-border">
+          <Card title={t('cohort_title')} subtitle={t('cohort_subtitle')} className="">
             <CohortRetentionChart cohorts={cohorts} months={cohortMonths} />
           </Card>
         )}
@@ -967,7 +972,7 @@ export const Analytics: React.FC = () => {
 
       {/* ── AI insights section ── */}
       {aiInsights && (
-        <Card className="animated-border overflow-hidden">
+        <Card className="overflow-hidden">
           <div className="flex items-start gap-3 mb-4">
             <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-primary-500 to-purple-500 flex items-center justify-center shadow-lg shadow-primary-500/20">
               <Zap size={20} className="text-white" />
@@ -994,7 +999,7 @@ export const Analytics: React.FC = () => {
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             {/* Trend insight */}
-            <div className="p-4 rounded-lg bg-gradient-to-br from-primary-50 to-indigo-50 dark:from-primary-900/20 dark:to-indigo-900/20 border border-primary-100 dark:border-primary-800">
+            <div className="p-4 rounded-lg bg-gradient-to-br from-primary-50 to-purple-50 dark:from-primary-900/20 dark:to-purple-900/20 border border-primary-100 dark:border-primary-800">
               <div className="flex items-center gap-2 mb-2">
                 <BarChart3 size={16} className="text-primary-600 dark:text-primary-400" />
                 <p className="text-sm font-semibold text-primary-900 dark:text-primary-300">{t('forecast_label')}</p>
@@ -1057,7 +1062,7 @@ export const Analytics: React.FC = () => {
       {/* ── Bottom: Top/Bottom performers table (Pro+) ── */}
       {plan !== 'free' && (
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <Card title={t('top_performers_title')} subtitle={t('top_performers_subtitle')} className="animated-border">
+        <Card title={t('top_performers_title')} subtitle={t('top_performers_subtitle')} className="">
           <div className="space-y-2">
             {ranking.top.map((p, i) => (
               <div key={i} className="flex items-center gap-3 p-2 rounded-lg hover:bg-primary-50 dark:hover:bg-primary-900/20 transition-colors">
@@ -1081,7 +1086,7 @@ export const Analytics: React.FC = () => {
           </div>
         </Card>
 
-        <Card title={t('comprehensive_title')} subtitle={t('comprehensive_subtitle')} className="animated-border">
+        <Card title={t('comprehensive_title')} subtitle={t('comprehensive_subtitle')} className="">
           <div className="space-y-3">
             {/* Insight items */}
             <div className="p-3 rounded-lg bg-gradient-to-r from-emerald-50 to-cyan-50 dark:from-emerald-900/20 dark:to-cyan-900/20 border border-emerald-100 dark:border-emerald-800/30">
@@ -1149,7 +1154,7 @@ export const Analytics: React.FC = () => {
       {/* ── Enterprise: Extra chart + export + deeper AI ── */}
       {plan === 'enterprise' && (
         <>
-          <Card title={t('aov_trend_title')} subtitle={t('aov_trend_subtitle')} className="animated-border" aria-label={t('aov_trend_aria')} role="img">
+          <Card title={t('aov_trend_title')} subtitle={t('aov_trend_subtitle')} className="" aria-label={t('aov_trend_aria')} role="img">
             <AovTrendChart data={salesTrend.map((d: any) => ({
               date: d.date,
               value: d.orders > 0 ? d.amount / d.orders : 0,
@@ -1169,7 +1174,7 @@ export const Analytics: React.FC = () => {
             <span className="text-xs text-gray-400">{t('export_formats')}</span>
           </div>
 
-          <Card className="animated-border overflow-hidden bg-gradient-to-br from-amber-50/50 to-yellow-50/50 dark:from-amber-900/20 dark:to-yellow-900/10 border-amber-200 dark:border-amber-700/30">
+          <Card className="overflow-hidden bg-gradient-to-br from-amber-50/50 to-yellow-50/50 dark:from-amber-900/20 dark:to-yellow-900/10 border-amber-200 dark:border-amber-700/30">
             <div className="flex items-start gap-3 mb-4">
               <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-amber-500 to-yellow-500 flex items-center justify-center">
                 <Zap size={20} className="text-white" />

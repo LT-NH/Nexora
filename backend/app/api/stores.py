@@ -83,17 +83,8 @@ async def create_store(
     """Add a new e-commerce store integration to the workspace."""
     workspace, _ = await _require_member(slug, principal, db, WorkspaceRole.MEMBER)
 
-    store = Store(
-        id=str(uuid.uuid4()),
-        workspace_id=workspace.id,
-        name=store_data.name,
-        platform=store_data.platform,
-        store_url=store_data.store_url,
-        api_key=store_data.api_key,
-        api_secret=store_data.api_secret,
-        access_token=store_data.access_token,
-        status=StoreStatus.DISCONNECTED,
-    )
+    # 走加密路径创建：api_secret / access_token 以 Fernet 加密落库
+    store = _create_store_orm(db, workspace, store_data)
     db.add(store)
     await db.flush()
 
@@ -296,12 +287,24 @@ async def sync_store(
             detail=f"无法连接到 {store.platform} 平台，请检查 API 凭证是否正确。",
         )
 
-    # Run full sync
+    # Run sync（有历史同步时间时走增量，仅拉取变更数据）
+    incremental_since = store.last_sync_at
     try:
-        sync_result = await integration.full_sync(config, workspace.id)
+        sync_result = await integration.full_sync(
+            config,
+            workspace.id,
+            updated_at_min=incremental_since,
+        )
 
         # Update store sync timestamp
         store.last_sync_at = sync_result.finished_at or datetime.now(timezone.utc)
+        store.last_incremental_at = datetime.now(timezone.utc)
+        all_errors = sync_result.all_errors
+        store.last_sync_status = "success" if not all_errors else "partial"
+        error_text = " | ".join(all_errors[:20])
+        store.last_sync_errors = (
+            error_text[:2000] + "..." if len(error_text) > 2000 else (error_text or None)
+        )
         if store.status == StoreStatus.DISCONNECTED:
             store.status = StoreStatus.CONNECTED
         await db.flush()
@@ -469,7 +472,34 @@ def _build_store_response(store: Store) -> StoreResponse:
         access_token=masked_token,
         status=status_val,
         last_sync_at=store.last_sync_at,
+        auto_sync_enabled=bool(store.auto_sync_enabled),
+        sync_interval_minutes=int(store.sync_interval_minutes or 60),
+        last_sync_status=store.last_sync_status,
+        last_sync_errors=store.last_sync_errors,
         created_at=store.created_at,
+    )
+
+
+def _create_store_orm(db: AsyncSession, workspace, store_data: StoreCreate) -> Store:
+    """Build a Store ORM object with Fernet-encrypted sensitive credentials."""
+    from app.services.store import StoreService, _get_fernet
+
+    fernet = _get_fernet()
+    api_key, secret_enc, token_enc = StoreService._encrypt_credentials(
+        store_data, fernet
+    )
+    return Store(
+        id=str(uuid.uuid4()),
+        workspace_id=workspace.id,
+        name=store_data.name.strip(),
+        platform=StorePlatform(store_data.platform),
+        store_url=store_data.store_url,
+        api_key=api_key,
+        api_secret=secret_enc,
+        access_token=token_enc,
+        status=StoreStatus.DISCONNECTED,
+        auto_sync_enabled=store_data.auto_sync_enabled,
+        sync_interval_minutes=store_data.sync_interval_minutes,
     )
 
 

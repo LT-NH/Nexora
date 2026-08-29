@@ -16,6 +16,8 @@ class StoreCreate(BaseModel):
     api_key: Optional[str] = Field(None, max_length=512)
     api_secret: Optional[str] = Field(None, max_length=512)
     access_token: Optional[str] = Field(None, max_length=2048)
+    auto_sync_enabled: bool = False
+    sync_interval_minutes: int = Field(60, ge=15, le=1440)
 
 
 class StoreUpdate(BaseModel):
@@ -26,6 +28,8 @@ class StoreUpdate(BaseModel):
     api_secret: Optional[str] = Field(None, max_length=512)
     access_token: Optional[str] = Field(None, max_length=2048)
     status: Optional[str] = Field(None, pattern=r"^(connected|disconnected|error)$")
+    auto_sync_enabled: Optional[bool] = None
+    sync_interval_minutes: Optional[int] = Field(None, ge=15, le=1440)
 
 
 class StoreResponse(BaseModel):
@@ -39,5 +43,9 @@ class StoreResponse(BaseModel):
     access_token: Optional[str] = None
     status: StoreStatus
     last_sync_at: Optional[datetime] = None
+    auto_sync_enabled: bool = False
+    sync_interval_minutes: int = 60
+    last_sync_status: Optional[str] = None
+    last_sync_errors: Optional[str] = None
     created_at: datetime
     model_config = {"from_attributes": True}

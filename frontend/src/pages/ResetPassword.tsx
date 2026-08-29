@@ -28,11 +28,11 @@ export const ResetPassword: React.FC = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!token.trim()) {
-      addToast('error', '缺少令牌', '请输入密码重置令牌。');
+      addToast('error', '缺少令牌', '请输入密码重置令牌');
       return;
     }
     if (newPassword.length < 8) {
-      addToast('error', '密码太短', '密码至少需要 8 个字符。');
+      addToast('error', '密码太短', '密码至少需要 8 个字符');
       return;
     }
     if (!/(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[!@#$%^&*()\-_=+\[\]{}|;:,.<>?\/~`])/.test(newPassword)) {
@@ -40,14 +40,14 @@ export const ResetPassword: React.FC = () => {
       return;
     }
     if (newPassword !== confirmPassword) {
-      addToast('error', '密码不匹配', '两次输入的密码不一致。');
+      addToast('error', '密码不匹配', '两次输入的密码不一致');
       return;
     }
     setIsLoading(true);
     try {
       await authService.resetPassword(token.trim(), newPassword);
       setIsDone(true);
-      addToast('success', '密码已重置', '请使用新密码登录。');
+      addToast('success', '密码已重置', '请使用新密码登录');
       timerRef.current = setTimeout(() => navigate('/login'), 2000);
     } catch (err: any) {
       addToast('error', '重置失败', err?.response?.data?.detail || '令牌无效或已过期');
@@ -61,17 +61,17 @@ export const ResetPassword: React.FC = () => {
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
           <Link to="/" className="inline-block mb-4">
-            <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-primary-600 to-indigo-600 flex items-center justify-center mx-auto">
+            <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-primary-600 to-purple-600 flex items-center justify-center mx-auto">
               <span className="text-white font-bold text-xl">S</span>
             </div>
           </Link>
-          <h1 className="text-2xl font-bold text-slate-900">重置密码</h1>
+          <h1 className="text-2xl font-bold text-slate-900 dark:text-gray-100">重置密码</h1>
           <p className="text-sm text-gray-500 mt-2">
             {isDone ? '密码已重置成功' : '输入重置令牌和新密码'}
           </p>
         </div>
 
-        <div className="bg-white rounded-2xl shadow-xl border border-gray-100 p-8">
+        <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl border border-gray-100 dark:border-gray-700 p-8">
           {isDone ? (
             <div className="space-y-6 text-center">
               <div className="w-16 h-16 rounded-full bg-green-100 flex items-center justify-center mx-auto">

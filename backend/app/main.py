@@ -82,8 +82,14 @@ async def lifespan(app: FastAPI):
         # AI 自动巡检：每天 9:00 生成经营体检结论
         from app.services.patrol import run_ai_patrol
         scheduler.add_job(run_ai_patrol, "cron", hour=9, minute=0)
+        # 店铺自动同步：每 5 分钟扫描到期店铺执行增量同步
+        from app.services.store_sync import run_due_store_syncs
+        scheduler.add_job(run_due_store_syncs, "interval", minutes=5, id="store_autosync")
         scheduler.start()
-        logger.info("Scheduled daily backup 03:00, weekly reports Mon 08:00, AI patrol 09:00.")
+        logger.info(
+            "Scheduled daily backup 03:00, weekly reports Mon 08:00, "
+            "AI patrol 09:00, store auto-sync every 5min."
+        )
     except Exception as e:
         logger.warning("Failed to start backup scheduler: %s", str(e))
 

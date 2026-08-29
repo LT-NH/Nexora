@@ -6,9 +6,9 @@ accepting events pushed by external platforms.
 Currently supports Shopify webhooks:
   - Verifies the ``X-Shopify-Hmac-Sha256`` signature so we never trust an
     unauthenticated request.
-  - Routes ``orders/create`` / ``orders/updated`` / ``orders/paid`` events
-    to the Shopify integration, which upserts the affected order into the
-    correct workspace (resolved from the shop domain in the headers).
+  - Routes order / product / customer events to the Shopify integration,
+    which upserts the affected entity into the correct workspace (resolved
+    from the shop domain in the headers).
 """
 
 import base64
@@ -26,8 +26,17 @@ from app.utils.logging import get_logger
 
 logger = get_logger(__name__)
 
-# Shopify webhook topics we know how to handle today.
-_ORDER_TOPICS = {"orders/create", "orders/updated", "orders/paid", "orders/partially_updated"}
+# Shopify webhook topics we know how to handle today, grouped by entity.
+_HANDLED_TOPICS = {
+    "orders/create",
+    "orders/updated",
+    "orders/paid",
+    "orders/partially_updated",
+    "products/create",
+    "products/update",
+    "customers/create",
+    "customers/update",
+}
 
 
 def verify_shopify_hmac(raw_body: bytes, header_signature: str, secret: str) -> bool:
@@ -73,7 +82,7 @@ async def handle_shopify_webhook(
         result.errors.append("Missing webhook topic.")
         return result
 
-    if topic not in _ORDER_TOPICS:
+    if topic not in _HANDLED_TOPICS:
         # Accepted but not yet handled — keep connection resilient.
         logger.info("Shopify webhook topic '%s' received but not handled yet.", topic)
         return result
@@ -101,6 +110,15 @@ async def handle_shopify_webhook(
             return result
 
         integration = ShopifyIntegration()
+
+        # 按主题前缀选择对应的单实体 upsert
+        if topic.startswith("products/"):
+            upsert = integration.upsert_product_from_payload
+        elif topic.startswith("customers/"):
+            upsert = integration.upsert_customer_from_payload
+        else:
+            upsert = integration.upsert_order_from_payload
+
         for store in matched:
             config = {
                 "store_url": store.store_url,
@@ -111,9 +129,7 @@ async def handle_shopify_webhook(
             try:
                 # Reuse the open session to avoid a nested checkout on a
                 # single-connection (SQLite) pool.
-                single = await integration.upsert_order_from_payload(
-                    config, store.workspace_id, payload, db=db
-                )
+                single = await upsert(config, store.workspace_id, payload, db=db)
                 result.created += single.created
                 result.updated += single.updated
                 result.errors.extend(single.errors)

@@ -181,7 +181,7 @@ export const WorkspaceSettings: React.FC = () => {
   const [name, setName] = useState('');
   const [logoUrl, setLogoUrl] = useState<string | null>(null);
   const [brandName, setBrandName] = useState('');
-  const [brandColor, setBrandColor] = useState('#0EA5E9');
+  const [brandColor, setBrandColor] = useState('#7C3AED');
   const [brandDark, setBrandDark] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -433,7 +433,7 @@ export const WorkspaceSettings: React.FC = () => {
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1.5">{t('brand_color_label')}</label>
                 <div className="flex items-center gap-3 flex-wrap">
-                  {['#0EA5E9', '#8B5CF6', '#EB9D2A', '#10B981', '#F43F5E', '#111827'].map((c) => (
+                  {['#7C3AED', '#0EA5E9', '#EC4899', '#F59E0B', '#10B981', '#111827'].map((c) => (
                     <button
                       key={c}
                       type="button"
@@ -464,7 +464,7 @@ export const WorkspaceSettings: React.FC = () => {
                   type="checkbox"
                   checked={brandDark}
                   onChange={(e) => setBrandDark(e.target.checked)}
-                  className="w-4 h-4 accent-[#0EA5E9]"
+                  className="w-4 h-4 accent-[#7C3AED]"
                 />
               </label>
             </div>

@@ -83,7 +83,7 @@ export interface ChartPalette {
  */
 export function useChartPalette(): ChartPalette {
   const { currentWorkspace } = useWorkspace();
-  const brand = currentWorkspace?.brand_color || '#0071E3';
+  const brand = currentWorkspace?.brand_color || '#7C3AED';
 
   return useMemo<ChartPalette>(() => {
     const c = hexToHsl(brand);

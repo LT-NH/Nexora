@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { useToast } from '@/components/ui/Toast';
 import { extractErrorMessage } from '@/services/api';
+import { withViewTransition } from '@/lib/viewTransition';
 
 export const RegisterForm: React.FC = () => {
   const { register } = useAuth();
@@ -66,7 +67,7 @@ export const RegisterForm: React.FC = () => {
         '账户已创建！',
         '欢迎来到 Nexora。您的工作空间已准备就绪。'
       );
-      navigate('/dashboard', { replace: true });
+      withViewTransition(() => navigate('/dashboard', { replace: true }));
     } catch (err: any) {
       addToast('error', '注册失败', extractErrorMessage(err));
     } finally {

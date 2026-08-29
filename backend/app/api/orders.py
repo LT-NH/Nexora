@@ -48,6 +48,7 @@ async def list_orders(
     date_from: Optional[str] = Query(None, description="Start date (YYYY-MM-DD)"),
     date_to: Optional[str] = Query(None, description="End date (YYYY-MM-DD)"),
     customer_id: Optional[str] = Query(None, description="Filter by customer ID"),
+    platform: Optional[str] = Query(None, description="Filter by source platform"),
 ) -> PaginatedResponse[OrderResponse]:
     workspace, _ = await _require_member(slug, principal, db, WorkspaceRole.VIEWER)
     items, total = await OrderService.list_orders(
@@ -57,6 +58,7 @@ async def list_orders(
         date_from=date_from,
         date_to=date_to,
         customer_id=customer_id,
+        platform=platform,
         skip=pagination.offset,
         limit=pagination.limit,
     )

@@ -142,7 +142,7 @@ function formatCell(v: unknown): string {
 /** Simple div-based chart renderer (no chart library needed). */
 /**
  * 从 AI 回答文本中提取与数据匹配的实体名（商品/日期），用于图表联动高亮。
- * 回答里通常直接包含数据 label（如"无线蓝牙耳机"），命中即高亮对应行/条。
+ * 回答里通常直接包含数据 label（如 `"无线蓝牙耳机"`），命中即高亮对应行/条目。
  */
 const extractHighlight = (answer: string, data: Array<Record<string, unknown>> | undefined): string | undefined => {
   if (!answer || !data || data.length === 0) return undefined;
@@ -279,7 +279,7 @@ const ChartBlock: React.FC<{
 };
 
 const BotAvatar: React.FC = () => (
-  <div className="shrink-0 w-8 h-8 rounded-lg bg-gradient-to-br from-primary-500 to-violet-600 text-white flex items-center justify-center shadow-sm">
+  <div className="shrink-0 w-8 h-8 rounded-lg bg-gradient-to-br from-primary-500 to-fuchsia-600 text-white flex items-center justify-center shadow-sm">
     <Bot size={16} />
   </div>
 );
@@ -336,7 +336,7 @@ const MessageBubble: React.FC<{ message: ChatMessage }> = ({ message }) => {
 /**
  * AIChat — 自然语言 BI 助手页面。
  *
- * 基于店铺真实数据回答问题，展示 answer_text + 数据表格/柱状图 + 运营建议，
+ * 基于店铺真实数据回答问题，展示 answer_text + 数据表格/柱状图 + 运营建议。
  * 兼容暗色模式。后端端点：POST /api/v1/workspaces/{slug}/ai/chat。
  */
 export const AIChat: React.FC = () => {
@@ -418,7 +418,7 @@ export const AIChat: React.FC = () => {
         <div ref={scrollRef} className="flex-1 min-h-0 overflow-y-auto px-4 py-4 space-y-4">
           {messages.length === 0 && !loading && (
             <div className="h-full flex flex-col items-center justify-center text-center gap-3 py-10">
-              <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-primary-500 to-violet-600 text-white flex items-center justify-center shadow-lg">
+              <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-primary-500 to-fuchsia-600 text-white flex items-center justify-center shadow-lg">
                 <Bot size={28} />
               </div>
               <p className="text-slate-700 dark:text-gray-200 font-medium">

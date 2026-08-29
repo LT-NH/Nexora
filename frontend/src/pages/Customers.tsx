@@ -20,6 +20,7 @@ import { useToast } from '@/components/ui/Toast';
 import { useFormErrors } from '@/hooks/useForm';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
+import { PageHeader } from '@/components/ui/PageHeader';
 import { Input } from '@/components/ui/Input';
 import { Badge } from '@/components/ui/Badge';
 import { Table } from '@/components/ui/Table';
@@ -64,7 +65,7 @@ const D = {
     no_date: '暂无',
     invalid_date: '无效日期',
     crm_title: '客户 CRM',
-    crm_subtitle: '管理客户关系和 RFM 分析',
+    crm_subtitle: '管理客户关系 — RFM 分析',
     btn_refresh: '刷新',
     btn_add_customer: '添加客户',
     search_placeholder: '搜索客户名称或邮箱...',
@@ -122,7 +123,7 @@ const D = {
     mb_silver: '银牌会员',
     mb_gold: '金牌会员',
     mb_diamond: '钻石会员',
-    orders_count: '{n} 笔',
+    orders_count: '{n} 单',
     count_people: '人',
   },
   en: {
@@ -589,7 +590,7 @@ export const Customers: React.FC = () => {
             className="w-9 h-9 rounded-full object-cover flex-shrink-0"
           />
         ) : (
-          <div className="w-9 h-9 rounded-full bg-gradient-to-br from-primary-100 to-indigo-100 flex items-center justify-center flex-shrink-0">
+          <div className="w-9 h-9 rounded-full bg-gradient-to-br from-primary-100 to-purple-100 flex items-center justify-center flex-shrink-0">
             <User size={16} className="text-primary-600" />
           </div>
         )}
@@ -642,25 +643,25 @@ export const Customers: React.FC = () => {
   return (
     <div className="space-y-6 animate-fade-in">
       {/* 页面标题 */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-2xl font-bold text-slate-900 dark:text-gray-100">{t('crm_title')}</h2>
-          <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">{t('crm_subtitle')}</p>
-        </div>
-        <div className="flex items-center gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handleRefresh}
-            leftIcon={<RefreshCw size={16} />}
-          >
-            {t('btn_refresh')}
-          </Button>
-          <Button variant="primary" size="sm" onClick={openCreateModal} leftIcon={<User size={16} />}>
-            {t('btn_add_customer')}
-          </Button>
-        </div>
-      </div>
+      <PageHeader
+        title={t('crm_title')}
+        subtitle={t('crm_subtitle')}
+        actions={
+          <>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleRefresh}
+              leftIcon={<RefreshCw size={16} />}
+            >
+              {t('btn_refresh')}
+            </Button>
+            <Button variant="primary" size="sm" onClick={openCreateModal} leftIcon={<User size={16} />}>
+              {t('btn_add_customer')}
+            </Button>
+          </>
+        }
+      />
 
       {/* 搜索和筛选 */}
       <Card padding>
@@ -809,7 +810,7 @@ export const Customers: React.FC = () => {
                         className="w-14 h-14 rounded-full object-cover"
                       />
                     ) : (
-                      <div className="w-14 h-14 rounded-full bg-gradient-to-br from-primary-100 to-indigo-100 flex items-center justify-center">
+                      <div className="w-14 h-14 rounded-full bg-gradient-to-br from-primary-100 to-purple-100 flex items-center justify-center">
                         <User size={24} className="text-primary-600" />
                       </div>
                     )}

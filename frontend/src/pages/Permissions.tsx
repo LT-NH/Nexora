@@ -5,6 +5,7 @@ import { useToast } from '@/components/ui/Toast';
 import { usePageT, type Lang } from '@/i18n';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
+import { PageHeader } from '@/components/ui/PageHeader';
 import { Input } from '@/components/ui/Input';
 import { Badge } from '@/components/ui/Badge';
 import { Modal, ModalFooter } from '@/components/ui/Modal';
@@ -325,20 +326,20 @@ export const Permissions: React.FC = () => {
 
   return (
     <div className="space-y-6 animate-fade-in">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-2xl font-bold text-slate-900">{t('permissions_title')}</h2>
-          <p className="mt-1 text-sm text-gray-500">{t('permissions_subtitle')}</p>
-        </div>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => { setGroupName(''); setShowGroupModal(true); }}
-          leftIcon={<Plus size={16} />}
-        >
-          {t('new_group')}
-        </Button>
-      </div>
+      <PageHeader
+        title={t('permissions_title')}
+        subtitle={t('permissions_subtitle')}
+        actions={
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => { setGroupName(''); setShowGroupModal(true); }}
+            leftIcon={<Plus size={16} />}
+          >
+            {t('new_group')}
+          </Button>
+        }
+      />
 
       {/* Permission Groups */}
       <Card title={t('permission_groups')} subtitle={t('permission_groups_subtitle')} padding>
@@ -357,7 +358,7 @@ export const Permissions: React.FC = () => {
                 <div className="flex items-center gap-2">
                   <Users size={18} className="text-gray-500" />
                   <div>
-                    <p className="text-sm font-medium text-slate-900">{g.name}</p>
+                    <p className="text-sm font-medium text-slate-900 dark:text-gray-100">{g.name}</p>
                     <p className="text-xs text-gray-500">{t('members_count').replace('{count}', String(g.member_count))}</p>
                   </div>
                 </div>
@@ -408,7 +409,7 @@ export const Permissions: React.FC = () => {
                 return (
                   <tr key={m.user_id} className="border-b border-gray-100 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-900/50">
                     <td className="py-3 px-3">
-                      <p className="text-sm font-medium text-slate-900">{m.full_name}</p>
+                      <p className="text-sm font-medium text-slate-900 dark:text-gray-100">{m.full_name}</p>
                       <p className="text-xs text-gray-500">{m.email}</p>
                     </td>
                     <td className="py-3 px-3">{roleBadge(m.role)}</td>
@@ -502,7 +503,7 @@ export const Permissions: React.FC = () => {
           {members.map(m => (
             <div key={m.user_id} className="flex items-center justify-between p-3 border border-gray-200 rounded-lg">
               <div>
-                <p className="text-sm font-medium text-slate-900">{m.full_name}</p>
+                <p className="text-sm font-medium text-slate-900 dark:text-gray-100">{m.full_name}</p>
                 <p className="text-xs text-gray-500">{m.email}</p>
               </div>
               <Button

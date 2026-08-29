@@ -5,6 +5,7 @@ import { usePageTitle } from '@/hooks/usePageTitle';
 import { useToast } from '@/components/ui/Toast';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
+import { PageHeader } from '@/components/ui/PageHeader';
 import { Badge } from '@/components/ui/Badge';
 import { Modal, ModalFooter } from '@/components/ui/Modal';
 import { refundService } from '@/services/ecommerce';
@@ -46,7 +47,7 @@ const D = {
     modal_create_title: '新建退款申请',
     label_order_id: '订单 ID',
     placeholder_order_id: '输入订单 ID',
-    label_amount: '退款金额 (¥)',
+    label_amount: '退款金额 (￥)',
     label_reason: '退款原因',
     label_detail: '详细说明',
     placeholder_detail: '请描述具体情况...',
@@ -255,15 +256,15 @@ export const Refunds: React.FC = () => {
   return (
     <div className="space-y-6 animate-fade-in">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-2xl font-bold text-slate-900 dark:text-gray-100">{t('refunds_title')}</h2>
-          <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">{t('refunds_subtitle')}</p>
-        </div>
-        <Button variant="primary" leftIcon={<Plus size={16} />} onClick={openCreateModal}>
-          {t('btn_new_refund')}
-        </Button>
-      </div>
+      <PageHeader
+        title={t('refunds_title')}
+        subtitle={t('refunds_subtitle')}
+        actions={
+          <Button variant="primary" leftIcon={<Plus size={16} />} onClick={openCreateModal}>
+            {t('btn_new_refund')}
+          </Button>
+        }
+      />
 
       {/* Stats bar */}
       {stats && (

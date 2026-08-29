@@ -244,7 +244,7 @@ export const HealthScoreCard: React.FC<{ slug: string }> = ({ slug }) => {
       {/* ── Header ── */}
       <div className="flex items-center justify-between px-6 pt-5 pb-2">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary-500 to-violet-500 flex items-center justify-center shadow-sm shadow-primary-500/20">
+          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary-500 to-fuchsia-500 flex items-center justify-center shadow-sm shadow-primary-500/20">
             <Activity size={19} className="text-white" />
           </div>
           <div>
@@ -343,7 +343,7 @@ export const HealthScoreCard: React.FC<{ slug: string }> = ({ slug }) => {
             {data.computed_at && (
               <span className="text-[11px] text-gray-400 dark:text-gray-500 mt-1">
                 {t('computed_at')} · {(() => {
-                  // 后端存 naive UTC → 按 UTC 解析再转本地时区（避免差 8 小时）
+                  // 后端存 naive UTC —— 按 UTC 解析再转本地时区（避免差 8 小时）
                   const d = new Date(data.computed_at);
                   const utcMs = Date.UTC(d.getFullYear(), d.getMonth(), d.getDate(), d.getHours(), d.getMinutes(), d.getSeconds());
                   return new Date(utcMs).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });

@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { useWorkspace } from '@/hooks/useWorkspace';
 import { usePageT, type Lang } from '@/i18n';
+import { PageHeader } from '@/components/ui/PageHeader';
 import api, { extractErrorMessage } from '@/services/api';
 import { EmptyState } from '@/components/ui/EmptyState';
 import type { Webhook } from '@/types';
@@ -275,23 +276,19 @@ export const Webhooks: React.FC = () => {
   return (
     <div className="max-w-5xl mx-auto space-y-6 animate-fade-in">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-900 dark:text-gray-100">
-            {t('webhooks_title')}
-          </h1>
-          <p className="text-sm text-gray-500 mt-1">
-            {t('webhooks_subtitle')}
-          </p>
-        </div>
-        <button
-          onClick={openCreate}
-          className="inline-flex items-center gap-2 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors text-sm font-medium"
-        >
-          <Plus size={16} />
-          {t('new_webhook')}
-        </button>
-      </div>
+      <PageHeader
+        title={t('webhooks_title')}
+        subtitle={t('webhooks_subtitle')}
+        actions={
+          <button
+            onClick={openCreate}
+            className="inline-flex items-center gap-2 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors text-sm font-medium"
+          >
+            <Plus size={16} />
+            {t('new_webhook')}
+          </button>
+        }
+      />
 
       {/* Error */}
       {error && (

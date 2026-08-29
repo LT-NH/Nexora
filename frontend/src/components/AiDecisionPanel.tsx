@@ -256,7 +256,7 @@ export const AiDecisionPanel: React.FC<{ slug: string }> = ({ slug }) => {
         <div className="px-5 pb-4 mt-1">
           <div className="rounded-xl border border-gray-100 dark:border-gray-700/60 bg-gray-50/60 dark:bg-gray-800/40 p-3.5">
             <div className="flex items-center gap-2 mb-2.5">
-              <CalendarClock size={13} className="text-sky-500" />
+              <CalendarClock size={13} className="text-primary-500" />
               <p className="text-[13px] font-bold text-gray-600 dark:text-gray-300">{t('predictions')}</p>
               <span className="h-px flex-1 bg-gray-100 dark:bg-gray-700/60" />
             </div>

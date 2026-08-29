@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { useToast } from '@/components/ui/Toast';
 import { extractErrorMessage } from '@/services/api';
+import { withViewTransition } from '@/lib/viewTransition';
 
 export const LoginForm: React.FC = () => {
   const { login } = useAuth();
@@ -51,7 +52,7 @@ export const LoginForm: React.FC = () => {
         return;
       }
       addToast('success', '欢迎回来！', '您已成功登录。');
-      navigate('/dashboard', { replace: true });
+      withViewTransition(() => navigate('/dashboard', { replace: true }));
     } catch (err: any) {
       addToast('error', '登录失败', extractErrorMessage(err));
       setRequires2FA(false);
@@ -65,7 +66,7 @@ export const LoginForm: React.FC = () => {
     return (
       <div className="space-y-5">
         <div className="text-center">
-          <div className="mx-auto w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center mb-3">
+          <div className="mx-auto w-12 h-12 bg-primary-100 rounded-full flex items-center justify-center mb-3">
             <Shield size={24} className="text-primary-600" />
           </div>
           <h3 className="text-lg font-semibold text-slate-900">双重认证</h3>

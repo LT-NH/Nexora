@@ -134,7 +134,7 @@ export const Profit: React.FC = () => {
             {(data?.top_products ?? []).map((p: any, i: number) => (
               <div key={i} className="flex items-center justify-between py-3">
                 <div className="flex items-center gap-3 min-w-0">
-                  <span className="w-6 h-6 rounded-full bg-[#EB9D2A] text-white text-[11px] font-bold flex items-center justify-center flex-shrink-0">
+                  <span className="w-6 h-6 rounded-full bg-primary-600 text-white text-[11px] font-bold flex items-center justify-center flex-shrink-0">
                     {i + 1}
                   </span>
                   <div className="min-w-0">

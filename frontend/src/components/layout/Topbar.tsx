@@ -52,7 +52,7 @@ export const Topbar: React.FC<TopbarProps> = ({ title, breadcrumb, onMenuClick }
 
   return (
     <header
-      className="min-h-[4rem] bg-white dark:bg-gray-900 border-b border-gray-300 dark:border-gray-700 flex items-center justify-between px-4 sm:px-6 sticky top-0 z-30"
+      className="vt-topbar min-h-[4rem] bg-white dark:bg-gray-900 border-b border-gray-300 dark:border-gray-700 flex items-center justify-between px-4 sm:px-6 sticky top-0 z-30"
       style={{ paddingTop: 'env(safe-area-inset-top)' }}
     >
       <div className="flex items-center gap-2 sm:gap-4 min-w-0">
@@ -79,7 +79,7 @@ export const Topbar: React.FC<TopbarProps> = ({ title, breadcrumb, onMenuClick }
               <span className="truncate max-w-[120px] sm:max-w-[200px]">
                 {breadcrumb.map((item, index) => (
                   <React.Fragment key={index}>
-                    {index > 0 && <span className="text-gray-300 dark:text-gray-600 mx-0.5">›</span>}
+                    {index > 0 && <span className="text-gray-300 dark:text-gray-600 mx-0.5">•</span>}
                     {item.href ? (
                       <a
                         href={item.href}
@@ -355,7 +355,7 @@ const SearchBar: React.FC = () => {
                       className="w-full text-left px-4 py-2.5 hover:bg-gray-50 dark:hover:bg-gray-700 flex items-center justify-between gap-3 border-b border-gray-50 dark:border-gray-700 last:border-0 transition-colors"
                     >
                       <div className="flex items-center gap-3 min-w-0">
-                        <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-primary-50 to-indigo-50 dark:from-primary-900/30 dark:to-indigo-900/30 flex items-center justify-center flex-shrink-0">
+                        <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-primary-50 to-purple-50 dark:from-primary-900/30 dark:to-purple-900/30 flex items-center justify-center flex-shrink-0">
                           <Package size={13} className="text-primary-600" />
                         </div>
                         <span className="text-sm font-medium text-slate-900 dark:text-gray-100 truncate">{p.name}</span>
@@ -375,7 +375,7 @@ const SearchBar: React.FC = () => {
                       className="w-full text-left px-4 py-2.5 hover:bg-gray-50 dark:hover:bg-gray-700 flex items-center justify-between gap-3 border-b border-gray-50 dark:border-gray-700 last:border-0 transition-colors"
                     >
                       <div className="flex items-center gap-3 min-w-0">
-                        <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-primary-50 to-indigo-50 dark:from-primary-900/30 dark:to-indigo-900/30 flex items-center justify-center flex-shrink-0">
+                        <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-primary-50 to-purple-50 dark:from-primary-900/30 dark:to-purple-900/30 flex items-center justify-center flex-shrink-0">
                           <ShoppingBag size={13} className="text-primary-600" />
                         </div>
                         <div className="min-w-0">
@@ -398,7 +398,7 @@ const SearchBar: React.FC = () => {
                       className="w-full text-left px-4 py-2.5 hover:bg-gray-50 dark:hover:bg-gray-700 flex items-center justify-between gap-3 border-b border-gray-50 dark:border-gray-700 last:border-0 transition-colors"
                     >
                       <div className="flex items-center gap-3 min-w-0">
-                        <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-primary-50 to-indigo-50 dark:from-primary-900/30 dark:to-indigo-900/30 flex items-center justify-center flex-shrink-0">
+                        <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-primary-50 to-purple-50 dark:from-primary-900/30 dark:to-purple-900/30 flex items-center justify-center flex-shrink-0">
                           <UserCheck size={13} className="text-primary-600" />
                         </div>
                         <div className="min-w-0">

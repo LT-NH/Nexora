@@ -139,7 +139,7 @@ export const AIAssistant: React.FC = () => {
     return (
       <button
         onClick={() => setOpen(true)}
-        className="fixed bottom-44 right-6 z-50 w-14 h-14 rounded-full bg-gradient-to-br from-primary-500 to-violet-500 text-white shadow-lg hover:scale-110 transition-transform flex items-center justify-center"
+        className="fixed bottom-44 right-6 z-50 w-14 h-14 rounded-full bg-gradient-to-br from-primary-500 to-fuchsia-500 text-white shadow-lg hover:scale-110 transition-transform flex items-center justify-center"
         aria-label="AI 助手"
       >
         <Sparkles size={24} />

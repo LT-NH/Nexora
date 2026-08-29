@@ -76,3 +76,25 @@ async def init_db() -> None:
     import app.models  # noqa: F401  — 确保所有模型注册到 metadata
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        await _ensure_store_columns(conn)
+
+
+async def _ensure_store_columns(conn) -> None:
+    """轻量列迁移：create_all 不会给已存在的表补新列，这里为 stores 表
+    逐个尝试 ALTER TABLE ADD COLUMN（已存在则忽略）。SQLite/PostgreSQL 兼容。
+    """
+    from sqlalchemy import text
+
+    columns = [
+        ("auto_sync_enabled", "BOOLEAN NOT NULL DEFAULT FALSE"),
+        ("sync_interval_minutes", "INTEGER NOT NULL DEFAULT 60"),
+        ("last_sync_status", "VARCHAR(16)"),
+        ("last_sync_errors", "TEXT"),
+        ("last_incremental_at", "TIMESTAMP"),
+    ]
+    for name, ddl in columns:
+        try:
+            await conn.execute(text(f"ALTER TABLE stores ADD COLUMN {name} {ddl}"))
+        except Exception:
+            # 列已存在（或库不可写）→ 忽略；真正的建表错误由 create_all 负责
+            pass

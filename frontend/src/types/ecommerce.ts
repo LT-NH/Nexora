@@ -235,6 +235,10 @@ export interface Store {
   access_token: string | null;
   status: StoreStatus;
   last_sync_at: string | null;
+  auto_sync_enabled: boolean;
+  sync_interval_minutes: number;
+  last_sync_status: 'success' | 'partial' | 'error' | null;
+  last_sync_errors: string | null;
   created_at: string;
 }
 
@@ -245,6 +249,8 @@ export interface StoreCreateRequest {
   api_key?: string;
   api_secret?: string;
   access_token?: string;
+  auto_sync_enabled?: boolean;
+  sync_interval_minutes?: number;
 }
 
 export interface StoreUpdateRequest extends Partial<StoreCreateRequest> {

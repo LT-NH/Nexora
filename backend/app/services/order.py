@@ -11,7 +11,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Optional, Tuple
 
 from fastapi import HTTPException, status
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.utils.audit import create_audit_log
@@ -92,8 +92,82 @@ class OrderService:
                 detail=f"Order number '{order_data.order_number}' already exists.",
             )
 
-        # Calculate subtotal from items
-        subtotal = sum(item.total_price for item in order_data.items)
+        # ── Server-side price recalculation (security) ────────────────────
+        # Never trust client-submitted prices: an attacker could submit a
+        # 0.01 total_price. Look up the authoritative price for each
+        # referenced product/variant from the database and recompute
+        # unit_price / total_price on the server. Batch-fetch all products
+        # and variants in two queries to avoid N+1 lookups.
+
+        product_ids = {i.product_id for i in order_data.items if i.product_id}
+        variant_ids = {i.variant_id for i in order_data.items if i.variant_id}
+
+        products_map: Dict[str, Product] = {}
+        if product_ids:
+            p_result = await db.execute(
+                select(Product).where(
+                    Product.id.in_(product_ids),
+                    Product.workspace_id == workspace.id,
+                )
+            )
+            products_map = {p.id: p for p in p_result.scalars().all()}
+
+        variants_map: Dict[str, ProductVariant] = {}
+        if variant_ids:
+            v_result = await db.execute(
+                select(ProductVariant)
+                .join(Product)
+                .where(
+                    ProductVariant.id.in_(variant_ids),
+                    Product.workspace_id == workspace.id,
+                )
+            )
+            variants_map = {v.id: v for v in v_result.scalars().all()}
+
+        # Resolve the authoritative unit price for each line item.
+        resolved_items: List[Tuple[OrderItemCreate, float, float]] = []
+        for item_data in order_data.items:
+            # Validate product belongs to this workspace.
+            product = (
+                products_map.get(item_data.product_id)
+                if item_data.product_id
+                else None
+            )
+            if item_data.product_id and product is None:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Product '{item_data.product_id}' not found in this workspace.",
+                )
+
+            # Validate variant belongs to this workspace.
+            variant = (
+                variants_map.get(item_data.variant_id)
+                if item_data.variant_id
+                else None
+            )
+            if item_data.variant_id and variant is None:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Variant '{item_data.variant_id}' not found in this workspace.",
+                )
+
+            # Authoritative unit price: prefer the variant price when set,
+            # otherwise fall back to the product price. Client-submitted
+            # prices are intentionally ignored.
+            if variant is not None and variant.price is not None:
+                unit_price = float(variant.price)
+            elif product is not None:
+                unit_price = float(product.price)
+            else:
+                # Ad-hoc item with no product reference: there is no
+                # server-side price source, so fall back to the client
+                # value (the product/variant lookup above was skipped).
+                unit_price = float(item_data.unit_price)
+
+            total_price = round(unit_price * item_data.quantity, 2)
+            resolved_items.append((item_data, unit_price, total_price))
+
+        subtotal = round(sum(total for _, _, total in resolved_items), 2)
 
         order = Order(
             workspace_id=workspace.id,
@@ -115,33 +189,9 @@ class OrderService:
         db.add(order)
         await db.flush()
 
-        # Create order items with product/variant workspace validation
+        # Create order items with server-validated prices.
         items: List[OrderItem] = []
-        for item_data in order_data.items:
-            if item_data.product_id:
-                p_check = await db.execute(
-                    select(Product).where(
-                        Product.id == item_data.product_id,
-                        Product.workspace_id == workspace.id,
-                    )
-                )
-                if p_check.scalar_one_or_none() is None:
-                    raise HTTPException(
-                        status_code=status.HTTP_400_BAD_REQUEST,
-                        detail=f"Product '{item_data.product_id}' not found in this workspace.",
-                    )
-            if item_data.variant_id:
-                v_check = await db.execute(
-                    select(ProductVariant).join(Product).where(
-                        ProductVariant.id == item_data.variant_id,
-                        Product.workspace_id == workspace.id,
-                    )
-                )
-                if v_check.scalar_one_or_none() is None:
-                    raise HTTPException(
-                        status_code=status.HTTP_400_BAD_REQUEST,
-                        detail=f"Variant '{item_data.variant_id}' not found in this workspace.",
-                    )
+        for item_data, unit_price, total_price in resolved_items:
             item = OrderItem(
                 order_id=order.id,
                 product_id=item_data.product_id,
@@ -151,8 +201,8 @@ class OrderService:
                 else "",
                 sku=item_data.sku,
                 quantity=item_data.quantity,
-                unit_price=item_data.unit_price,
-                total_price=item_data.total_price,
+                unit_price=unit_price,
+                total_price=total_price,
             )
             db.add(item)
             items.append(item)
@@ -163,13 +213,29 @@ class OrderService:
                 db, workspace, order_data.customer_id, float(order.total)
             )
 
-        # Deduct stock for each order item
-        for item_data in order_data.items:
+        # Deduct stock for each order item atomically (avoid oversell under concurrency)
+        for item_data, _, _ in resolved_items:
             if item_data.product_id:
-                product = await db.execute(select(Product).where(Product.id == item_data.product_id))
-                product = product.scalar_one_or_none()
-                if product:
-                    product.stock = max(0, product.stock - item_data.quantity)
+                product = products_map.get(item_data.product_id)
+                if product is None:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=f"Product '{item_data.product_id}' not found in this workspace.",
+                    )
+                # Atomic decrement guarded by a row-level stock check (no oversell)
+                result = await db.execute(
+                    update(Product)
+                    .where(
+                        Product.id == item_data.product_id,
+                        Product.stock >= item_data.quantity,
+                    )
+                    .values(stock=Product.stock - item_data.quantity)
+                )
+                if result.rowcount == 0:
+                    raise HTTPException(
+                        status_code=status.HTTP_409_CONFLICT,
+                        detail=f"库存不足: {product.name}",
+                    )
 
         await db.flush()
         await db.refresh(order)
@@ -240,6 +306,25 @@ class OrderService:
             logger.warning("Order notification email failed: %s", e)
 
         logger.info("Order created: %s (total=%.2f)", order.order_number, order.total)
+
+        # Push real-time notification via WebSocket
+        try:
+            from app.api.ws import notify_workspace
+            await notify_workspace(
+                str(workspace.id),
+                "order.created",
+                {
+                    "order_id": str(order.id),
+                    "order_number": order.order_number,
+                    "total": float(order.total),
+                },
+            )
+        except Exception:
+            logger.warning(
+                "Failed to push WebSocket notification for order %s",
+                order.id,
+                exc_info=True,
+            )
 
         return OrderDetailResponse(
             id=order.id,
@@ -324,6 +409,7 @@ class OrderService:
         date_from: Optional[str] = None,
         date_to: Optional[str] = None,
         customer_id: Optional[str] = None,
+        platform: Optional[str] = None,
         skip: int = 0,
         limit: int = 50,
     ) -> Tuple[List[OrderResponse], int]:
@@ -335,6 +421,7 @@ class OrderService:
             date_from: ISO date string (YYYY-MM-DD) — orders created on or after.
             date_to: ISO date string (YYYY-MM-DD) — orders created on or before.
             customer_id: Filter by customer ID.
+            platform: Filter by source platform (shopify/douyin/sandbox/...).
 
         Returns:
             Tuple of (list of OrderResponse, total count).
@@ -343,6 +430,9 @@ class OrderService:
 
         if status_filter:
             conditions.append(Order.status == OrderStatus(status_filter))
+
+        if platform:
+            conditions.append(Order.platform == platform)
 
         if search:
             conditions.append(Order.order_number.ilike(f"%{search}%"))

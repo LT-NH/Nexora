@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
+import { PageHeader } from '@/components/ui/PageHeader';
 import { Input } from '@/components/ui/Input';
 import { Badge } from '@/components/ui/Badge';
 import { Modal, ModalFooter } from '@/components/ui/Modal';
@@ -274,21 +275,19 @@ export const ApiKeys: React.FC = () => {
 
   return (
     <div className="space-y-6 animate-fade-in">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-2xl font-bold text-slate-900 dark:text-gray-100">{t('api_keys_title')}</h2>
-          <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-            {t('api_keys_subtitle')}
-          </p>
-        </div>
-        <Button
-          variant="primary"
-          leftIcon={<Plus size={16} />}
-          onClick={() => setShowCreateModal(true)}
-        >
-          {t('create_api_key')}
-        </Button>
-      </div>
+      <PageHeader
+        title={t('api_keys_title')}
+        subtitle={t('api_keys_subtitle')}
+        actions={
+          <Button
+            variant="primary"
+            leftIcon={<Plus size={16} />}
+            onClick={() => setShowCreateModal(true)}
+          >
+            {t('create_api_key')}
+          </Button>
+        }
+      />
 
       {keys.length === 0 ? (
         <EmptyState
@@ -310,7 +309,7 @@ export const ApiKeys: React.FC = () => {
                   style={{ animationDelay: `${idx * 0.05}s` }}
                 >
                   <div className="flex items-center gap-4">
-                    <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-primary-50 to-indigo-50 flex items-center justify-center">
+                    <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-primary-50 to-purple-50 flex items-center justify-center">
                       <Key size={18} className="text-primary-600" />
                     </div>
                     <div>
@@ -397,7 +396,7 @@ export const ApiKeys: React.FC = () => {
             </div>
             <div className="flex items-center gap-2">
               <Input
-                value={showKey ? createdRawKey : '•'.repeat(40)}
+                value={showKey ? createdRawKey : '?'.repeat(40)}
                 readOnly
                 className="font-mono"
               />

@@ -111,7 +111,7 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({ onFinish }) => {
     <div
       className="fixed inset-0 z-[9999] flex flex-col items-center justify-center"
       style={{
-        background: 'linear-gradient(180deg, #f0f4ff 0%, #f8fafc 40%, #ffffff 100%)',
+        background: 'linear-gradient(180deg, #f5f3ff 0%, #faf5ff 40%, #ffffff 100%)',
         opacity: fadingOut ? 0 : 1,
         transition: 'opacity 1800ms cubic-bezier(0.4, 0, 0.2, 1)',
         transitionDelay: fadingOut ? '600ms' : '0ms',
@@ -121,7 +121,7 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({ onFinish }) => {
       <div
         className="absolute rounded-full transition-all duration-1500"
         style={{
-          background: 'radial-gradient(circle, rgba(99,102,241,0.08) 0%, transparent 70%)',
+          background: 'radial-gradient(circle, rgba(124,58,237,0.08) 0%, transparent 70%)',
           width: '600px', height: '600px',
           top: '50%', left: '50%',
           transform: `translate(-50%, -50%) scale(${fadingOut ? 1.3 : 1})`,
@@ -131,7 +131,7 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({ onFinish }) => {
       <div
         className="absolute rounded-full transition-all duration-1500"
         style={{
-          background: 'radial-gradient(circle, rgba(6,182,212,0.06) 0%, transparent 70%)',
+          background: 'radial-gradient(circle, rgba(217,70,239,0.05) 0%, transparent 70%)',
           width: '400px', height: '400px',
           top: 'calc(50% + 80px)', left: 'calc(50% - 100px)',
           transform: `translate(-50%, -50%) scale(${fadingOut ? 0.8 : 1})`,

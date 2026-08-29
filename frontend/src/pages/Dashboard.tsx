@@ -55,10 +55,10 @@ const eventSummary = (msg: any): { label: string; desc: string; tone: string } =
   const evt = String(msg?.event || 'notification').toLowerCase();
   const d = msg?.data || {};
   if (evt.includes('order') || evt.includes('payment')) {
-    return { label: '订单', desc: `新订单 ${d.order_number || d.id?.slice?.(0, 8) || ''} ¥${d.total ?? d.amount ?? '--'}`, tone: 'bg-emerald-500' };
+    return { label: '订单', desc: `新订单 ${d.order_number || d.id?.slice?.(0, 8) || ''} ￥${d.total ?? d.amount ?? '--'}`, tone: 'bg-emerald-500' };
   }
   if (evt.includes('refund')) {
-    return { label: '退款', desc: `退款 ¥${d.amount ?? d.total ?? '--'}${d.reason ? ' · ' + String(d.reason).slice(0, 18) : ''}`, tone: 'bg-rose-500' };
+    return { label: '退款', desc: `退款 ￥${d.amount ?? d.total ?? '--'}${d.reason ? ' · ' + String(d.reason).slice(0, 18) : ''}`, tone: 'bg-rose-500' };
   }
   if (evt.includes('stock') || evt.includes('inventory')) {
     return { label: '库存', desc: `库存告警 ${d.product_name || d.name || ''}`, tone: 'bg-amber-500' };
@@ -71,6 +71,7 @@ import { usePlan } from '@/hooks/usePlan';
 import { Card } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
+import { PageHeader } from '@/components/ui/PageHeader';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { SkeletonStatCard, StatCard } from '@/components/ui/StatCard';
 import { CountUp } from '@/components/ui/CountUp';
@@ -125,7 +126,7 @@ const D = {
     week_orders: '7天订单',
     aov: '客单价',
     low_stock: '库存预警',
-    weekly_schedule_note: '每周一早8点自动推送周报邮件',
+    weekly_schedule_note: '每周一9点自动推送周报邮件',
     btn_send_weekly: '立即发送周报',
     toast_report_sent: '周报已发送',
     toast_report_sent_desc: '周报将发送到工作空间管理员的邮箱',
@@ -169,11 +170,11 @@ const D = {
     no_sales_data: '暂无销售数据',
     no_sales_data_desc: '还没有销售趋势数据',
     customer_value_title: '客户价值分析',
-    customer_value_subtitle: '基于RFM模型的客户分群',
+    customer_value_subtitle: '基于RFM模型的客户分层',
     no_customer_segments: '还没有客户分群数据',
     membership_title: '会员等级分布',
     membership_subtitle: '客户等级统计',
-    membership_total_prefix: '共 ',
+    membership_total_prefix: '共',
     membership_total_suffix: ' 位客户',
     loading: '加载中...',
     no_customer_data: '暂无客户数据',
@@ -364,7 +365,7 @@ const MembershipCard: React.FC<{ slug: string }> = ({ slug }) => {
 
   if (loading) {
     return (
-      <Card className="animated-border" title={t('membership_title')} subtitle={t('membership_subtitle')}>
+      <Card className="" title={t('membership_title')} subtitle={t('membership_subtitle')}>
         <div className="h-[120px] flex items-center justify-center text-gray-400 dark:text-gray-500 text-sm">{t('loading')}</div>
       </Card>
     );
@@ -372,7 +373,7 @@ const MembershipCard: React.FC<{ slug: string }> = ({ slug }) => {
 
   if (total === 0) {
     return (
-      <Card className="animated-border" title={t('membership_title')} subtitle={t('membership_subtitle')}>
+      <Card className="" title={t('membership_title')} subtitle={t('membership_subtitle')}>
         <div className="h-[120px] flex items-center justify-center text-gray-400 dark:text-gray-500 text-sm">{t('no_customer_data')}</div>
       </Card>
     );
@@ -381,7 +382,7 @@ const MembershipCard: React.FC<{ slug: string }> = ({ slug }) => {
   const maxCount = Math.max(...levels.map((l) => l.count), 1);
 
   return (
-    <Card className="animated-border" title={t('membership_title')} subtitle={`${t('membership_total_prefix')}${total}${t('membership_total_suffix')}`}>
+    <Card className="" title={t('membership_title')} subtitle={`${t('membership_total_prefix')}${total}${t('membership_total_suffix')}`}>
       <div className="space-y-3 py-2">
         {levels.map((lvl) => {
           const pct = Math.round((lvl.count / maxCount) * 100);
@@ -425,7 +426,7 @@ export const Dashboard: React.FC = () => {
   const [salesTrend, setSalesTrend] = useState<{ date: string; amount: number; orders: number }[]>([]);
   // AI 销售分析结果（异步后置加载，不阻塞首屏）
   const [salesAnalysisResponse, setSalesAnalysisResponse] = useState<any>(null);
-  // 实时事件流（订单/退款/通知实时推送）
+  // 实时事件流（订单/退款通知实时推送）
   const { notifications: liveEvents, connected: wsConnected } = useWebSocketNotifications();
   // 收到订单事件时，营收图尾部追加一点，体现"实时"
   useEffect(() => {
@@ -726,38 +727,37 @@ export const Dashboard: React.FC = () => {
       {/* Background dots layer */}
       <div className="absolute inset-0 bg-tech-dots pointer-events-none -z-10" />
       {/* Welcome */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-2xl font-extrabold text-slate-900">
-            {t('welcome_back')}{user?.full_name?.split(' ')[0] || t('default_user')}
-          </h2>
-          <p className="mt-1 text-sm text-gray-500">
-            {' '}
+      <PageHeader
+        title={<>{t('welcome_back')}{user?.full_name?.split(' ')[0] || t('default_user')}</>}
+        subtitle={
+          <>
             <span className="font-medium text-gray-700">
               {currentWorkspace?.name}
             </span>
             {t('workspace_overview')}
-          </p>
-        </div>
-        <div className="flex items-center gap-3">
-          <Button
-            variant="outline"
-            size="sm"
-            leftIcon={<UserPlus size={16} />}
-            onClick={() => navigate('/team')}
-          >
-            {t('btn_invite_members')}
-          </Button>
-          <Button
-            variant="primary"
-            size="sm"
-            leftIcon={<Plus size={16} />}
-            onClick={() => navigate('/api-keys')}
-          >
-            {t('btn_create_api_key')}
-          </Button>
-        </div>
-      </div>
+          </>
+        }
+        actions={
+          <>
+            <Button
+              variant="outline"
+              size="sm"
+              leftIcon={<UserPlus size={16} />}
+              onClick={() => navigate('/team')}
+            >
+              {t('btn_invite_members')}
+            </Button>
+            <Button
+              variant="primary"
+              size="sm"
+              leftIcon={<Plus size={16} />}
+              onClick={() => navigate('/api-keys')}
+            >
+              {t('btn_create_api_key')}
+            </Button>
+          </>
+        }
+      />
 
       {/* AI 结论摘要条（第一屏焦点） */}
       <AiDecisionPanel slug={currentWorkspace?.slug || ''} />
@@ -765,28 +765,28 @@ export const Dashboard: React.FC = () => {
       {/* 经营 KPI（真实利润数据） */}
       <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-4 gap-4" aria-live="polite">
         <StatCard
-          className="glass-card card-glow"
+          className="glass-card"
           icon={<Wallet size={22} className="text-emerald-600" />}
           label="总营收"
           value={`¥${(profitData?.revenue ?? 0).toLocaleString('zh-CN', { maximumFractionDigits: 0 })}`}
           subtext={`${profitData?.order_items_count ?? 0} 条订单明细`}
         />
         <StatCard
-          className="glass-card card-glow"
+          className="glass-card"
           icon={<Coins size={22} className="text-amber-600" />}
           label="总毛利"
           value={`¥${(profitData?.profit ?? 0).toLocaleString('zh-CN', { maximumFractionDigits: 0 })}`}
           subtext={`成本 ¥${(profitData?.cost ?? 0).toLocaleString('zh-CN', { maximumFractionDigits: 0 })}`}
         />
         <StatCard
-          className="glass-card card-glow"
+          className="glass-card"
           icon={<Percent size={22} className="text-violet-600" />}
           label="毛利率"
           value={`${profitData?.margin ?? 0}%`}
           subtext="毛利 ÷ 营收"
         />
         <StatCard
-          className="glass-card card-glow"
+          className="glass-card"
           icon={<Calendar size={22} className="text-primary-600" />}
           label="账户状态"
           value={getStatusBadge(stats?.subscription_status || 'incomplete')}
@@ -886,7 +886,7 @@ export const Dashboard: React.FC = () => {
       <Card
         title={t('weekly_report_title')}
         subtitle={t('weekly_report_subtitle')}
-        className="animated-border border-blue-200 dark:border-blue-800"
+        className="border-primary-200 dark:border-primary-800"
       >
         {(() => {
           const weekRevenue = salesTrend.slice(-7).reduce((s, d) => s + d.amount, 0);
@@ -938,7 +938,7 @@ export const Dashboard: React.FC = () => {
 
       {/* 实时事件流（概览 tab） */}
       <Card
-        className="animated-border"
+        className=""
         title={t('live_events_title')}
         subtitle={wsConnected ? t('live_events_sub') : t('live_events_offline')}
       >
@@ -1068,7 +1068,7 @@ export const Dashboard: React.FC = () => {
       {/* Charts Section - Free gets order status only, Pro+ gets full */}
       {plan === 'free' ? (
         <>
-          <Card className="animated-border" title={t('order_status_title')} subtitle={t('order_status_subtitle')}>
+          <Card className="" title={t('order_status_title')} subtitle={t('order_status_subtitle')}>
             {orderStatus.length > 0 ? (
               <OrderStatusChart data={orderStatus.map((s) => ({ ...s, name: t(s.name) }))} />
             ) : (
@@ -1081,7 +1081,7 @@ export const Dashboard: React.FC = () => {
         <>
           {/* Charts Section */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <Card className="animated-border" title={t('sales_trend_title')} subtitle={t('sales_trend_subtitle')}>
+            <Card className="" title={t('sales_trend_title')} subtitle={t('sales_trend_subtitle')}>
               {salesTrend.length > 0 ? (
                 <SalesTrendChart data={salesTrend} />
               ) : (
@@ -1089,7 +1089,7 @@ export const Dashboard: React.FC = () => {
               )}
             </Card>
 
-            <Card className="animated-border" title={t('order_status_title')} subtitle={t('order_status_subtitle')}>
+            <Card className="" title={t('order_status_title')} subtitle={t('order_status_subtitle')}>
               {orderStatus.length > 0 ? (
                 <OrderStatusChart data={orderStatus.map((s) => ({ ...s, name: t(s.name) }))} />
               ) : (
@@ -1099,7 +1099,7 @@ export const Dashboard: React.FC = () => {
           </div>
 
 
-          <Card className="animated-border" title={t('customer_value_title')} subtitle={t('customer_value_subtitle')}>
+          <Card className="" title={t('customer_value_title')} subtitle={t('customer_value_subtitle')}>
             {customerInsight.length > 0 ? (
               <CustomerInsightChart data={customerInsight} />
             ) : (
@@ -1177,7 +1177,7 @@ export const Dashboard: React.FC = () => {
               aria-label={action.label}
               className="flex flex-col items-center gap-2 p-4 rounded-xl border border-gray-300 dark:border-gray-600 hover:border-primary-300 dark:hover:border-primary-600 hover:bg-primary-50/50 dark:hover:bg-primary-900/20 hover:shadow-md hover:-translate-y-0.5 transition-all duration-200"
             >
-              <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-primary-50 to-indigo-50 dark:from-primary-900/30 dark:to-indigo-900/30 flex items-center justify-center group-hover:scale-110 transition-transform duration-200">
+              <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-primary-50 to-purple-50 dark:from-primary-900/30 dark:to-purple-900/30 flex items-center justify-center group-hover:scale-110 transition-transform duration-200">
                 <action.icon size={20} className="text-primary-600 dark:text-primary-400" />
               </div>
               <span className="text-sm font-medium text-gray-700 dark:text-gray-300">

@@ -74,8 +74,12 @@ class ShopifyIntegration(PlatformIntegration):
         self,
         config: dict[str, Any],
         workspace_id: str,
+        updated_at_min: datetime | None = None,
     ) -> SyncResult:
-        """Sync products from Shopify into the workspace."""
+        """Sync products from Shopify into the workspace.
+
+        传 ``updated_at_min`` 时只拉取该时间之后有变更的商品（增量同步）。
+        """
         result = SyncResult()
         store_url = _normalize_store_url(config.get("store_url"))
         access_token = (config.get("api_key") or config.get("access_token") or "")
@@ -91,10 +95,14 @@ class ShopifyIntegration(PlatformIntegration):
 
         async with async_session_factory() as db:
             try:
+                incremental_params: dict[str, Any] = {}
+                if updated_at_min is not None:
+                    incremental_params["updated_at_min"] = _to_shopify_utc(updated_at_min)
                 products = await self._fetch_all_pages(
                     f"{store_url}/admin/api/{SHOPIFY_API_VERSION}/products.json",
                     headers,
                     "products",
+                    params=incremental_params or None,
                 )
 
                 for shopify_product in products:
@@ -130,8 +138,12 @@ class ShopifyIntegration(PlatformIntegration):
         self,
         config: dict[str, Any],
         workspace_id: str,
+        updated_at_min: datetime | None = None,
     ) -> SyncResult:
-        """Sync orders from Shopify into the workspace."""
+        """Sync orders from Shopify into the workspace.
+
+        传 ``updated_at_min`` 时只拉取该时间之后有变更的订单（增量同步）。
+        """
         result = SyncResult()
         store_url = _normalize_store_url(config.get("store_url"))
         access_token = (config.get("api_key") or config.get("access_token") or "")
@@ -147,11 +159,14 @@ class ShopifyIntegration(PlatformIntegration):
 
         async with async_session_factory() as db:
             try:
+                incremental_params: dict[str, Any] = {"status": "any", "limit": 250}
+                if updated_at_min is not None:
+                    incremental_params["updated_at_min"] = _to_shopify_utc(updated_at_min)
                 orders = await self._fetch_all_pages(
                     f"{store_url}/admin/api/{SHOPIFY_API_VERSION}/orders.json",
                     headers,
                     "orders",
-                    params={"status": "any", "limit": 250},
+                    params=incremental_params,
                 )
 
                 from app.models.refund import Refund, RefundReason, RefundStatus
@@ -243,8 +258,12 @@ class ShopifyIntegration(PlatformIntegration):
         self,
         config: dict[str, Any],
         workspace_id: str,
+        updated_at_min: datetime | None = None,
     ) -> SyncResult:
-        """Sync customers from Shopify into the workspace."""
+        """Sync customers from Shopify into the workspace.
+
+        传 ``updated_at_min`` 时只拉取该时间之后有变更的客户（增量同步）。
+        """
         result = SyncResult()
         store_url = _normalize_store_url(config.get("store_url"))
         access_token = (config.get("api_key") or config.get("access_token") or "")
@@ -260,10 +279,14 @@ class ShopifyIntegration(PlatformIntegration):
 
         async with async_session_factory() as db:
             try:
+                incremental_params: dict[str, Any] = {}
+                if updated_at_min is not None:
+                    incremental_params["updated_at_min"] = _to_shopify_utc(updated_at_min)
                 customers = await self._fetch_all_pages(
                     f"{store_url}/admin/api/{SHOPIFY_API_VERSION}/customers.json",
                     headers,
                     "customers",
+                    params=incremental_params or None,
                 )
 
                 for shopify_customer in customers:
@@ -316,6 +339,32 @@ class ShopifyIntegration(PlatformIntegration):
                 return await self._upsert_order_payload(session, workspace_id, payload)
         return await self._upsert_order_payload(db, workspace_id, payload)
 
+    async def upsert_product_from_payload(
+        self,
+        config: dict[str, Any],
+        workspace_id: str,
+        payload: dict[str, Any],
+        db: AsyncSession | None = None,
+    ) -> SyncResult:
+        """Upsert a single product received via a products/* webhook."""
+        if db is None:
+            async with async_session_factory() as session:
+                return await self._upsert_product_payload(session, workspace_id, payload)
+        return await self._upsert_product_payload(db, workspace_id, payload)
+
+    async def upsert_customer_from_payload(
+        self,
+        config: dict[str, Any],
+        workspace_id: str,
+        payload: dict[str, Any],
+        db: AsyncSession | None = None,
+    ) -> SyncResult:
+        """Upsert a single customer received via a customers/* webhook."""
+        if db is None:
+            async with async_session_factory() as session:
+                return await self._upsert_customer_payload(session, workspace_id, payload)
+        return await self._upsert_customer_payload(db, workspace_id, payload)
+
     async def _upsert_order_payload(
         self,
         db: AsyncSession,
@@ -334,6 +383,46 @@ class ShopifyIntegration(PlatformIntegration):
         except Exception as exc:
             result.errors.append(f"Webhook order upsert failed: {exc}")
             logger.error("Shopify webhook order upsert failed: %s", exc)
+        return result
+
+    async def _upsert_product_payload(
+        self,
+        db: AsyncSession,
+        workspace_id: str,
+        payload: dict[str, Any],
+    ) -> SyncResult:
+        result = SyncResult()
+        try:
+            is_new = await self._upsert_product(db, workspace_id, payload)
+            if is_new:
+                result.created += 1
+            else:
+                result.updated += 1
+            await db.flush()
+            await db.commit()
+        except Exception as exc:
+            result.errors.append(f"Webhook product upsert failed: {exc}")
+            logger.error("Shopify webhook product upsert failed: %s", exc)
+        return result
+
+    async def _upsert_customer_payload(
+        self,
+        db: AsyncSession,
+        workspace_id: str,
+        payload: dict[str, Any],
+    ) -> SyncResult:
+        result = SyncResult()
+        try:
+            is_new = await self._upsert_customer(db, workspace_id, payload)
+            if is_new:
+                result.created += 1
+            else:
+                result.updated += 1
+            await db.flush()
+            await db.commit()
+        except Exception as exc:
+            result.errors.append(f"Webhook customer upsert failed: {exc}")
+            logger.error("Shopify webhook customer upsert failed: %s", exc)
         return result
 
     # ==================================================================
@@ -1078,6 +1167,13 @@ class ShopifyIntegration(PlatformIntegration):
             logger.warning("Shopify coupon create error: %s", exc)
             return False
 
+
+
+def _to_shopify_utc(value: datetime) -> str:
+    """本地/朴素 datetime → Shopify API 需要的 UTC ISO 字符串。"""
+    if value.tzinfo is not None:
+        value = value.astimezone(timezone.utc).replace(tzinfo=None)
+    return value.isoformat() + "Z"
 
 
 def _normalize_store_url(url: str | None) -> str:

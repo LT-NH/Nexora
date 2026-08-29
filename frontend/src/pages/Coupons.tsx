@@ -16,6 +16,7 @@ import { usePageTitle } from '@/hooks/usePageTitle';
 import { useToast } from '@/components/ui/Toast';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
+import { PageHeader } from '@/components/ui/PageHeader';
 import { Input } from '@/components/ui/Input';
 import { Badge } from '@/components/ui/Badge';
 import { Modal, ModalFooter } from '@/components/ui/Modal';
@@ -50,7 +51,7 @@ const D = {
     stat_redeemed: '已使用次数',
     empty_title: '还没有优惠券',
     empty_desc: '创建您的第一张优惠券，吸引更多顾客',
-    col_code: '优惠码',
+    col_code: '优惠券码',
     col_type: '类型',
     col_value: '优惠力度',
     col_usage: '使用情况',
@@ -69,13 +70,13 @@ const D = {
     title_activate: '启用',
     aria_delete: '删除',
     modal_title: '创建优惠券',
-    label_code: '优惠码',
+    label_code: '优惠券码',
     placeholder_code: '例如 SUMMER2026',
     label_type: '优惠类型',
     label_percent_value: '折扣百分比',
     label_fixed_value: '优惠金额 (¥)',
     label_free_shipping_value: '无需填写',
-    label_min_order: '最低订单金额 (¥)',
+    label_min_order: '最低订单金额 (￥)',
     label_max_uses: '最大使用次数',
     label_expires: '过期时间',
     btn_confirm: '创建',
@@ -251,15 +252,15 @@ export const Coupons: React.FC = () => {
 
   return (
     <div className="space-y-6 animate-fade-in">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-2xl font-bold text-slate-900 dark:text-gray-100">{t('coupons_title')}</h2>
-          <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">{t('coupons_subtitle')}</p>
-        </div>
-        <Button onClick={() => setShowModal(true)} leftIcon={<Plus size={16} />}>
-          {t('btn_create')}
-        </Button>
-      </div>
+      <PageHeader
+        title={t('coupons_title')}
+        subtitle={t('coupons_subtitle')}
+        actions={
+          <Button onClick={() => setShowModal(true)} leftIcon={<Plus size={16} />}>
+            {t('btn_create')}
+          </Button>
+        }
+      />
 
       {/* Stats Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">

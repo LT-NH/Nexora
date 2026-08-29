@@ -16,7 +16,7 @@ export const ForgotPassword: React.FC = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!email.trim()) {
-      addToast('error', '请输入邮箱', '请输入您的注册邮箱地址。');
+      addToast('error', '请输入邮箱', '请输入您的注册邮箱地址');
       return;
     }
     setIsLoading(true);
@@ -39,25 +39,24 @@ export const ForgotPassword: React.FC = () => {
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
           <Link to="/" className="inline-block mb-4">
-            <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-primary-600 to-indigo-600 flex items-center justify-center mx-auto">
+            <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-primary-600 to-purple-600 flex items-center justify-center mx-auto">
               <span className="text-white font-bold text-xl">S</span>
             </div>
           </Link>
-          <h1 className="text-2xl font-bold text-slate-900">忘记密码</h1>
+          <h1 className="text-2xl font-bold text-slate-900 dark:text-gray-100">忘记密码</h1>
           <p className="text-sm text-gray-500 mt-2">
             {isSent ? '重置令牌已生成' : '输入您的邮箱地址以重置密码'}
           </p>
         </div>
 
-        <div className="bg-white rounded-2xl shadow-xl border border-gray-100 p-8">
+        <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl border border-gray-100 dark:border-gray-700 p-8">
           {isSent ? (
             <div className="space-y-6 text-center">
               <div className="w-16 h-16 rounded-full bg-green-100 flex items-center justify-center mx-auto">
                 <CheckCircle size={32} className="text-green-500" />
               </div>
               <p className="text-sm text-gray-600">
-                密码重置令牌已生成，请使用以下令牌完成密码重置。
-              </p>
+                密码重置令牌已生成，请使用以下令牌完成密码重置。              </p>
               {resetToken && (
                 <div className="p-4 bg-gray-50 rounded-lg border border-gray-300">
                   <p className="text-xs text-gray-500 mb-1">重置令牌 (开发环境直接显示):</p>
@@ -85,8 +84,7 @@ export const ForgotPassword: React.FC = () => {
                 autoComplete="email"
               />
               <Button type="submit" variant="primary" size="lg" isLoading={isLoading} className="w-full">
-                发送重置链接
-              </Button>
+                发送重置链接              </Button>
               <p className="text-center">
                 <Link to="/login" className="inline-flex items-center gap-1 text-sm text-gray-500 hover:text-primary-600 transition-colors">
                   <ArrowLeft size={14} /> 返回登录

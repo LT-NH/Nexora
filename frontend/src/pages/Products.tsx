@@ -32,6 +32,7 @@ import { useToast } from '@/components/ui/Toast';
 import { useFormErrors } from '@/hooks/useForm';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
+import { PageHeader } from '@/components/ui/PageHeader';
 import { Input } from '@/components/ui/Input';
 import { Badge } from '@/components/ui/Badge';
 import { Modal, ModalFooter } from '@/components/ui/Modal';
@@ -402,6 +403,23 @@ const getStatusOrder = (t: T) => [
 ];
 
 const formatPrice = (price: number) => `¥${price.toFixed(2)}`;
+
+// 商品来源徽章：从同步写入的 SKU 前缀推断平台（shopify-* / dy-* / sandbox-*）
+const PLATFORM_FROM_SKU: Array<[RegExp, string, string]> = [
+  [/^shopify-/i, 'Shopify', 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-300 dark:border-emerald-800'],
+  [/^dy-/i, '抖音', 'bg-gray-100 text-gray-700 border-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:border-gray-600'],
+  [/^sandbox-/i, '沙盒', 'bg-violet-50 text-violet-700 border-violet-200 dark:bg-violet-900/30 dark:text-violet-300 dark:border-violet-800'],
+];
+const PlatformSourceBadge: React.FC<{ sku?: string | null }> = ({ sku }) => {
+  if (!sku) return null;
+  const hit = PLATFORM_FROM_SKU.find(([re]) => re.test(sku));
+  if (!hit) return null;
+  return (
+    <span className={`flex-shrink-0 text-[10px] font-medium px-1.5 py-0.5 rounded border ${hit[2]}`}>
+      {hit[1]}
+    </span>
+  );
+};
 
 export const Products: React.FC = () => {
   const t = usePageT(D);
@@ -1098,7 +1116,7 @@ export const Products: React.FC = () => {
         <div className="w-12 h-12 rounded-full bg-red-100 flex items-center justify-center mb-4">
           <X size={24} className="text-red-500" />
         </div>
-        <h3 className="text-lg font-semibold text-slate-900">{t('load_failed')}</h3>
+        <h3 className="text-lg font-semibold text-slate-900 dark:text-gray-100">{t('load_failed')}</h3>
         <p className="text-sm text-gray-500 mt-1">{error}</p>
         <Button variant="outline" className="mt-4" onClick={fetchProducts}>{t('retry')}</Button>
       </div>
@@ -1140,7 +1158,10 @@ export const Products: React.FC = () => {
         </div>
         <div className="min-w-0">
           <p className="text-sm font-medium text-slate-900 dark:text-gray-100 truncate">{p.name}</p>
-          <p className="text-xs text-gray-500 dark:text-gray-400">{p.sku}</p>
+          <div className="flex items-center gap-1.5 min-w-0">
+            <p className="text-xs text-gray-500 dark:text-gray-400 truncate">{p.sku}</p>
+            <PlatformSourceBadge sku={p.sku} />
+          </div>
         </div>
       </div>
     )},
@@ -1164,7 +1185,7 @@ export const Products: React.FC = () => {
     }},
     { key: 'price', header: t('col_price'), sortable: true, render: (p: Product) => (
       <div>
-        <span className="text-sm font-medium text-slate-900">{formatPrice(p.price)}</span>
+        <span className="text-sm font-medium text-slate-900 dark:text-gray-100">{formatPrice(p.price)}</span>
         {p.compare_at_price && (
           <span className="text-xs text-gray-500 line-through ml-1.5">{formatPrice(p.compare_at_price)}</span>
         )}
@@ -1214,48 +1235,48 @@ export const Products: React.FC = () => {
   return (
     <div className="space-y-6 animate-fade-in">
       {/* 页面标题 */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-2xl font-bold text-slate-900">{t('page_title')}</h2>
-          <p className="mt-1 text-sm text-gray-500">{t('page_subtitle')}</p>
-        </div>
-        <div className="flex items-center gap-2">
-          <a
-            href={`/api/v1/workspaces/${currentWorkspace?.slug}/export/products`}
-            download
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Button variant="outline" size="sm" leftIcon={<Download size={16} />}>
-              {t('export_excel')}
+      <PageHeader
+        title={t('page_title')}
+        subtitle={t('page_subtitle')}
+        actions={
+          <>
+            <a
+              href={`/api/v1/workspaces/${currentWorkspace?.slug}/export/products`}
+              download
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              <Button variant="outline" size="sm" leftIcon={<Download size={16} />}>
+                {t('export_excel')}
+              </Button>
+            </a>
+            <input ref={fileInputRef2} type="file" accept=".csv" onChange={handleImportCSV} className="hidden" />
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => fileInputRef2.current?.click()}
+              isLoading={isImporting}
+              leftIcon={<Upload size={16} />}
+            >
+              {t('import_csv')}
             </Button>
-          </a>
-          <input ref={fileInputRef2} type="file" accept=".csv" onChange={handleImportCSV} className="hidden" />
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => fileInputRef2.current?.click()}
-            isLoading={isImporting}
-            leftIcon={<Upload size={16} />}
-          >
-            {t('import_csv')}
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => fetchProducts()}
-            leftIcon={<RefreshCw size={16} />}
-          >
-            {t('refresh')}
-          </Button>
-          <Button variant="outline" size="sm" onClick={() => setShowCategoryModal(true)} leftIcon={<FolderOpen size={16} />}>
-            {t('category_manage')}
-          </Button>
-          <Button variant="primary" size="sm" onClick={openCreateModal} leftIcon={<Plus size={16} />}>
-            {t('add_product')}
-          </Button>
-        </div>
-      </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => fetchProducts()}
+              leftIcon={<RefreshCw size={16} />}
+            >
+              {t('refresh')}
+            </Button>
+            <Button variant="outline" size="sm" onClick={() => setShowCategoryModal(true)} leftIcon={<FolderOpen size={16} />}>
+              {t('category_manage')}
+            </Button>
+            <Button variant="primary" size="sm" onClick={openCreateModal} leftIcon={<Plus size={16} />}>
+              {t('add_product')}
+            </Button>
+          </>
+        }
+      />
 
       {/* 筛选栏 */}
       <Card padding>
@@ -1437,7 +1458,7 @@ export const Products: React.FC = () => {
         <Card padding>
           <div className="flex items-center justify-between mb-4">
             <div>
-              <h3 className="text-lg font-semibold text-slate-900">
+              <h3 className="text-lg font-semibold text-slate-900 dark:text-gray-100">
                 {t('review_manage').replace('{name}', selectedProductForReviews.name)}
               </h3>
               <p className="text-sm text-gray-500">
@@ -1458,12 +1479,12 @@ export const Products: React.FC = () => {
                 <div key={review.id} className={`border rounded-lg p-4 ${review.is_approved ? 'bg-white' : 'bg-gray-50 border-dashed'}`}>
                   <div className="flex items-start justify-between">
                     <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center text-sm font-semibold text-blue-700">
+                      <div className="w-8 h-8 rounded-full bg-primary-100 flex items-center justify-center text-sm font-semibold text-primary-700">
                         {review.customer_name.charAt(0).toUpperCase()}
                       </div>
                       <div>
                         <div className="flex items-center gap-2">
-                          <span className="text-sm font-medium text-slate-900">{review.customer_name}</span>
+                          <span className="text-sm font-medium text-slate-900 dark:text-gray-100">{review.customer_name}</span>
                           <StarRating rating={review.rating} />
                           {review.is_verified && <Badge variant="success">{t('verified_purchase')}</Badge>}
                           {!review.is_approved && <Badge variant="warning">{t('hidden')}</Badge>}
@@ -1501,10 +1522,10 @@ export const Products: React.FC = () => {
                   )}
                   {/* Seller Reply */}
                   {review.reply && (
-                    <div className="mt-3 ml-8 pl-4 border-l-4 border-blue-400 bg-blue-50 rounded-r-lg p-3">
+                    <div className="mt-3 ml-8 pl-4 border-l-4 border-primary-400 bg-primary-50 rounded-r-lg p-3">
                       <div className="flex items-center gap-2 mb-1">
-                        <Reply size={14} className="text-blue-500" />
-                        <span className="text-xs font-medium text-blue-600">{t('seller_reply')}</span>
+                        <Reply size={14} className="text-primary-500" />
+                        <span className="text-xs font-medium text-primary-600">{t('seller_reply')}</span>
                         {review.replied_at && (
                           <span className="text-xs text-gray-400">{new Date(review.replied_at).toLocaleDateString('zh-CN')}</span>
                         )}
@@ -1637,7 +1658,7 @@ export const Products: React.FC = () => {
               {selectedProduct.variants.map((v: ProductVariant) => (
                 <div key={v.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-slate-900">{v.name}</p>
+                    <p className="text-sm font-medium text-slate-900 dark:text-gray-100">{v.name}</p>
                     <p className="text-xs text-gray-500">
                       {t('variant_info')
                         .replace('{sku}', v.sku ?? '')

@@ -23,16 +23,16 @@ const StatCard: React.FC<{
   iconBg?: string;
   iconColor?: string;
 }> = ({ icon, label, value, subtext, iconBg, iconColor }) => (
-  <div className="bg-white rounded-xl border border-gray-300 shadow-sm p-6 hover:shadow-md hover:border-primary-200 transition-all duration-300">
+  <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-300 dark:border-gray-700 shadow-sm p-6 hover:shadow-md hover:border-primary-200 transition-all duration-300">
     <div className="flex items-center justify-between">
       <div>
         <p className="text-sm font-medium text-gray-500">{label}</p>
-        <p className="mt-2 text-3xl font-bold text-slate-900">{value}</p>
+        <p className="mt-2 text-3xl font-bold text-slate-900 dark:text-gray-100">{value}</p>
         {subtext && (
           <p className="mt-1 text-sm text-gray-500">{subtext}</p>
         )}
       </div>
-      <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${iconBg || 'bg-gradient-to-br from-primary-50 to-indigo-50'}`}>
+      <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${iconBg || 'bg-gradient-to-br from-primary-50 to-purple-50'}`}>
         <span className={iconColor || 'text-primary-600'}>{icon}</span>
       </div>
     </div>
@@ -89,7 +89,7 @@ export const AdminDashboard: React.FC = () => {
         <div className="w-12 h-12 rounded-full bg-red-100 flex items-center justify-center mb-4">
           <AlertTriangle size={24} className="text-red-500" />
         </div>
-        <h3 className="text-lg font-semibold text-slate-900">加载管理数据失败</h3>
+        <h3 className="text-lg font-semibold text-slate-900 dark:text-gray-100">加载管理数据失败</h3>
         <p className="text-sm text-gray-500 mt-1">{error}</p>
         <Button
           variant="outline"
@@ -105,10 +105,9 @@ export const AdminDashboard: React.FC = () => {
   return (
     <div className="space-y-6 animate-fade-in">
       <div>
-        <h2 className="text-2xl font-bold text-slate-900">管理仪表板</h2>
+        <h2 className="text-2xl font-bold text-slate-900 dark:text-gray-100">管理仪表盘</h2>
         <p className="mt-1 text-sm text-gray-500">
-          平台全局概览与管理
-        </p>
+          平台全局概览与管理        </p>
       </div>
 
       {/* Stats Row 1 - Users & Workspaces */}
@@ -118,8 +117,8 @@ export const AdminDashboard: React.FC = () => {
           label="用户总数"
           value={stats?.users.total.toLocaleString() || 0}
           subtext="平台注册用户"
-          iconBg="bg-gradient-to-br from-blue-50 to-indigo-50"
-          iconColor="text-blue-600"
+          iconBg="bg-gradient-to-br from-primary-50 to-purple-50"
+          iconColor="text-primary-600"
         />
         <StatCard
           icon={<UserCheck size={22} />}
@@ -151,7 +150,7 @@ export const AdminDashboard: React.FC = () => {
         />
         <StatCard
           icon={<Activity size={22} />}
-          label="试用中"
+          label="试用用户"
           value={stats?.subscriptions.trialing.toLocaleString() || 0}
           subtext="试用期用户"
           iconBg="bg-gradient-to-br from-cyan-50 to-sky-50"
@@ -171,13 +170,13 @@ export const AdminDashboard: React.FC = () => {
       <Card title="平台概览" subtitle="关键指标汇总">
         <div className="grid grid-cols-2 md:grid-cols-4 gap-6 py-4">
           <div className="text-center">
-            <p className="text-3xl font-bold text-slate-900">
+            <p className="text-3xl font-bold text-slate-900 dark:text-gray-100">
               {stats?.memberships.total.toLocaleString() || 0}
             </p>
             <p className="text-sm text-gray-500 mt-1">成员关系总数</p>
           </div>
           <div className="text-center">
-            <p className="text-3xl font-bold text-slate-900">
+            <p className="text-3xl font-bold text-slate-900 dark:text-gray-100">
               {stats?.workspaces.total ? (stats.memberships.total / stats.workspaces.total).toFixed(1) : 0}
             </p>
             <p className="text-sm text-gray-500 mt-1">平均成员数/工作空间</p>
@@ -191,7 +190,7 @@ export const AdminDashboard: React.FC = () => {
             <p className="text-sm text-gray-500 mt-1">付费转化率</p>
           </div>
           <div className="text-center">
-            <p className="text-3xl font-bold text-blue-600">
+            <p className="text-3xl font-bold text-primary-600">
               {stats?.subscriptions.trialing && stats.users.total
                 ? `${Math.round((stats.subscriptions.trialing / stats.users.total) * 100)}%`
                 : '0%'}

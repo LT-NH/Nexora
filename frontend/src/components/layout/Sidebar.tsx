@@ -1,5 +1,6 @@
 import React from 'react';
-import { NavLink, useNavigate } from 'react-router-dom';
+import { NavLink, useNavigate, useLocation } from 'react-router-dom';
+import { withViewTransition } from '@/lib/viewTransition';
 import {
   LayoutDashboard,
   Users,
@@ -35,8 +36,8 @@ const navGroups: NavGroup[] = [
   {
     title: '经营中枢',
     items: [
-      { to: '/dashboard', label: '仪表板', icon: LayoutDashboard },
-      { to: '/ai-center', label: 'AI 指挥台', icon: Sparkles },
+      { to: '/dashboard', label: '仪表盘', icon: LayoutDashboard },
+      { to: '/ai-center', label: 'AI 指挥部', icon: Sparkles },
       { to: '/profit', label: '利润分析', icon: Coins },
       { to: '/ai-chat', label: 'AI 智能助手', icon: Sparkles },
     ],
@@ -72,7 +73,7 @@ const navGroups: NavGroup[] = [
 ];
 const navItems: NavItem[] = navGroups.flatMap((g) => g.items);
 
-// 主导航中可被 i18n 翻译的路径 → 翻译键
+// 主导航中可被 i18n 翻译的路由 key 映射，用于导航标签翻译
 const navKeyByPath: Record<string, keyof typeof translations.zh> = {
   '/dashboard': 'dashboard',
   '/ai-center': 'ai_center',
@@ -109,6 +110,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ onNavigate }) => {
     useWorkspace();
   const plan = usePlan();
   const navigate = useNavigate();
+  const location = useLocation();
   // 响应式 i18n：语言切换即时重渲染
   const { t: tt } = useI18n();
 
@@ -155,7 +157,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ onNavigate }) => {
   return (
     <aside className="w-64 bg-white dark:bg-gray-900 border-r border-gray-300 dark:border-gray-700 flex flex-col h-full">
       <div className="h-1 w-full brand-accent-bar flex-shrink-0" />
-      {/* Logo（支持品牌定制：brand_logo_url / brand_name）*/}
+      {/* Logo（支持品牌定制：brand_logo_url / brand_name） */}
       <div className="flex items-center gap-2.5 px-5 h-16 border-b border-gray-300 dark:border-gray-700 flex-shrink-0">
         {currentWorkspace?.brand_logo_url ? (
           <img src={currentWorkspace.brand_logo_url} alt={currentWorkspace?.brand_name || 'Nexora'} className="h-9 w-9 object-contain" />
@@ -172,7 +174,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ onNavigate }) => {
         <Dropdown
           trigger={
             <button className="w-full flex items-center gap-2 px-3 py-2 rounded-lg bg-gray-50 dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors border border-gray-300 dark:border-gray-600">
-              <div className="w-6 h-6 rounded bg-gradient-to-br from-primary-100 to-indigo-100 dark:from-primary-900/30 dark:to-indigo-900/30 flex items-center justify-center flex-shrink-0">
+              <div className="w-6 h-6 rounded bg-gradient-to-br from-primary-100 to-purple-100 dark:from-primary-900/30 dark:to-purple-900/30 flex items-center justify-center flex-shrink-0">
                 <img src="/favicon.png" alt="" className="h-4 w-4 object-contain" />
               </div>
               <span className="text-sm font-medium text-gray-700 dark:text-gray-300 truncate flex-1 text-left">
@@ -197,11 +199,18 @@ export const Sidebar: React.FC<SidebarProps> = ({ onNavigate }) => {
           <NavLink
             key={item.to}
             to={item.to}
-            onClick={handleNavClick}
+            onClick={(e) => {
+              // 后台内部页面切换：View Transition 仅动画内容区，侧边栏恒定
+              if (location.pathname !== item.to && !e.metaKey && !e.ctrlKey && !e.shiftKey && !e.altKey && e.button === 0) {
+                e.preventDefault();
+                withViewTransition(() => navigate(item.to), 'inner');
+              }
+              handleNavClick();
+            }}
             className={({ isActive }: { isActive: boolean }) =>
               `flex items-center gap-3 px-3 py-3 rounded-lg text-sm font-medium transition-all duration-200 relative ${
                 isActive
-                  ? 'brand-active bg-gradient-to-r from-primary-50 to-indigo-50 dark:from-primary-900/30 dark:to-indigo-900/30 text-primary-700 dark:text-primary-300 shadow-sm before:absolute before:left-0 before:top-1/2 before:-translate-y-1/2 before:w-0.5 before:h-5 before:rounded-full'
+                  ? 'brand-active bg-gradient-to-r from-primary-50 to-purple-50 dark:from-primary-900/30 dark:to-purple-900/30 text-primary-700 dark:text-primary-300 shadow-sm before:absolute before:left-0 before:top-1/2 before:-translate-y-1/2 before:w-0.5 before:h-5 before:rounded-full'
                   : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800 hover:text-slate-900 dark:hover:text-gray-200'
               }`
             }
@@ -218,7 +227,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ onNavigate }) => {
       {/* Plan badge */}
       <div className="px-4 py-3 border-t border-gray-100 dark:border-gray-800">
         <div className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium ${planInfo.color}`}>
-          {plan === 'enterprise' && '✦ '}{planInfo.label}
+          {plan === 'enterprise' && '★ '}{planInfo.label}
         </div>
       </div>
 

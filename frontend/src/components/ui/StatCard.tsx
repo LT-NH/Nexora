@@ -11,7 +11,7 @@ interface StatCardProps {
   className?: string;
   /** Whether to show gradient icon background */
   gradientIcon?: boolean;
-  /** Custom gradient classes for the icon background, e.g. "from-primary-500 to-indigo-500 shadow-primary-500/20".
+  /** Custom gradient classes for the icon background, e.g. "from-primary-500 to-purple-500 shadow-primary-500/20".
    *  When provided, takes precedence over `gradientIcon`. */
   iconGradient?: string;
   /** Label shown after the trend percentage. Defaults to "较上周". */
@@ -30,7 +30,12 @@ export const StatCard: React.FC<StatCardProps> = ({
   trendLabel = '较上周',
 }) => (
   <div
-    className={`group bg-white dark:bg-gray-800 rounded-[14px] border border-[#E4E6DC] dark:border-gray-700 shadow-sm p-6 hover:shadow-lg hover:shadow-[#23251D]/10 hover:border-[#D6D9CD] dark:hover:border-gray-600 transition-all duration-200 card-lift ${className}`}
+    className={`group bg-white dark:bg-gray-800 rounded-2xl border border-gray-200 dark:border-gray-700 shadow-sm p-6 hover:shadow-lg hover:shadow-slate-900/10 hover:border-gray-300 dark:hover:border-gray-600 transition-all duration-200 card-lift spotlight-card spotlight-soft ${className}`}
+    onMouseMove={(e) => {
+      const r = e.currentTarget.getBoundingClientRect();
+      e.currentTarget.style.setProperty('--sx', `${(((e.clientX - r.left) / r.width) * 100).toFixed(1)}%`);
+      e.currentTarget.style.setProperty('--sy', `${(((e.clientY - r.top) / r.height) * 100).toFixed(1)}%`);
+    }}
   >
     <div className="flex items-center justify-between">
       <div>
@@ -45,7 +50,7 @@ export const StatCard: React.FC<StatCardProps> = ({
           iconGradient
             ? `w-12 h-12 rounded-xl bg-gradient-to-br ${iconGradient} flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform duration-300`
             : gradientIcon
-              ? 'w-12 h-12 rounded-xl bg-gradient-to-br from-primary-50 to-indigo-50 dark:from-primary-900/30 dark:to-indigo-900/30 flex items-center justify-center group-hover:scale-110 transition-transform duration-300'
+              ? 'w-12 h-12 rounded-xl bg-gradient-to-br from-primary-50 to-purple-50 dark:from-primary-900/30 dark:to-purple-900/30 flex items-center justify-center group-hover:scale-110 transition-transform duration-300'
               : 'w-12 h-12 rounded-xl bg-gray-50 dark:bg-gray-700 flex items-center justify-center'
         }
       >
@@ -70,7 +75,7 @@ export const StatCard: React.FC<StatCardProps> = ({
 
 /** Loading skeleton variant of StatCard */
 export const SkeletonStatCard: React.FC = () => (
-  <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-300 dark:border-gray-700 shadow-sm p-6 animate-fade-in">
+  <div className="bg-white dark:bg-gray-800 rounded-2xl border border-gray-200 dark:border-gray-700 shadow-sm p-6 animate-fade-in">
     <div className="flex items-center justify-between">
       <div className="space-y-3 flex-1">
         <Skeleton className="h-4 w-1/3" />

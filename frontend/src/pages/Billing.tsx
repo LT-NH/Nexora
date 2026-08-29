@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Check, CreditCard, Calendar, AlertTriangle } from 'lucide-react';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
+import { PageHeader } from '@/components/ui/PageHeader';
 import { Badge } from '@/components/ui/Badge';
 import { SkeletonStatCard } from '@/components/ui/StatCard';
 import { Modal, ModalFooter } from '@/components/ui/Modal';
@@ -15,8 +16,7 @@ import api from '@/services/api';
 import type { SubscriptionPlan, Subscription } from '@/types';
 
 // ============================================================
-// 收款码配置 — 把您的收款二维码图片放到 public 目录下即可
-// 例如：public/qrcode.png → QrCodeUrl = '/qrcode.png'
+// 收款码配置：把您的收款二维码图片放到 public 目录下即可。// 例如：public/qrcode.png → const QrPayUrl = '/qrcode.png'
 // ============================================================
 const QrCodeUrl = '/qrcode.png';
 
@@ -61,12 +61,12 @@ const D = {
     unit_items: ' 个',
     current_plan: '当前方案',
     current_plan_subtitle: '您当前使用的是 {name} 方案',
-    period_ends: '当前周期截止：',
+    period_ends: '当前周期截止于',
     cancel_plan: '取消方案',
     available_plans: '可用方案',
     current: '当前',
     per_month: '/月',
-    yearly_savings: '年付可节省 ${amount}/年',
+    yearly_savings: '年付可节省 ${amount}/月',
     upgrade_to: '升级到 {name}',
     downgrade_to: '降级到 {name}',
     billing_history: '账单历史',
@@ -366,12 +366,10 @@ export const Billing: React.FC = () => {
 
   return (
     <div className="space-y-6 animate-fade-in">
-      <div>
-        <h2 className="text-2xl font-bold text-slate-900 dark:text-gray-100">{t('billing_title')}</h2>
-        <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-          {t('billing_subtitle')}
-        </p>
-      </div>
+      <PageHeader
+        title={t('billing_title')}
+        subtitle={t('billing_subtitle')}
+      />
 
       {/* Current Plan */}
       {subscription && subscription.plan && (
@@ -381,7 +379,7 @@ export const Billing: React.FC = () => {
         >
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-4">
-              <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-primary-50 to-indigo-50 flex items-center justify-center">
+              <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-primary-50 to-purple-50 flex items-center justify-center">
                 <CreditCard size={22} className="text-primary-600" />
               </div>
               <div>
@@ -608,7 +606,7 @@ const BillingHistory: React.FC = () => {
               className="flex items-center justify-between py-3 px-2 first:pt-0 last:pb-0"
             >
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-primary-50 to-indigo-50 flex items-center justify-center">
+                <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-primary-50 to-purple-50 flex items-center justify-center">
                   <CreditCard size={18} className="text-primary-600" />
                 </div>
                 <div>

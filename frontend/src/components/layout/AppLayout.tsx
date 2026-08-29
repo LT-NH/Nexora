@@ -65,10 +65,10 @@ export const AppLayout: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-[#F6F7F1] dark:bg-gray-950 relative overflow-hidden">
+    <div className="min-h-screen bg-slate-50 dark:bg-gray-950 relative overflow-x-clip">
       {/* Subtle colorful blobs behind glass cards */}
-      <div className="fixed top-0 right-0 w-[600px] h-[600px] bg-indigo-200/15 rounded-full blur-[150px] pointer-events-none z-0" />
-      <div className="fixed bottom-0 left-0 w-[500px] h-[500px] bg-violet-200/10 rounded-full blur-[120px] pointer-events-none z-0" />
+      <div className="fixed top-0 right-0 w-[600px] h-[600px] bg-violet-200/20 rounded-full blur-[150px] pointer-events-none z-0" />
+      <div className="fixed bottom-0 left-0 w-[500px] h-[500px] bg-fuchsia-200/10 rounded-full blur-[120px] pointer-events-none z-0" />
       {/* Mobile hamburger menu button */}
       <button
         className="fixed top-3 left-3 z-50 md:hidden p-2 rounded-lg bg-white dark:bg-gray-800 shadow-md border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:text-slate-900 dark:hover:text-gray-100 transition-colors"
@@ -93,7 +93,7 @@ export const AppLayout: React.FC = () => {
       {/* Sidebar - hidden on mobile, slides in when open */}
       <div
         className={`
-          fixed left-0 top-0 bottom-0 z-40
+          fixed left-0 top-0 bottom-0 z-40 vt-sidebar
           transform transition-transform duration-300 ease-in-out
           md:translate-x-0
           ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}
@@ -109,7 +109,7 @@ export const AppLayout: React.FC = () => {
           breadcrumb={breadcrumbs}
           onMenuClick={() => setSidebarOpen(true)}
         />
-        <main className="p-6">
+        <main className="p-6 vt-content">
           <Outlet />
         </main>
         <FeedbackWidget />

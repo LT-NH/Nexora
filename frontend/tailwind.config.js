@@ -6,16 +6,16 @@ export default {
     extend: {
       colors: {
         primary: {
-          50: '#eff6ff',
-          100: '#dbeafe',
-          200: '#bfdbfe',
-          300: '#93c5fd',
-          400: '#38BDF8',   // sky-400
-          500: '#0EA5E9',   // sky-500 — 主色，与图表配色一致
-          600: '#0284C7',   // sky-600
-          700: '#005bb5',
-          800: '#004494',
-          900: '#002d6e',
+          50: '#f5f3ff',
+          100: '#ede9fe',
+          200: '#ddd6fe',
+          300: '#c4b5fd',
+          400: '#a78bfa',
+          500: '#8b5cf6',   // violet-500 — 主色，与图表配色一致
+          600: '#7c3aed',   // violet-600 — 品牌锚点色
+          700: '#6d28d9',
+          800: '#5b21b6',
+          900: '#4c1d95',
         },
         secondary: {
           50: '#F9FAFB',
@@ -61,7 +61,17 @@ export default {
         },
       },
       fontFamily: {
-        sans: ['Plus Jakarta Sans', 'system-ui', '-apple-system', 'sans-serif'],
+        sans: [
+          'Plus Jakarta Sans',
+          '-apple-system',
+          'BlinkMacSystemFont',
+          'PingFang SC',
+          'HarmonyOS Sans SC',
+          'Microsoft YaHei',
+          'Noto Sans SC',
+          'system-ui',
+          'sans-serif',
+        ],
       },
       animation: {
         'fade-in': 'fadeIn 0.3s ease-in-out',
@@ -113,8 +123,8 @@ export default {
           '50%': { transform: 'translateY(-8px)' },
         },
         pulseGlow: {
-          '0%, 100%': { boxShadow: '0 0 0 0 rgba(14, 165, 233, 0.4)' },
-          '50%': { boxShadow: '0 0 0 8px rgba(14, 165, 233, 0)' },
+          '0%, 100%': { boxShadow: '0 0 0 0 rgba(124, 58, 237, 0.4)' },
+          '50%': { boxShadow: '0 0 0 8px rgba(124, 58, 237, 0)' },
         },
         shimmer: {
           '0%': { backgroundPosition: '-200% 0' },

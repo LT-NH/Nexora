@@ -22,6 +22,7 @@ import { usePageTitle } from '@/hooks/usePageTitle';
 import { useToast } from '@/components/ui/Toast';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
+import { PageHeader } from '@/components/ui/PageHeader';
 import { Input } from '@/components/ui/Input';
 import { Badge } from '@/components/ui/Badge';
 import { Table } from '@/components/ui/Table';
@@ -83,7 +84,7 @@ const D = {
     batch_print: '批量打单',
     print: '打印',
     print_card: '发货单',
-    print_receiver: '收货人',
+    print_receiver: '收件人',
     print_address: '地址',
     print_items: '商品',
     print_total: '金额',
@@ -439,6 +440,30 @@ const emptyEditForm: EditOrderForm = {
 
 const PAGE_SIZE = 20;
 
+// 平台来源：标签 + 徽章配色（订单同步来源可见化）
+const PLATFORM_META: Record<string, { label: string; dot: string; chip: string }> = {
+  shopify: { label: 'Shopify', dot: 'bg-emerald-500', chip: 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-300 dark:border-emerald-800' },
+  douyin: { label: '抖音', dot: 'bg-gray-800', chip: 'bg-gray-100 text-gray-700 border-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:border-gray-600' },
+  sandbox: { label: '沙盒', dot: 'bg-violet-500', chip: 'bg-violet-50 text-violet-700 border-violet-200 dark:bg-violet-900/30 dark:text-violet-300 dark:border-violet-800' },
+  taobao: { label: '淘宝', dot: 'bg-orange-500', chip: 'bg-orange-50 text-orange-700 border-orange-200 dark:bg-orange-900/30 dark:text-orange-300 dark:border-orange-800' },
+  jd: { label: '京东', dot: 'bg-red-500', chip: 'bg-red-50 text-red-700 border-red-200 dark:bg-red-900/30 dark:text-red-300 dark:border-red-800' },
+  pdd: { label: '拼多多', dot: 'bg-rose-500', chip: 'bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-900/30 dark:text-rose-300 dark:border-rose-800' },
+  amazon: { label: 'Amazon', dot: 'bg-amber-500', chip: 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-900/30 dark:text-amber-300 dark:border-amber-800' },
+  other: { label: '其他', dot: 'bg-gray-400', chip: 'bg-gray-100 text-gray-600 border-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:border-gray-600' },
+  manual: { label: '手动录入', dot: 'bg-gray-400', chip: 'bg-gray-100 text-gray-600 border-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:border-gray-600' },
+};
+const platformLabel = (p: string) => PLATFORM_META[p]?.label ?? p;
+const PlatformBadge: React.FC<{ platform?: string | null }> = ({ platform }) => {
+  if (!platform) return <span className="text-sm text-gray-400 dark:text-gray-500">-</span>;
+  const meta = PLATFORM_META[platform] ?? PLATFORM_META.other;
+  return (
+    <span className={`inline-flex items-center gap-1.5 text-xs font-medium px-2 py-0.5 rounded-full border ${meta.chip}`}>
+      <span className={`w-1.5 h-1.5 rounded-full ${meta.dot}`} />
+      {meta.label}
+    </span>
+  );
+};
+
 // ============================================================
 // 主组件
 // ============================================================
@@ -466,6 +491,7 @@ export const Orders: React.FC = () => {
   const [statusFilter, setStatusFilter] = useState('');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
+  const [platformFilter, setPlatformFilter] = useState('');
 
   // ---------- 分页 ----------
   const [page, setPage] = useState(1);
@@ -527,6 +553,7 @@ export const Orders: React.FC = () => {
       };
       if (debouncedSearch) params.search = debouncedSearch;
       if (statusFilter) params.status = statusFilter;
+      if (platformFilter) params.platform = platformFilter;
       if (dateFrom) params.date_from = dateFrom;
       if (dateTo) params.date_to = dateTo;
       const customerId = searchParams.get('customer_id');
@@ -540,7 +567,7 @@ export const Orders: React.FC = () => {
     } finally {
       setIsLoading(false);
     }
-  }, [currentWorkspace, debouncedSearch, statusFilter, dateFrom, dateTo, page, searchParams]);
+  }, [currentWorkspace, debouncedSearch, statusFilter, platformFilter, dateFrom, dateTo, page, searchParams]);
 
   const fetchStats = useCallback(async () => {
     if (!currentWorkspace) { setStatsLoading(false); return; }
@@ -1008,9 +1035,7 @@ export const Orders: React.FC = () => {
     {
       key: 'store',
       header: t('col_source'),
-      render: (o: Order) => (
-        <span className="text-sm text-gray-500 dark:text-gray-400">{o.platform || '-'}</span>
-      ),
+      render: (o: Order) => <PlatformBadge platform={o.platform} />,
     },
     {
       key: 'actions',
@@ -1030,32 +1055,32 @@ export const Orders: React.FC = () => {
   return (
     <div className="space-y-6 animate-fade-in">
       {/* 页面标题 */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-2xl font-bold text-slate-900">{t('page_title')}</h2>
-          <p className="mt-1 text-sm text-gray-500">{t('page_subtitle')}</p>
-        </div>
-        <div className="flex items-center gap-2">
-          <a
-            href={`/api/v1/workspaces/${currentWorkspace?.slug}/export/orders`}
-            download
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Button variant="outline" size="sm" leftIcon={<Download size={16} />}>
-              {t('export_excel')}
+      <PageHeader
+        title={t('page_title')}
+        subtitle={t('page_subtitle')}
+        actions={
+          <>
+            <a
+              href={`/api/v1/workspaces/${currentWorkspace?.slug}/export/orders`}
+              download
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              <Button variant="outline" size="sm" leftIcon={<Download size={16} />}>
+                {t('export_excel')}
+              </Button>
+            </a>
+            <Button variant="outline" size="sm" onClick={fetchOrders} isLoading={isLoading}>
+              <RefreshCw size={14} className="mr-1" />
+              {t('refresh')}
             </Button>
-          </a>
-          <Button variant="outline" size="sm" onClick={fetchOrders} isLoading={isLoading}>
-            <RefreshCw size={14} className="mr-1" />
-            {t('refresh')}
-          </Button>
-          <Button variant="primary" size="sm" onClick={() => setShowCreateModal(true)}>
-            <Plus size={14} className="mr-1" />
-            {t('create_order')}
-          </Button>
-        </div>
-      </div>
+            <Button variant="primary" size="sm" onClick={() => setShowCreateModal(true)}>
+              <Plus size={14} className="mr-1" />
+              {t('create_order')}
+            </Button>
+          </>
+        }
+      />
 
       {/* 统计卡片 */}
       <StatsOverview stats={stats} isLoading={statsLoading} />
@@ -1084,7 +1109,7 @@ export const Orders: React.FC = () => {
         </div>
       </Card>
 
-      {/* 搜索栏 + 日期筛选 */}
+      {/* 搜索框 + 日期筛选 */}
       <Card padding>
         <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3">
           <div className="flex-1 w-full">
@@ -1112,11 +1137,23 @@ export const Orders: React.FC = () => {
                 className="text-xs border border-gray-300 rounded-lg px-2 py-1.5 text-gray-600 focus:outline-none focus:ring-1 focus:ring-primary-500 focus:border-primary-500"
               />
             </div>
-            {(dateFrom || dateTo) && (
+            {/* 平台来源筛选 */}
+            <select
+              value={platformFilter}
+              onChange={(e) => { setPlatformFilter(e.target.value); setPage(1); }}
+              aria-label="平台来源"
+              className="text-xs border border-gray-300 rounded-lg px-2 py-1.5 text-gray-600 focus:outline-none focus:ring-1 focus:ring-primary-500 focus:border-primary-500"
+            >
+              <option value="">平台来源：全部</option>
+              {['shopify', 'douyin', 'sandbox', 'taobao', 'jd', 'pdd', 'amazon', 'other'].map((p) => (
+                <option key={p} value={p}>{platformLabel(p)}</option>
+              ))}
+            </select>
+            {(dateFrom || dateTo || platformFilter) && (
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={() => { setDateFrom(''); setDateTo(''); setPage(1); }}
+                onClick={() => { setDateFrom(''); setDateTo(''); setPlatformFilter(''); setPage(1); }}
               >
                 <X size={14} /> {t('clear')}
               </Button>
@@ -1287,7 +1324,7 @@ export const Orders: React.FC = () => {
                   <div>
                     <p className="text-xs font-medium text-gray-500 uppercase mb-2">{t('customer_info')}</p>
                     <div className="bg-gray-50 rounded-lg p-3 space-y-1">
-                      <p className="text-sm font-medium text-slate-900">
+                      <p className="text-sm font-medium text-slate-900 dark:text-gray-100">
                         {selectedOrder.customer_name || selectedOrder.customer_id || '-'}
                       </p>
                       {selectedOrder.customer_email && (
@@ -1304,7 +1341,7 @@ export const Orders: React.FC = () => {
                         <div className="flex items-start gap-2">
                           <MapPin size={14} className="text-gray-500 mt-0.5 flex-shrink-0" />
                           <div className="text-xs text-gray-600">
-                            <p className="font-medium text-slate-900">
+                            <p className="font-medium text-slate-900 dark:text-gray-100">
                               {selectedOrder.shipping_address.name} {selectedOrder.shipping_address.phone}
                             </p>
                             <p>
@@ -1345,7 +1382,7 @@ export const Orders: React.FC = () => {
                                 {formatPrice(item.unit_price)} x {item.quantity}
                               </p>
                             </div>
-                            <span className="text-sm font-medium text-slate-900">
+                            <span className="text-sm font-medium text-slate-900 dark:text-gray-100">
                               {formatPrice(item.total_price)}
                             </span>
                           </div>
@@ -1358,7 +1395,7 @@ export const Orders: React.FC = () => {
                   <div className="border-t border-gray-100 dark:border-gray-800 pt-3 space-y-1.5">
                     <div className="flex justify-between text-sm">
                       <span className="text-gray-500">{t('subtotal')}</span>
-                      <span className="text-slate-900">{formatPrice(selectedOrder.subtotal)}</span>
+                      <span className="text-slate-900 dark:text-gray-100">{formatPrice(selectedOrder.subtotal)}</span>
                     </div>
                     {selectedOrder.discount > 0 && (
                       <div className="flex justify-between text-sm">
@@ -1368,11 +1405,11 @@ export const Orders: React.FC = () => {
                     )}
                     <div className="flex justify-between text-sm">
                       <span className="text-gray-500">{t('shipping_fee')}</span>
-                      <span className="text-slate-900">{formatPrice(selectedOrder.shipping)}</span>
+                      <span className="text-slate-900 dark:text-gray-100">{formatPrice(selectedOrder.shipping)}</span>
                     </div>
                     <div className="flex justify-between text-sm font-semibold pt-2 border-t border-gray-100 dark:border-gray-800">
-                      <span className="text-slate-900">{t('total')}</span>
-                      <span className="text-slate-900">{formatPrice(selectedOrder.total)}</span>
+                      <span className="text-slate-900 dark:text-gray-100">{t('total')}</span>
+                      <span className="text-slate-900 dark:text-gray-100">{formatPrice(selectedOrder.total)}</span>
                     </div>
                   </div>
 
@@ -2066,7 +2103,7 @@ export const Orders: React.FC = () => {
                   <p><b>{t('print_receiver')}：</b>{o.customer_name || '-'}　{o.customer_phone || (o.shipping_address?.phone || '')}</p>
                   <p><b>{t('print_address')}：</b>{o.shipping_address ? [o.shipping_address.province, o.shipping_address.city, o.shipping_address.detail].filter(Boolean).join(' ') : '-'}</p>
                   <p className="mt-1"><b>{t('print_items')}：</b>{Array.isArray(o.items) ? o.items.map((i: any) => `${i.product_name}×${i.quantity}`).join('、') : '-'}</p>
-                  <p><b>{t('print_total')}：</b>¥{Number(o.total || 0).toLocaleString('zh-CN', { minimumFractionDigits: 2 })}　<b>{t('print_date')}：</b>{o.created_at ? new Date(o.created_at.replace('+00:00', 'Z')).toLocaleDateString('zh-CN') : '-'}</p>
+                  <p><b>{t('print_total')}：</b>￥{Number(o.total || 0).toLocaleString('zh-CN', { minimumFractionDigits: 2 })}　<b>{t('print_date')}：</b>{o.created_at ? new Date(o.created_at.replace('+00:00', 'Z')).toLocaleDateString('zh-CN') : '-'}</p>
                 </div>
               </div>
             ))}

@@ -112,16 +112,40 @@ class PlatformIntegration(ABC):
         self,
         config: dict[str, Any],
         workspace_id: str,
+        updated_at_min: datetime | None = None,
     ) -> FullSyncResult:
-        """Run all three sync methods and return an aggregated result."""
+        """Run all three sync methods and return an aggregated result.
+
+        传 ``updated_at_min`` 时执行增量同步；仅当适配器的方法签名支持该
+        参数时才会透传（沙盒/未升级的适配器自动回退为全量）。
+        """
+        import inspect
+
         result = FullSyncResult(
             started_at=datetime.now(timezone.utc),
             platform=self.platform_name,
         )
 
-        result.products = await self.sync_products(config, workspace_id)
-        result.orders = await self.sync_orders(config, workspace_id)
-        result.customers = await self.sync_customers(config, workspace_id)
+        def _kwargs(method_name: str) -> dict[str, Any]:
+            if updated_at_min is None:
+                return {}
+            try:
+                sig = inspect.signature(getattr(self, method_name))
+                if "updated_at_min" in sig.parameters:
+                    return {"updated_at_min": updated_at_min}
+            except (TypeError, ValueError):
+                pass
+            return {}
+
+        result.products = await self.sync_products(
+            config, workspace_id, **_kwargs("sync_products")
+        )
+        result.orders = await self.sync_orders(
+            config, workspace_id, **_kwargs("sync_orders")
+        )
+        result.customers = await self.sync_customers(
+            config, workspace_id, **_kwargs("sync_customers")
+        )
         # 可选：优惠券/折扣同步（适配器实现了 sync_discounts 才执行）
         if hasattr(self, "sync_discounts"):
             result.discounts = await self.sync_discounts(config, workspace_id)

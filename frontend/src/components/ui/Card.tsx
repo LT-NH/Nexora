@@ -29,7 +29,7 @@ export const Card: React.FC<CardProps> = ({
 }) => {
   return (
     <div
-      className={`overflow-hidden rounded-xl transition-shadow duration-300
+      className={`overflow-hidden rounded-2xl transition-shadow duration-300
         ${glass ? 'glass-card' : 'bg-white dark:bg-gray-800 border border-black/[0.04] dark:border-white/[0.06] shadow-sm'}
         ${hover ? 'hover:shadow-md' : ''}
         ${className}

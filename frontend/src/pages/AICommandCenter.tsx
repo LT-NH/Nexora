@@ -217,7 +217,7 @@ export const AICommandCenter: React.FC = () => {
       <div className="flex items-start justify-between">
         <div>
           <h1 className="text-[22px] font-extrabold tracking-tight text-[#111827] dark:text-gray-100 flex items-center gap-2">
-            <Sparkles size={20} className="text-[#EB9D2A]" />
+            <Sparkles size={20} className="text-primary-600" />
             {t.title}
           </h1>
           <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">{t.subtitle}</p>
@@ -240,7 +240,7 @@ export const AICommandCenter: React.FC = () => {
           {messages.map((msg, i) => (
             <div key={i} className={`flex gap-2.5 ${msg.role === 'user' ? 'justify-end' : ''}`}>
               {msg.role === 'agent' && (
-                <div className="w-7 h-7 rounded-full bg-[#EB9D2A] flex items-center justify-center flex-shrink-0 mt-0.5">
+                <div className="w-7 h-7 rounded-full bg-primary-600 flex items-center justify-center flex-shrink-0 mt-0.5">
                   <Bot size={14} className="text-white" />
                 </div>
               )}
@@ -276,7 +276,7 @@ export const AICommandCenter: React.FC = () => {
           ))}
           {running && (
             <div className="flex gap-2.5">
-              <div className="w-7 h-7 rounded-full bg-[#EB9D2A] flex items-center justify-center flex-shrink-0">
+              <div className="w-7 h-7 rounded-full bg-primary-600 flex items-center justify-center flex-shrink-0">
                 <Bot size={14} className="text-white" />
               </div>
               <div className="rounded-2xl bg-gray-50 dark:bg-gray-800 px-4 py-2.5 text-sm text-gray-500 border border-gray-100 dark:border-gray-700">
@@ -294,11 +294,11 @@ export const AICommandCenter: React.FC = () => {
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); runCommand(input, autoMode); } }}
             placeholder={t.agent_placeholder}
-            className="flex-1 text-sm rounded-full border border-gray-300 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-[#EB9D2A]/40"
+            className="flex-1 text-sm rounded-full border border-gray-300 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-primary-500/40"
             disabled={running}
           />
           <label className="flex items-center gap-1.5 text-xs text-gray-500 cursor-pointer select-none flex-shrink-0">
-            <input type="checkbox" checked={autoMode} onChange={(e) => setAutoMode(e.target.checked)} className="w-3.5 h-3.5 accent-[#EB9D2A]" />
+            <input type="checkbox" checked={autoMode} onChange={(e) => setAutoMode(e.target.checked)} className="w-3.5 h-3.5 accent-primary-600" />
             {t.auto_label}
           </label>
           <Button
@@ -307,7 +307,7 @@ export const AICommandCenter: React.FC = () => {
             leftIcon={running ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
             onClick={() => runCommand(input, autoMode)}
             disabled={running || !input.trim()}
-            className="!bg-[#EB9D2A] hover:!bg-[#CD8407] !shadow-none flex-shrink-0"
+            className="!bg-primary-600 hover:!bg-primary-700 !shadow-none flex-shrink-0"
           >
             {t.send}
           </Button>
@@ -337,7 +337,7 @@ export const AICommandCenter: React.FC = () => {
               <div className="mt-3 space-y-1.5">
                 {(sales.recommendations || []).slice(0, 2).map((r: string, i: number) => (
                   <p key={i} className="text-xs text-gray-600 dark:text-gray-300 flex gap-1.5">
-                    <Sparkles size={11} className="text-[#EB9D2A] flex-shrink-0 mt-0.5" />
+                    <Sparkles size={11} className="text-primary-600 flex-shrink-0 mt-0.5" />
                     {r}
                   </p>
                 ))}
@@ -353,7 +353,7 @@ export const AICommandCenter: React.FC = () => {
             {pricing.slice(0, 3).map((p: any) => (
               <div key={p.product_id} className="rounded-lg bg-gray-50 dark:bg-gray-800/50 px-3 py-2">
                 <p className="text-xs font-semibold text-slate-800 dark:text-gray-200 truncate flex items-center gap-1.5">
-                  <Tag size={11} className="text-[#EB9D2A] flex-shrink-0" />
+                  <Tag size={11} className="text-primary-600 flex-shrink-0" />
                   {p.name}
                 </p>
                 <p className="text-[11px] text-gray-500 dark:text-gray-400 mt-0.5 line-clamp-2">{p.suggestion}</p>
@@ -410,7 +410,7 @@ export const AICommandCenter: React.FC = () => {
       {/* 今日结论（保留） */}
       <div>
         <div className="flex items-center gap-2 mb-3">
-          <Radio size={14} className="text-[#EB9D2A]" />
+          <Radio size={14} className="text-primary-600" />
           <h2 className="text-sm font-bold text-slate-900 dark:text-gray-100">{t.center}</h2>
           <span className="text-xs text-gray-400">{t.center_sub}</span>
         </div>

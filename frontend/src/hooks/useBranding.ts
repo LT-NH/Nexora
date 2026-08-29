@@ -12,7 +12,7 @@ export const useBranding = () => {
   const { currentWorkspace } = useWorkspace();
 
   useEffect(() => {
-    const color = currentWorkspace?.brand_color || '#0071E3';
+    const color = currentWorkspace?.brand_color || '#7C3AED';
     const brandDark = currentWorkspace?.brand_dark_mode ?? false;
     const root = document.documentElement;
     root.style.setProperty('--brand-color', color);

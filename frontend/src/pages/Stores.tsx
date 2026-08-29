@@ -17,6 +17,7 @@ import { useToast } from '@/components/ui/Toast';
 import { useFormErrors } from '@/hooks/useForm';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
+import { PageHeader } from '@/components/ui/PageHeader';
 import { Input } from '@/components/ui/Input';
 import { Badge } from '@/components/ui/Badge';
 import { Modal, ModalFooter } from '@/components/ui/Modal';
@@ -59,9 +60,9 @@ const D = {
     last_sync: '上次同步: {date}',
     never_synced: '从未同步',
     invalid_date: '无效日期',
-    btn_testing: '测试中',
+    btn_testing: '测试中…',
     btn_test_conn: '测试连接',
-    btn_syncing: '同步中',
+    btn_syncing: '同步中…',
     btn_sync: '同步',
     aria_open_new: '在新窗口打开',
     aria_edit: '编辑',
@@ -205,7 +206,7 @@ const formatDate = (dateStr: string | null, t: T) => {
   if (!dateStr) return t('never_synced');
   const d = new Date(dateStr);
   if (isNaN(d.getTime())) return t('invalid_date');
-  // 后端存 naive UTC → 按 UTC 解析后再转本地时区显示（避免差 8 小时）
+  // 后端存 naive UTC —— 按 UTC 解析后再转本地时区显示（避免差 8 小时）
   const utcMs = Date.UTC(d.getFullYear(), d.getMonth(), d.getDate(), d.getHours(), d.getMinutes(), d.getSeconds());
   return new Date(utcMs).toLocaleDateString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
 };
@@ -404,6 +405,27 @@ export const Stores: React.FC = () => {
     }
   };
 
+  // 自动同步开关 / 频率调整（即时保存，直接采用 PUT 响应避免重拉竞态）
+  const [updatingSyncId, setUpdatingSyncId] = useState<string | null>(null);
+  const handleAutoSyncChange = async (
+    store: Store,
+    patch: { auto_sync_enabled?: boolean; sync_interval_minutes?: number },
+  ) => {
+    if (!currentWorkspace) return;
+    setUpdatingSyncId(store.id);
+    try {
+      const updated = await storeService.updateStore(currentWorkspace.slug, {
+        id: store.id,
+        ...patch,
+      });
+      setStores((prev) => prev.map((s) => (s.id === updated.id ? updated : s)));
+    } catch (err: any) {
+      addToast('error', err?.response?.data?.detail || t('pls_retry'));
+    } finally {
+      setUpdatingSyncId(null);
+    }
+  };
+
   if (error) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[400px] text-center animate-fade-in">
@@ -438,15 +460,15 @@ export const Stores: React.FC = () => {
   return (
     <div className="space-y-6 animate-fade-in">
       {/* 页面标题 */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-2xl font-bold text-slate-900 dark:text-gray-100">{t('stores_title')}</h2>
-          <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">{t('stores_subtitle')}</p>
-        </div>
-        <Button variant="primary" size="sm" onClick={openCreateModal} leftIcon={<Plus size={16} />}>
-          {t('btn_add_store')}
-        </Button>
-      </div>
+      <PageHeader
+        title={t('stores_title')}
+        subtitle={t('stores_subtitle')}
+        actions={
+          <Button variant="primary" size="sm" onClick={openCreateModal} leftIcon={<Plus size={16} />}>
+            {t('btn_add_store')}
+          </Button>
+        }
+      />
 
       {/* 店铺列表 */}
       {stores.length === 0 ? (
@@ -486,10 +508,81 @@ export const Stores: React.FC = () => {
                     </Badge>
                   </div>
 
-                  {/* 最后同步时间 */}
-                  <div className="flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400">
-                    <RefreshCw size={12} />
-                    <span>{t('last_sync').replace('{date}', formatDate(store.last_sync_at, t))}</span>
+                  {/* 同步状态（时间 + 结果徽章 + 错误明细） */}
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400 min-w-0">
+                        <RefreshCw size={12} className="flex-shrink-0" />
+                        <span className="truncate">
+                          {t('last_sync').replace('{date}', formatDate(store.last_sync_at, t))}
+                        </span>
+                      </div>
+                      {store.last_sync_status && (
+                        <span
+                          className={`text-[11px] font-medium px-1.5 py-0.5 rounded-full flex-shrink-0 ${
+                            store.last_sync_status === 'success'
+                              ? 'bg-emerald-50 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400'
+                              : store.last_sync_status === 'partial'
+                                ? 'bg-amber-50 text-amber-600 dark:bg-amber-900/30 dark:text-amber-400'
+                                : 'bg-red-50 text-red-600 dark:bg-red-900/30 dark:text-red-400'
+                          }`}
+                        >
+                          {store.last_sync_status === 'success'
+                            ? '同步成功'
+                            : store.last_sync_status === 'partial'
+                              ? '部分成功'
+                              : '同步失败'}
+                        </span>
+                      )}
+                    </div>
+                    {store.last_sync_errors && (
+                      <p
+                        className="text-[11px] text-red-500 dark:text-red-400 bg-red-50/60 dark:bg-red-900/10 rounded-md px-2 py-1.5 break-all line-clamp-2"
+                        title={store.last_sync_errors}
+                      >
+                        {store.last_sync_errors}
+                      </p>
+                    )}
+                    {/* 自动同步开关 + 频率 */}
+                    <div className="flex items-center justify-between gap-2 rounded-lg bg-gray-50 dark:bg-gray-800/60 px-3 py-2">
+                      <label
+                        className="flex items-center gap-2 cursor-pointer select-none"
+                        htmlFor={`autosync-${store.id}`}
+                      >
+                        <input
+                          id={`autosync-${store.id}`}
+                          type="checkbox"
+                          checked={store.auto_sync_enabled}
+                          disabled={updatingSyncId === store.id}
+                          onChange={(e) =>
+                            handleAutoSyncChange(store, { auto_sync_enabled: e.target.checked })
+                          }
+                          className="w-4 h-4 accent-primary-600 cursor-pointer"
+                        />
+                        <span className="text-xs font-medium text-gray-600 dark:text-gray-300">
+                          自动同步
+                        </span>
+                      </label>
+                      {store.auto_sync_enabled && (
+                        <select
+                          value={String(store.sync_interval_minutes || 60)}
+                          disabled={updatingSyncId === store.id}
+                          onChange={(e) =>
+                            handleAutoSyncChange(store, {
+                              sync_interval_minutes: Number(e.target.value),
+                            })
+                          }
+                          className="text-xs rounded-md border border-gray-200 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 px-1.5 py-1 focus:outline-none focus:ring-1 focus:ring-primary-400"
+                          aria-label="自动同步频率"
+                        >
+                          <option value="15">每 15 分钟</option>
+                          <option value="30">每 30 分钟</option>
+                          <option value="60">每 1 小时</option>
+                          <option value="180">每 3 小时</option>
+                          <option value="720">每 12 小时</option>
+                        </select>
+                      )}
+                    </div>
                   </div>
 
                   {/* 操作按钮 */}

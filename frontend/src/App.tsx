@@ -9,6 +9,7 @@ import { SplashScreen } from '@/components/SplashScreen';
 import { CookieBanner } from '@/components/CookieBanner';
 import { BackToTop } from '@/components/BackToTop';
 import { CommandPalette } from '@/components/CommandPalette';
+import { RouteProgress } from '@/components/RouteProgress';
 
 /** 已登录用户访问登录/注册页时自动跳转到仪表板 */
 const GuestRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -152,6 +153,7 @@ const App: React.FC = () => {
   return (
     <>
       {showSplash && <SplashScreen onFinish={() => setShowSplash(false)} />}
+      <RouteProgress />
       <CookieBanner />
       <Suspense fallback={<PageLoader />}>
       <Routes>

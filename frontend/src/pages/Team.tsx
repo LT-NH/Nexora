@@ -14,6 +14,7 @@ import { usePageTitle } from '@/hooks/usePageTitle';
 import { usePageT, type Lang } from '@/i18n';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
+import { PageHeader } from '@/components/ui/PageHeader';
 import { Input } from '@/components/ui/Input';
 import { Badge } from '@/components/ui/Badge';
 import { Modal, ModalFooter } from '@/components/ui/Modal';
@@ -46,10 +47,10 @@ const D = {
     team_subtitle: '管理 {name} 中的成员及其角色',
     invite_member: '邀请成员',
     load_failed: '加载失败',
-    load_members_failed: '无法加载团队成员。',
+    load_members_failed: '无法加载团队成员',
     retry: '重试',
     no_members_title: '暂无团队成员',
-    no_members_desc: '邀请团队成员加入此工作空间进行协作。',
+    no_members_desc: '邀请团队成员加入此工作空间进行协作',
     role_owner: '拥有者',
     role_admin: '管理员',
     role_member: '成员',
@@ -256,21 +257,19 @@ export const Team: React.FC = () => {
 
   return (
     <div className="space-y-6 animate-fade-in">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-2xl font-bold text-slate-900 dark:text-gray-100">{t('team_title')}</h2>
-          <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-            {t('team_subtitle').replace('{name}', currentWorkspace?.name || '')}
-          </p>
-        </div>
-        <Button
-          variant="primary"
-          leftIcon={<UserPlus size={16} />}
-          onClick={() => setShowInviteModal(true)}
-        >
-          {t('invite_member')}
-        </Button>
-      </div>
+      <PageHeader
+        title={t('team_title')}
+        subtitle={t('team_subtitle').replace('{name}', currentWorkspace?.name || '')}
+        actions={
+          <Button
+            variant="primary"
+            leftIcon={<UserPlus size={16} />}
+            onClick={() => setShowInviteModal(true)}
+          >
+            {t('invite_member')}
+          </Button>
+        }
+      />
 
       <Card>
         {members.length === 0 ? (
