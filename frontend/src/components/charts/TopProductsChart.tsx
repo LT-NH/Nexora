@@ -1,5 +1,6 @@
 import React, { useMemo } from 'react';
-import * as echarts from 'echarts';
+import echarts from '@/lib/echarts';
+import type { EChartsOption } from 'echarts';
 import { useEChart } from '@/hooks/useEChart';
 import { useChartPalette } from '@/hooks/useChartPalette';
 
@@ -9,7 +10,7 @@ interface TopProductsChartProps {
 
 export const TopProductsChart: React.FC<TopProductsChartProps> = ({ data }) => {
     const palette = useChartPalette();
-const option = useMemo<echarts.EChartsOption>(() => {
+const option = useMemo<EChartsOption>(() => {
     const top = data.slice(0, 8);
     const names = top
       .map(d => (d.name.length > 14 ? d.name.slice(0, 14) + '…' : d.name))

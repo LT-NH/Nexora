@@ -145,7 +145,7 @@ export const AiDecisionPanel: React.FC<{ slug: string }> = ({ slug }) => {
   const hitRate = stats?.hit_rate;
 
   return (
-    <div className="rounded-2xl bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 shadow-sm overflow-hidden">
+    <div className="rounded-2xl bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 shadow-sm overflow-hidden panel-glow">
       {/* Header */}
       <div className="flex items-center justify-between px-5 pt-4 pb-1">
         <div className="flex items-center gap-2.5">
@@ -181,7 +181,7 @@ export const AiDecisionPanel: React.FC<{ slug: string }> = ({ slug }) => {
           <p className="text-[13px] font-bold text-gray-600 dark:text-gray-300 tracking-wide">{t('today')}</p>
           <span className="h-px flex-1 bg-gray-100 dark:bg-gray-700/60" />
         </div>
-        <div className="space-y-2.5">
+        <div className="space-y-2.5 animate-fade-in">
           {insights.length === 0 && (
             <p className="text-[13px] text-gray-400 flex items-center gap-1.5">
               <CheckCircle2 size={14} className="text-emerald-500" />
@@ -251,8 +251,14 @@ export const AiDecisionPanel: React.FC<{ slug: string }> = ({ slug }) => {
         </div>
       </div>
 
-      {/* Predictions (collapsible) */}
-      {showPred && (
+      {/* Predictions (collapsible, 平滑展开/收起) */}
+      <div
+        className={`grid transition-all duration-300 ease-in-out ${
+          showPred ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0'
+        }`}
+        aria-hidden={!showPred}
+      >
+        <div className="overflow-hidden">
         <div className="px-5 pb-4 mt-1">
           <div className="rounded-xl border border-gray-100 dark:border-gray-700/60 bg-gray-50/60 dark:bg-gray-800/40 p-3.5">
             <div className="flex items-center gap-2 mb-2.5">
@@ -302,7 +308,8 @@ export const AiDecisionPanel: React.FC<{ slug: string }> = ({ slug }) => {
             </div>
           </div>
         </div>
-      )}
+        </div>
+      </div>
 
       {/* Metrics strip */}
       {metrics && (

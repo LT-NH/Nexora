@@ -41,6 +41,16 @@ export const AppLayout: React.FC = () => {
   const title = tt(pageTitleKeys[location.pathname] ?? 'dashboard');
   const breadcrumbs = getBreadcrumbs(location.pathname, tt);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  // 桌面端图标栏悬停展开（带 150ms 收回防抖，鼠标划过不抽搐）
+  const [railOpen, setRailOpen] = useState(false);
+  const railTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const openRail = () => {
+    if (railTimer.current) { clearTimeout(railTimer.current); railTimer.current = null; }
+    setRailOpen(true);
+  };
+  const closeRail = () => {
+    railTimer.current = setTimeout(() => setRailOpen(false), 150);
+  };
   useBranding();
 
   // Touch tracking for swipe-left-to-close gesture on the mobile sidebar overlay.
@@ -90,20 +100,27 @@ export const AppLayout: React.FC = () => {
         />
       )}
 
-      {/* Sidebar - hidden on mobile, slides in when open */}
+      {/* Sidebar - 移动端抽屉；桌面端为图标栏（rail），悬停平滑展开并推挤内容区 */}
       <div
         className={`
-          fixed left-0 top-0 bottom-0 z-40 vt-sidebar
-          transform transition-transform duration-300 ease-in-out
-          md:translate-x-0
-          ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}
+          group/sidebar fixed left-0 top-0 bottom-0 z-40 vt-sidebar overflow-hidden
+          border-r border-gray-300 dark:border-gray-700
+          transform transition-[width,transform] duration-500 ease-[cubic-bezier(0.22,1,0.36,1)]
+          w-64 ${railOpen ? 'md:w-64' : 'md:w-[76px]'}
+          ${sidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}
         `}
+        onMouseEnter={openRail}
+        onMouseLeave={closeRail}
       >
         <Sidebar onNavigate={() => setSidebarOpen(false)} />
       </div>
 
-      {/* Main content */}
-      <div className="md:ml-64 bg-tech-dots">
+      {/* Main content - 边距与侧边栏宽度同步过渡 */}
+      <div
+        className={`bg-tech-dots transform transition-[margin] duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] ${
+          railOpen ? 'md:ml-64' : 'md:ml-[76px]'
+        }`}
+      >
         <Topbar
           title={title}
           breadcrumb={breadcrumbs}

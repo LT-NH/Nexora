@@ -30,6 +30,10 @@ import { Avatar } from '@/components/ui/Avatar';
 import { Dropdown } from '@/components/ui/Dropdown';
 import { useI18n, translations } from '@/i18n';
 
+// 桌面端图标栏（rail）模式下隐藏文字，悬停展开时滑入+淡入（配合 AppLayout 的 group/sidebar）
+const railText =
+  'md:opacity-0 md:-translate-x-2 md:group-hover/sidebar:opacity-100 md:group-hover/sidebar:translate-x-0 md:transition-all md:duration-300 md:group-hover/sidebar:delay-150 md:whitespace-nowrap';
+
 interface NavItem { to: string; label: string; icon: React.ElementType }
 interface NavGroup { title: string; items: NavItem[] }
 const navGroups: NavGroup[] = [
@@ -155,8 +159,9 @@ export const Sidebar: React.FC<SidebarProps> = ({ onNavigate }) => {
   ];
 
   return (
-    <aside className="w-64 bg-white dark:bg-gray-900 border-r border-gray-300 dark:border-gray-700 flex flex-col h-full">
-      <div className="h-1 w-full brand-accent-bar flex-shrink-0" />
+    <aside className="relative w-64 bg-white dark:bg-gray-900 border-r border-gray-300 dark:border-gray-700 flex flex-col h-full">
+      {/* 品牌色条：覆盖在顶边（与右侧顶栏同高对齐，不把内容推低） */}
+      <div aria-hidden className="absolute top-0 left-0 right-0 h-1 brand-accent-bar flex-shrink-0" />
       {/* Logo（支持品牌定制：brand_logo_url / brand_name） */}
       <div className="flex items-center gap-2.5 px-5 h-16 border-b border-gray-300 dark:border-gray-700 flex-shrink-0">
         {currentWorkspace?.brand_logo_url ? (
@@ -164,23 +169,23 @@ export const Sidebar: React.FC<SidebarProps> = ({ onNavigate }) => {
         ) : (
           <img src="/nexora-logo.png" alt="Nexora" className="h-9 w-9 object-contain" />
         )}
-        <span className="text-lg font-bold text-slate-900 dark:text-gray-100 truncate">
+        <span className={`text-lg font-bold text-slate-900 dark:text-gray-100 truncate ${railText}`}>
           {currentWorkspace?.brand_name || 'Nexora'}
         </span>
       </div>
 
       {/* Workspace Selector */}
-      <div className="px-4 py-3 border-b border-gray-100 dark:border-gray-800">
+      <div className="px-4 py-3 border-b border-gray-200 dark:border-gray-700">
         <Dropdown
           trigger={
             <button className="w-full flex items-center gap-2 px-3 py-2 rounded-lg bg-gray-50 dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors border border-gray-300 dark:border-gray-600">
               <div className="w-6 h-6 rounded bg-gradient-to-br from-primary-100 to-purple-100 dark:from-primary-900/30 dark:to-purple-900/30 flex items-center justify-center flex-shrink-0">
                 <img src="/favicon.png" alt="" className="h-4 w-4 object-contain" />
               </div>
-              <span className="text-sm font-medium text-gray-700 dark:text-gray-300 truncate flex-1 text-left">
+              <span className={`text-sm font-medium text-gray-700 dark:text-gray-300 truncate flex-1 text-left ${railText}`}>
                 {currentWorkspace?.name || '选择工作空间'}
               </span>
-              <ChevronDown size={14} className="text-gray-500 flex-shrink-0" />
+              <ChevronDown size={14} className={`text-gray-500 flex-shrink-0 ${railText}`} />
             </button>
           }
           items={workspaceItems}
@@ -193,12 +198,13 @@ export const Sidebar: React.FC<SidebarProps> = ({ onNavigate }) => {
       <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto" role="navigation">
         {navGroups.map((group) => (
           <div key={group.title} className="mb-2">
-            <p className="px-3 pt-2 pb-1 text-[10px] font-bold uppercase tracking-wider text-gray-400 dark:text-gray-500 select-none">{group.title}</p>
+            <p className={`px-3 pt-2 pb-1 text-[10px] font-bold uppercase tracking-wider text-gray-400 dark:text-gray-500 select-none ${railText}`}>{group.title}</p>
             <div className="space-y-0.5">
         {group.items.map((item) => (
           <NavLink
             key={item.to}
             to={item.to}
+            title={translateLabel(item.to, item.label, tt)}
             onClick={(e) => {
               // 后台内部页面切换：View Transition 仅动画内容区，侧边栏恒定
               if (location.pathname !== item.to && !e.metaKey && !e.ctrlKey && !e.shiftKey && !e.altKey && e.button === 0) {
@@ -208,15 +214,15 @@ export const Sidebar: React.FC<SidebarProps> = ({ onNavigate }) => {
               handleNavClick();
             }}
             className={({ isActive }: { isActive: boolean }) =>
-              `flex items-center gap-3 px-3 py-3 rounded-lg text-sm font-medium transition-all duration-200 relative ${
+              `flex items-center gap-3 px-3 py-3 rounded-lg text-sm font-medium transition-all duration-200 relative md:pl-[29px] md:group-hover/sidebar:pl-3 md:transition-[padding,background-color,color] md:duration-500 md:ease-[cubic-bezier(0.22,1,0.36,1)] ${
                 isActive
                   ? 'brand-active bg-gradient-to-r from-primary-50 to-purple-50 dark:from-primary-900/30 dark:to-purple-900/30 text-primary-700 dark:text-primary-300 shadow-sm before:absolute before:left-0 before:top-1/2 before:-translate-y-1/2 before:w-0.5 before:h-5 before:rounded-full'
                   : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800 hover:text-slate-900 dark:hover:text-gray-200'
               }`
             }
           >
-            <item.icon size={18} />
-            {translateLabel(item.to, item.label, tt)}
+            <item.icon size={18} className="flex-shrink-0" />
+            <span className={railText}>{translateLabel(item.to, item.label, tt)}</span>
           </NavLink>
             ))}
           </div>
@@ -225,7 +231,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ onNavigate }) => {
       </nav>
 
       {/* Plan badge */}
-      <div className="px-4 py-3 border-t border-gray-100 dark:border-gray-800">
+      <div className={`px-4 py-3 border-t border-gray-100 dark:border-gray-800 ${railText}`}>
         <div className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium ${planInfo.color}`}>
           {plan === 'enterprise' && '★ '}{planInfo.label}
         </div>
@@ -237,7 +243,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ onNavigate }) => {
           trigger={
             <button className="w-full flex items-center gap-3 px-2 py-2 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">
               <Avatar src={user?.avatar_url} name={user?.full_name || '用户'} size="sm" />
-              <div className="flex-1 text-left min-w-0">
+              <div className={`flex-1 text-left min-w-0 ${railText}`}>
                 <p className="text-sm font-medium text-slate-900 dark:text-gray-100 truncate">
                   {user?.full_name}
                 </p>

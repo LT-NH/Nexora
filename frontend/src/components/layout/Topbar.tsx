@@ -52,9 +52,11 @@ export const Topbar: React.FC<TopbarProps> = ({ title, breadcrumb, onMenuClick }
 
   return (
     <header
-      className="vt-topbar min-h-[4rem] bg-white dark:bg-gray-900 border-b border-gray-300 dark:border-gray-700 flex items-center justify-between px-4 sm:px-6 sticky top-0 z-30"
+      className="vt-topbar relative min-h-[4rem] bg-white dark:bg-gray-900 border-b border-gray-300 dark:border-gray-700 flex items-center justify-between px-4 sm:px-6 sticky top-0 z-30"
       style={{ paddingTop: 'env(safe-area-inset-top)' }}
     >
+      {/* 品牌色条：与左侧侧边栏顶部的色带连成一条贯穿全宽的线 */}
+      <div aria-hidden className="absolute top-0 left-0 right-0 h-1 brand-accent-bar" />
       <div className="flex items-center gap-2 sm:gap-4 min-w-0">
         {/* Mobile menu button */}
         <button

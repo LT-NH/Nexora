@@ -127,8 +127,11 @@ const NotFound = React.lazy(() =>
 );
 
 const PageLoader: React.FC = () => (
-  <div className="flex items-center justify-center min-h-[60vh]">
-    <Spinner size="lg" />
+  <div className="flex flex-col items-center justify-center min-h-[60vh] gap-4">
+    <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-violet-500 to-fuchsia-500 flex items-center justify-center shadow-lg shadow-violet-500/25 animate-pulse-glow">
+      <span className="text-white font-extrabold text-xl select-none">N</span>
+    </div>
+    <Spinner size="sm" />
   </div>
 );
 

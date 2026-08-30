@@ -411,6 +411,16 @@ const MembershipCard: React.FC<{ slug: string }> = ({ slug }) => {
   );
 };
 
+/** 按当前时间返回问候语（凌晨/早上/中午/下午/晚上） */
+const timeGreeting = (): string => {
+  const h = new Date().getHours();
+  if (h < 6) return '凌晨好';
+  if (h < 11) return '早上好';
+  if (h < 13) return '中午好';
+  if (h < 18) return '下午好';
+  return '晚上好';
+};
+
 export const Dashboard: React.FC = () => {
   const t = usePageT(D);
   usePageTitle(t('page_title'));
@@ -728,7 +738,7 @@ export const Dashboard: React.FC = () => {
       <div className="absolute inset-0 bg-tech-dots pointer-events-none -z-10" />
       {/* Welcome */}
       <PageHeader
-        title={<>{t('welcome_back')}{user?.full_name?.split(' ')[0] || t('default_user')}</>}
+        title={<>{timeGreeting()}，{user?.full_name?.split(' ')[0] || t('default_user')}</>}
         subtitle={
           <>
             <span className="font-medium text-gray-700">
@@ -760,10 +770,12 @@ export const Dashboard: React.FC = () => {
       />
 
       {/* AI 结论摘要条（第一屏焦点） */}
-      <AiDecisionPanel slug={currentWorkspace?.slug || ''} />
+      <div className="animate-page-in-delay-1">
+        <AiDecisionPanel slug={currentWorkspace?.slug || ''} />
+      </div>
 
       {/* 经营 KPI（真实利润数据） */}
-      <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-4 gap-4" aria-live="polite">
+      <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-4 gap-4 animate-fade-in" aria-live="polite">
         <StatCard
           className="glass-card"
           icon={<Wallet size={22} className="text-emerald-600" />}
@@ -795,7 +807,7 @@ export const Dashboard: React.FC = () => {
       </div>
 
       {/* Tab Navigation */}
-      <div className="flex items-center gap-1 border-b border-gray-200 dark:border-gray-700" role="tablist" aria-label={t('tabs_aria')}>
+      <div className="flex items-center gap-1 border-b border-gray-200 dark:border-gray-700 animate-page-in-delay-2" role="tablist" aria-label={t('tabs_aria')}>
         {[
           { key: 'overview', label: t('tab_overview'), icon: LayoutDashboard },
           { key: 'insights', label: t('tab_insights'), icon: PieChart },
@@ -820,7 +832,7 @@ export const Dashboard: React.FC = () => {
 
       {/* ── Overview Tab ── */}
       {activeTab === 'overview' && (
-        <>
+        <div key="tab-overview" className="space-y-6 animate-page-in">
       {/* Low Stock Alert */}
       {lowStockProducts.length > 0 && (
         <Card padding className="border-amber-200 bg-amber-50/40">
@@ -963,12 +975,12 @@ export const Dashboard: React.FC = () => {
           </div>
         )}
       </Card>
-        </>
+        </div>
       )}
 
       {/* ── Insights Tab ── */}
       {activeTab === 'insights' && (
-        <>
+        <div key="tab-insights" className="space-y-6 animate-page-in">
 
       {/* Enterprise badge */}
       {plan === 'enterprise' && (
@@ -1078,7 +1090,7 @@ export const Dashboard: React.FC = () => {
           <UpgradeCTA feature={t('pro_dashboard')} />
         </>
       ) : (
-        <>
+        <div className="space-y-6">
           {/* Charts Section */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <Card className="" title={t('sales_trend_title')} subtitle={t('sales_trend_subtitle')}>
@@ -1089,8 +1101,8 @@ export const Dashboard: React.FC = () => {
               )}
             </Card>
 
-            <Card className="" title={t('order_status_title')} subtitle={t('order_status_subtitle')}>
-              {orderStatus.length > 0 ? (
+          <Card className="" title={t('order_status_title')} subtitle={t('order_status_subtitle')}>
+            {orderStatus.length > 0 ? (
                 <OrderStatusChart data={orderStatus.map((s) => ({ ...s, name: t(s.name) }))} />
               ) : (
                 <EmptyState title={t('no_order_data')} description={t('no_order_data_desc')} />
@@ -1109,14 +1121,14 @@ export const Dashboard: React.FC = () => {
 
           {/* Membership Distribution */}
           <MembershipCard slug={currentWorkspace?.slug || ''} />
-        </>
+        </div>
       )}
-        </>
+        </div>
       )}
 
       {/* ── Operations Tab ── */}
       {activeTab === 'operations' && (
-        <>
+        <div key="tab-operations" className="space-y-6 animate-page-in">
       {/* Service Performance Card (Enterprise only) */}
       {plan === 'enterprise' && serverMetrics && (
         <Card
@@ -1220,7 +1232,7 @@ export const Dashboard: React.FC = () => {
           </p>
         )}
       </Card>
-        </>
+        </div>
       )}
     </div>
   );

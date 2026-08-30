@@ -1,3 +1,18 @@
+/* ============================================
+   字体自托管：Plus Jakarta Sans 变量字体（latin 子集，27KB）
+   中/日/韩等 CJK 字符回退到系统中文字体栈（见 tailwind.config sans）
+   ============================================ */
+@font-face {
+  font-family: 'Plus Jakarta Sans';
+  font-style: normal;
+  font-weight: 200 800;
+  font-display: swap;
+  src: url('/fonts/PlusJakartaSans-Variable.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA,
+    U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193,
+    U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -732,7 +747,8 @@ html { scroll-behavior: smooth; }
   .gradient-orb,
   .animated-border::before,
   .live-event-in,
-  .ai-hit-pulse {
+  .ai-hit-pulse,
+  .panel-glow {
     animation: none !important;
   }
   .glass-card:hover,
@@ -878,6 +894,18 @@ html { scroll-behavior: smooth; }
   to   { transform: translate(-50%, -50%) rotate(360deg) scale(1.15); }
 }
 .aurora-spin-slow { animation: auroraSpinSlow 44s linear infinite; }
+
+/* 17. 工作台动效：AI 面板呼吸光（焦点引导，浅/深两态） */
+@keyframes panelGlowLight {
+  0%, 100% { box-shadow: 0 1px 2px rgba(15, 23, 42, 0.05), 0 0 0 0 rgba(124, 58, 237, 0); }
+  50%      { box-shadow: 0 1px 2px rgba(15, 23, 42, 0.05), 0 4px 24px 0 rgba(124, 58, 237, 0.16); }
+}
+@keyframes panelGlowDark {
+  0%, 100% { box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 0 0 0 rgba(167, 139, 250, 0); }
+  50%      { box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 4px 24px 0 rgba(167, 139, 250, 0.20); }
+}
+.panel-glow { animation: panelGlowLight 4.5s ease-in-out infinite; }
+.dark .panel-glow { animation-name: panelGlowDark; }
 
 /* ==========================================================================
    BRANDING — 品牌定制生效层（useBranding 设置 --brand-color 后消费）

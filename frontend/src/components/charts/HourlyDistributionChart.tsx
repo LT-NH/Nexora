@@ -1,5 +1,6 @@
 import React, { useMemo } from 'react';
-import * as echarts from 'echarts';
+import echarts from '@/lib/echarts';
+import type { EChartsOption } from 'echarts';
 import { useEChart } from '@/hooks/useEChart';
 import { useChartPalette } from '@/hooks/useChartPalette';
 
@@ -9,7 +10,7 @@ interface HourlyDistributionChartProps {
 
 export const HourlyDistributionChart: React.FC<HourlyDistributionChartProps> = ({ data }) => {
     const palette = useChartPalette();
-const option = useMemo<echarts.EChartsOption>(() => ({
+const option = useMemo<EChartsOption>(() => ({
     backgroundColor: 'transparent',
     tooltip: { trigger: 'axis' },
     grid: { left: '3%', right: '4%', bottom: '8%', top: '8%', containLabel: true },

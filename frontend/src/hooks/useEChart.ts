@@ -1,8 +1,7 @@
 import { useRef, useEffect } from 'react';
-// 全量引入 ECharts：避免与页面中「全量 echarts」组件（如 TopProductsChart）混用时
-// 重复注册 axisPointer 等模块导致 "CartesianAxisPointer exists" 崩溃
-import * as echarts from 'echarts';
-import type { EChartsOption } from 'echarts';
+// ECharts 按需引入的唯一运行时入口（见 src/lib/echarts.ts 的说明）
+import echarts from '@/lib/echarts';
+import type { EChartsOption, EChartsType } from 'echarts';
 import { useTheme } from './useTheme';
 
 /**
@@ -19,7 +18,8 @@ import { useTheme } from './useTheme';
  */
 export function useEChart(option: EChartsOption, deps: unknown[] = []) {
   const ref = useRef<HTMLDivElement>(null);
-  const chartRef = useRef<echarts.ECharts | null>(null);
+  type ChartInstance = ReturnType<typeof echarts.init>;
+  const chartRef = useRef<ChartInstance | null>(null);
   const { resolvedTheme } = useTheme();
 
   // Init / dispose on theme change

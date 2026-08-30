@@ -1151,7 +1151,7 @@ export const Products: React.FC = () => {
       <div className="flex items-center gap-3">
         <div className="w-10 h-10 rounded-lg bg-gray-100 dark:bg-gray-700 flex items-center justify-center overflow-hidden flex-shrink-0">
           {p.images?.[0] ? (
-            <img src={p.images[0]} alt={p.name} className="w-full h-full object-cover" />
+            <img src={p.images[0]} alt={p.name} loading="lazy" decoding="async" className="w-full h-full object-cover" />
           ) : (
             <Package size={18} className="text-gray-500 dark:text-gray-400" />
           )}
@@ -1515,7 +1515,7 @@ export const Products: React.FC = () => {
                           onClick={() => setEnlargedImage(url)}
                           className="w-16 h-16 rounded-lg border border-gray-200 overflow-hidden hover:ring-2 hover:ring-primary-400 transition-all cursor-pointer"
                         >
-                          <img src={url} alt="" className="w-full h-full object-cover" />
+                          <img src={url} alt="" loading="lazy" decoding="async" className="w-full h-full object-cover" />
                         </button>
                       ))}
                     </div>

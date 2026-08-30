@@ -19,6 +19,11 @@ import {
   Brain,
   LineChart,
   Lightbulb,
+  Rocket,
+  Layers,
+  RefreshCw,
+  CheckCircle2,
+  Tag,
 } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { Modal } from '@/components/ui/Modal';
@@ -322,6 +327,42 @@ const narrativeSteps = [
     statLabel: '分析准确率',
     icon: Eye,
   },
+  {
+    num: '04',
+    title: (
+      <>
+        AI 建议，<span className={GRAD}>一键执行</span>
+      </>
+    ),
+    desc: '清仓降价、唤醒优惠券——点一下"执行"，改动真实写回你的 Shopify 店铺。不是纸上谈兵，是立刻发生。',
+    stat: '1 键',
+    statLabel: '真实回写',
+    icon: Rocket,
+  },
+  {
+    num: '05',
+    title: (
+      <>
+        多店铺，<span className={GRAD}>一屏全景</span>
+      </>
+    ),
+    desc: '每家店铺独立接入、独立同步，订单与营收自动合并统计、绝不重复计算，每笔订单的平台来源一目了然。',
+    stat: '6+',
+    statLabel: '平台支持',
+    icon: Layers,
+  },
+  {
+    num: '06',
+    title: (
+      <>
+        自动同步，<span className={GRAD}>数据常新</span>
+      </>
+    ),
+    desc: '增量拉取 + 实时 Webhook 双通道，按你设定的频率自动更新店铺数据；同步失败会明明白白告诉你原因。',
+    stat: '15 分钟',
+    statLabel: '最低同步间隔',
+    icon: RefreshCw,
+  },
 ];
 
 /* ─── 叙事步骤迷你界面插图（纯 CSS/SVG，延续 hero console 的设计语言） ─── */
@@ -392,8 +433,98 @@ const MiniInsightCard: React.FC = () => (
   </div>
 );
 
+const MiniExecuteCard: React.FC = () => (
+  <div className="w-full max-w-sm mx-auto space-y-4">
+    <div className="glass-card rounded-2xl p-5 shadow-xl shadow-violet-500/10">
+      <div className="flex items-center gap-3.5">
+        <span className="w-10 h-10 rounded-xl bg-gradient-to-br from-violet-500 to-fuchsia-500 text-white flex items-center justify-center flex-shrink-0"><Rocket size={17} /></span>
+        <div className="min-w-0 flex-1">
+          <div className="text-sm font-semibold text-[#1d1d1f]">库存积压 → 一键清仓</div>
+          <div className="text-[13px] text-[#515154] mt-0.5">降价 15%：¥399 → <span className="font-bold text-emerald-600">¥339.15</span></div>
+        </div>
+        <CheckCircle2 size={18} className="text-emerald-500 flex-shrink-0" />
+      </div>
+      <div className="mt-3 text-[11px] font-medium text-violet-600 bg-violet-50 rounded-lg px-2.5 py-1.5 inline-flex items-center gap-1">
+        <Sparkles size={11} /> 已同步 Shopify 全部变体
+      </div>
+    </div>
+    <div className="glass-card rounded-2xl p-5 shadow-xl shadow-fuchsia-500/10 float-y -translate-x-4" style={{ animationDelay: '1.1s' }}>
+      <div className="flex items-center gap-3.5">
+        <span className="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-400 to-orange-500 text-white flex items-center justify-center flex-shrink-0"><Tag size={17} /></span>
+        <div className="min-w-0 flex-1">
+          <div className="text-sm font-semibold text-[#1d1d1f]">唤醒券 WAKE-2026 已创建</div>
+          <div className="text-[13px] text-[#515154] mt-0.5">满 99 减 20 · 14 天有效</div>
+        </div>
+        <CheckCircle2 size={18} className="text-emerald-500 flex-shrink-0" />
+      </div>
+    </div>
+  </div>
+);
+
+const MiniStoresCard: React.FC = () => (
+  <div className="w-full max-w-sm mx-auto glass-card rounded-3xl p-6 shadow-xl shadow-violet-500/10">
+    <div className="text-xs font-semibold tracking-[0.2em] text-[#8e8e93] uppercase mb-4">All Stores</div>
+    <div className="space-y-3">
+      {[
+        { n: 'Nexora Store', p: 'Shopify', dot: 'bg-emerald-500', s: '已连接' },
+        { n: '抖音旗舰店', p: '抖音', dot: 'bg-gray-700', s: '已连接' },
+        { n: 'Sandbox Demo', p: '沙盒', dot: 'bg-violet-500', s: '演示中' },
+      ].map((r) => (
+        <div key={r.n} className="flex items-center gap-3">
+          <span className={`w-2 h-2 rounded-full ${r.dot} flex-shrink-0`} />
+          <span className="text-[13px] font-medium text-[#1d1d1f] flex-1 truncate">{r.n}</span>
+          <span className="text-[11px] text-[#8e8e93]">{r.p}</span>
+          <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-600 border border-emerald-100">{r.s}</span>
+        </div>
+      ))}
+    </div>
+    <div className="mt-5 rounded-xl bg-gradient-to-r from-violet-600 to-fuchsia-500 px-4 py-3 text-white shadow-lg shadow-violet-500/25 flex items-center justify-between">
+      <span className="text-[12px] font-medium opacity-90">本月合并营收</span>
+      <span className="text-lg font-bold tabular-nums">¥8.2M</span>
+    </div>
+  </div>
+);
+
+const MiniAutoSyncCard: React.FC = () => (
+  <div className="w-full max-w-sm mx-auto glass-card rounded-3xl p-6 shadow-xl shadow-violet-500/10">
+    <div className="flex items-center justify-between mb-4">
+      <div className="text-xs font-semibold tracking-[0.2em] text-[#8e8e93] uppercase">Auto Sync</div>
+      <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-emerald-600">
+        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 soft-pulse" /> 每 15 分钟
+      </span>
+    </div>
+    <div className="space-y-3">
+      {[
+        { t: '18:40', d: '订单同步 +5 · 退款同步 +1' },
+        { t: '18:25', d: '商品同步 +2 · 库存更新' },
+        { t: '18:10', d: '无变更，跳过（增量）' },
+      ].map((r, i) => (
+        <div key={i} className="flex items-center gap-3">
+          <span className="text-[11px] font-mono text-[#8e8e93] w-10 flex-shrink-0">{r.t}</span>
+          <CheckCircle2 size={14} className="text-emerald-500 flex-shrink-0" />
+          <span className="text-[13px] text-[#515154]">{r.d}</span>
+        </div>
+      ))}
+    </div>
+    <div className="mt-4 rounded-xl bg-gray-50 border border-gray-100 px-4 py-3">
+      <div className="text-[11px] text-[#8e8e93] mb-1">最近一次同步结果</div>
+      <div className="flex items-center justify-between">
+        <span className="text-[13px] font-semibold text-[#1d1d1f]">同步成功</span>
+        <span className="text-[11px] text-emerald-600 font-medium">0 错误</span>
+      </div>
+    </div>
+  </div>
+);
+
 const NarrativeVisual: React.FC<{ index: number }> = ({ index }) => {
-  const comps = [<MiniConnectCard key="c" />, <MiniSyncFlow key="s" />, <MiniInsightCard key="i" />];
+  const comps = [
+    <MiniConnectCard key="c" />,
+    <MiniSyncFlow key="s" />,
+    <MiniInsightCard key="i" />,
+    <MiniExecuteCard key="e" />,
+    <MiniStoresCard key="m" />,
+    <MiniAutoSyncCard key="a" />,
+  ];
   return (
     <div className="relative flex items-center justify-center py-6">
       {/* backdrop ghost number */}
@@ -452,12 +583,11 @@ const NarrativeRow: React.FC<{ item: (typeof narrativeSteps)[number]; index: num
   );
 };
 
-/* ─── 自动轮播分镜舞台：定时切换（悬停/离屏暂停），大字舞台卡片 ─── */
+/* ─── 自动轮播分镜舞台：定时切换（离屏暂停），大字舞台卡片 ─── */
 const STEP_MS = 4500;
 const Storyboard: React.FC = () => {
   const sectionRef = useRef<HTMLDivElement>(null);
   const [active, setActive] = useState(0);
-  const [paused, setPaused] = useState(false);
   const [inView, setInView] = useState(false);
   const n = narrativeSteps.length;
 
@@ -470,12 +600,12 @@ const Storyboard: React.FC = () => {
     return () => obs.disconnect();
   }, []);
 
-  // 定时切换
+  // 定时切换（悬停不打断）
   useEffect(() => {
-    if (paused || !inView) return;
+    if (!inView) return;
     const t = setTimeout(() => setActive((a) => (a + 1) % n), STEP_MS);
     return () => clearTimeout(t);
-  }, [active, paused, inView, n]);
+  }, [active, inView, n]);
 
   const copyStyle = (i: number): React.CSSProperties => ({
     opacity: i === active ? 1 : 0,
@@ -498,14 +628,12 @@ const Storyboard: React.FC = () => {
     transition: 'opacity 0.9s cubic-bezier(0.22,1,0.36,1), transform 0.9s cubic-bezier(0.22,1,0.36,1)',
   });
 
-  const stepLabels = ['连接', '汇聚', '决策'];
+  const stepLabels = ['连接', '汇聚', '决策', '执行', '全景', '常新'];
 
   return (
     <div ref={sectionRef} className="relative mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
       <div
         className="relative overflow-hidden rounded-[36px] sm:rounded-[44px] border border-violet-100/90 bg-white/75 backdrop-blur-xl shadow-2xl shadow-violet-500/10"
-        onMouseEnter={() => setPaused(true)}
-        onMouseLeave={() => setPaused(false)}
       >
         {/* 舞台背景：缓慢旋转的极光色轮 + 点阵 */}
         <div className="absolute inset-0 pointer-events-none" aria-hidden>
@@ -566,27 +694,19 @@ const Storyboard: React.FC = () => {
           </div>
         </div>
 
-        {/* 底部进度轨：倒计时进度 + 可点击标签 */}
-        <div className="absolute bottom-7 left-1/2 -translate-x-1/2 z-20 flex flex-col items-center gap-4">
-          <div className="h-1.5 w-64 rounded-full bg-violet-100/90 overflow-hidden">
-            <div
-              key={active}
-              className={`h-full w-full origin-left bg-gradient-to-r from-violet-500 to-fuchsia-500 bar-fill ${paused ? 'bar-paused' : ''}`}
-            />
-          </div>
-          <div className="flex items-center gap-8">
-            {stepLabels.map((label, i) => (
-              <button
-                key={label}
-                onClick={() => setActive(i)}
-                className={`text-sm font-bold tracking-[0.25em] transition-colors duration-300 cursor-pointer ${
-                  i === active ? 'text-violet-600' : 'text-[#8e8e93] hover:text-violet-500'
-                }`}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
+        {/* 底部步骤指示（可点击跳转） */}
+        <div className="absolute bottom-7 left-1/2 -translate-x-1/2 z-20 flex items-center gap-8">
+          {stepLabels.map((label, i) => (
+            <button
+              key={label}
+              onClick={() => setActive(i)}
+              className={`text-sm font-bold tracking-[0.25em] transition-colors duration-300 cursor-pointer ${
+                i === active ? 'text-violet-600' : 'text-[#8e8e93] hover:text-violet-500'
+              }`}
+            >
+              {label}
+            </button>
+          ))}
         </div>
       </div>
     </div>
