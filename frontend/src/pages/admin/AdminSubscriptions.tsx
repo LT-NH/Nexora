@@ -158,7 +158,7 @@ export const AdminSubscriptions: React.FC = () => {
               {pays.map((p) => (
                 <tr key={p.id} className="hover:bg-[#F7F8F2] dark:hover:bg-gray-800/40 transition-colors">
                   <td className="py-3 pl-4 font-medium text-slate-900 dark:text-gray-100">{p.workspace_name}</td>
-                  <td className="py-3 font-bold tabular-nums text-emerald-600">¥{p.amount.toFixed(2)}</td>
+                  <td className="py-3 font-bold tabular-nums text-emerald-600">¥{(parseFloat(p.amount as any) || 0).toFixed(2)}</td>
                   <td className="py-3 text-xs text-gray-500">{p.method}</td>
                   <td className="py-3">
                     <span className={`text-xs font-semibold px-2.5 py-1 rounded-full ${p.status === 'paid' ? 'bg-emerald-50 text-emerald-600 dark:bg-emerald-900/20' : 'bg-amber-50 text-amber-600 dark:bg-amber-900/20'}`}>

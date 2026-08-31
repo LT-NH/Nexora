@@ -441,7 +441,7 @@ async def admin_payments(
         ws = await db.get(Workspace, p.workspace_id)
         out.append({
             "id": p.id, "workspace_name": ws.name if ws else "?",
-            "amount": p.amount, "method": p.method,
+            "amount": float(p.amount or 0), "method": p.method,
             "status": p.status.value if hasattr(p.status, "value") else str(p.status),
             "created_at": p.created_at,
         })
