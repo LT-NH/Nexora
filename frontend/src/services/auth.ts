@@ -90,13 +90,13 @@ export const authService = {
   },
 
   logout(): void {
-    const rememberMe = localStorage.getItem('remember_me') === 'true';
-    if (!rememberMe) {
-      localStorage.removeItem('access_token');
-      localStorage.removeItem('refresh_token');
-      localStorage.removeItem('user');
-    }
-    // If remember_me is true, keep credentials for next login
+    // 「退出登录」语义 = 彻底登出：无论是否勾选过"记住我"，都清除会话凭证，
+    // 否则退出后点登录会被 GuestRoute 自动重定向回原账号，无法切换账号。
+    localStorage.removeItem('access_token');
+    localStorage.removeItem('refresh_token');
+    localStorage.removeItem('user');
+    // 同时清除工作空间选择，避免下次登录沿用旧账号的 workspace（账号切换残留）
+    localStorage.removeItem('current_workspace_id');
     localStorage.removeItem('remember_me');
   },
 };

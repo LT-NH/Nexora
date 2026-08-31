@@ -119,6 +119,13 @@ api.interceptors.response.use(
   (response) => {
     const cfg = response.config;
     const method = (cfg.method || 'get').toUpperCase();
+    // 写操作（POST/PUT/PATCH/DELETE）成功后，立即清空 GET 缓存。
+    // 否则「操作成功后立即刷新列表」会命中旧数据的缓存，导致页面不更新、
+    // 必须手动刷新浏览器才能看到变化（用户反馈的核心 bug）。
+    if (method !== 'GET') {
+      getCache.clear();
+      return response;
+    }
     const skipCache = (cfg.headers as Record<string, unknown> | undefined)?.['X-Skip-Cache'] === '1';
     if (method === 'GET' && !skipCache) {
       const url = cacheKey(cfg);

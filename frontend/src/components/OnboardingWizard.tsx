@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useI18n } from '@/i18n';
 import { X, ChevronRight, ChevronLeft, Check } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { useAuth } from '@/hooks/useAuth';
 
 const getSteps = (tt: (k: any) => string) => [
   { title: tt('ob_step1_title'), desc: tt('ob_step1_desc'), icon: '\u{1F4E6}', path: '/products' },
@@ -12,15 +13,21 @@ const getSteps = (tt: (k: any) => string) => [
 export const OnboardingWizard: React.FC = () => {
 
   const { t: tt } = useI18n();
+  const { user } = useAuth();
   const [show, setShow] = useState(false);
   const [step, setStep] = useState(0);
   const [dismissed, setDismissed] = useState(false);
   const navigate = useNavigate();
 
   useEffect(() => {
+    // demo 演示账号不弹引导，避免演示时被全屏遮罩打断
+    if (user?.email === 'demo@nexora.com') {
+      localStorage.setItem('onboarding_seen', 'true');
+      return;
+    }
     const seen = localStorage.getItem('onboarding_seen');
     if (!seen) setShow(true);
-  }, []);
+  }, [user?.email]);
 
   const dismiss = () => { setShow(false); localStorage.setItem('onboarding_seen', 'true'); };
   const complete = () => { setShow(false); localStorage.setItem('onboarding_seen', 'true'); localStorage.setItem('onboarding_completed', 'true'); };
@@ -29,8 +36,9 @@ export const OnboardingWizard: React.FC = () => {
 
   
   return (
-    <div className="fixed inset-0 z-[100] bg-black/50 flex items-end sm:items-center justify-center p-4">
-      <div className="bg-white dark:bg-gray-800 rounded-2xl w-full max-w-md p-6 shadow-2xl animate-scale-in relative">
+    // 遮罩背景点击即关闭引导（不再全屏拦截页面操作，避免"按钮点不动"）
+    <div className="fixed inset-0 z-[100] bg-black/50 flex items-end sm:items-center justify-center p-4" onClick={dismiss}>
+      <div onClick={(e) => e.stopPropagation()} className="bg-white dark:bg-gray-800 rounded-2xl w-full max-w-md p-6 shadow-2xl animate-scale-in relative">
         <button onClick={dismiss} className="absolute top-4 right-4 p-1 text-gray-400 hover:text-gray-600">
           <X size={20} />
         </button>

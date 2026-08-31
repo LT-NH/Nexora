@@ -52,9 +52,9 @@ export const AdminUsers: React.FC = () => {
       return;
     }
     try { addToast('success', okMsg); } catch (err) { console.error('addToast threw:', err); }
-    // 刷新列表（独立 try，任何异常都不阻断）
+    // 刷新列表（独立 try，任何异常都不阻断；X-Skip-Cache 强制绕过 GET 缓存拿最新数据）
     try {
-      const res: any = await api.get('/admin/users', { params: { limit: 100 } });
+      const res: any = await api.get('/admin/users', { params: { limit: 100 }, headers: { 'X-Skip-Cache': '1' } });
       setUsers(res.data?.items || []);
     } catch { /* ignore */ }
   };
