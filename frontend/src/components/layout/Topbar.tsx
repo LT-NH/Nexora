@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Bell, Search, Menu, Package, ShoppingBag, UserCheck, CheckCircle, AlertTriangle, XCircle, Info, Sun, Moon, Monitor, Home } from 'lucide-react';
+import {
+  ShieldCheck, Bell, Search, Menu, Package, ShoppingBag, UserCheck, CheckCircle, AlertTriangle, XCircle, Info, Sun, Moon, Monitor, Home } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { useWorkspace } from '@/hooks/useWorkspace';
 import { useTheme } from '@/hooks/useTheme';
@@ -29,6 +30,16 @@ export const Topbar: React.FC<TopbarProps> = ({ title, breadcrumb, onMenuClick }
   const themeLabel = theme === 'dark' ? tt('theme_dark') : theme === 'light' ? tt('theme_light') : tt('theme_system');
 
   const userMenuItems = [
+    ...(user?.is_superadmin
+      ? [
+          {
+            label: '平台管理',
+            value: 'admin',
+            icon: <ShieldCheck size={16} />,
+            onClick: () => navigate('/admin'),
+          },
+        ]
+      : []),
     {
       label: tt('profile'),
       value: 'profile',
