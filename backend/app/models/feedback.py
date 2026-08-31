@@ -46,6 +46,12 @@ class Feedback(Base):
         nullable=True,
         comment="Free-form feedback text",
     )
+    status: Mapped[str] = mapped_column(
+        String(20),
+        default="new",
+        nullable=False,
+        comment="new | resolved | dismissed（管理台处理状态）",
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),

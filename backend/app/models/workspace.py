@@ -72,6 +72,12 @@ class Workspace(Base):
         default=False,
         nullable=False,
     )
+    status: Mapped[str] = mapped_column(
+        String(20),
+        default="active",
+        nullable=False,
+        comment="active | suspended（管理台暂停/恢复）",
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),

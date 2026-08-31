@@ -74,6 +74,21 @@ const AdminSubscriptions = React.lazy(() =>
 const AdminAudit = React.lazy(() =>
   import('@/pages/admin/AdminAudit').then((m) => ({ default: m.AdminAudit }))
 );
+const AdminHealth = React.lazy(() =>
+  import('@/pages/admin/AdminHealth').then((m) => ({ default: m.AdminHealth }))
+);
+const AdminWorkspaces = React.lazy(() =>
+  import('@/pages/admin/AdminWorkspaces').then((m) => ({ default: m.AdminWorkspaces }))
+);
+const AdminRevenue = React.lazy(() =>
+  import('@/pages/admin/AdminRevenue').then((m) => ({ default: m.AdminRevenue }))
+);
+const AdminFeedback = React.lazy(() =>
+  import('@/pages/admin/AdminFeedback').then((m) => ({ default: m.AdminFeedback }))
+);
+const AdminAnnouncements = React.lazy(() =>
+  import('@/pages/admin/AdminAnnouncements').then((m) => ({ default: m.AdminAnnouncements }))
+);
 const Products = React.lazy(() =>
   import('@/pages/Products').then((m) => ({ default: m.Products }))
 );
@@ -251,6 +266,11 @@ const App: React.FC = () => {
             }
           >
             <Route index element={<AdminDashboard />} />
+            <Route path="health" element={<AdminHealth />} />
+            <Route path="workspaces" element={<AdminWorkspaces />} />
+            <Route path="revenue" element={<AdminRevenue />} />
+            <Route path="feedback" element={<AdminFeedback />} />
+            <Route path="announcements" element={<AdminAnnouncements />} />
             <Route path="users" element={<AdminUsers />} />
             <Route path="subscriptions" element={<AdminSubscriptions />} />
             <Route path="audit" element={<AdminAudit />} />

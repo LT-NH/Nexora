@@ -1,9 +1,14 @@
 import React from 'react';
-import { LayoutDashboard, Users, CreditCard, ScrollText, ShieldCheck, ArrowLeft, Sparkles } from 'lucide-react';
+import { LayoutDashboard, Users, CreditCard, ScrollText, ShieldCheck, ArrowLeft, Sparkles, Activity, Building2, MessageSquare, TrendingUp, Megaphone } from 'lucide-react';
 import { NavLink, Link } from 'react-router-dom';
 
 const nav = [
   { to: '/admin', label: '平台总览', icon: LayoutDashboard, end: true },
+  { to: '/admin/health', label: '租户健康雷达', icon: Activity },
+  { to: '/admin/workspaces', label: '工作空间', icon: Building2 },
+  { to: '/admin/revenue', label: '营收看板', icon: TrendingUp },
+  { to: '/admin/feedback', label: '反馈中心', icon: MessageSquare },
+  { to: '/admin/announcements', label: '公告广播', icon: Megaphone },
   { to: '/admin/users', label: '用户管理', icon: Users },
   { to: '/admin/subscriptions', label: '订阅与支付', icon: CreditCard },
   { to: '/admin/audit', label: '审计日志', icon: ScrollText },

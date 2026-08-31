@@ -7,6 +7,7 @@ from app.api.workspaces import router as workspaces_router
 from app.api.subscriptions import router as subscriptions_router
 from app.api.apikeys import router as apikeys_router
 from app.api.admin import router as admin_router
+from app.api.admin_ops import router as admin_ops_router
 from app.api.products import router as products_router
 from app.api.orders import router as orders_router
 from app.api.customers import router as customers_router
@@ -49,6 +50,7 @@ api_router.include_router(workspaces_router, tags=["Workspaces"])
 api_router.include_router(subscriptions_router, tags=["Subscriptions"])
 api_router.include_router(apikeys_router, tags=["API Keys"])
 api_router.include_router(admin_router, tags=["Admin"])
+api_router.include_router(admin_ops_router, tags=["Admin"])
 api_router.include_router(products_router, tags=["E-Commerce - Products"])
 api_router.include_router(orders_router, tags=["E-Commerce - Orders"])
 api_router.include_router(customers_router, tags=["E-Commerce - Customers"])

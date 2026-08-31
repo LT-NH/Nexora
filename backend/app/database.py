@@ -77,6 +77,27 @@ async def init_db() -> None:
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
         await _ensure_store_columns(conn)
+        await _ensure_light_migrations(conn)
+
+
+async def _ensure_light_migrations(conn) -> None:
+    """轻量列迁移：为已存在的表补新列（create_all 不会 ALTER 已有表）。
+
+    与 _ensure_store_columns 同模式：逐列尝试 ALTER TABLE ADD COLUMN，
+    列已存在则忽略。用于管理台新功能所需的 status 列。
+    """
+    from sqlalchemy import text
+
+    migrations = [
+        ("workspaces", "status", "VARCHAR(20) NOT NULL DEFAULT 'active'"),
+        ("feedbacks", "status", "VARCHAR(20) NOT NULL DEFAULT 'new'"),
+    ]
+    for table, column, ddl in migrations:
+        try:
+            await conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {column} {ddl}"))
+        except Exception:
+            # 列已存在（或库不可写）→ 忽略；真正的建表错误由 create_all 负责
+            pass
 
 
 async def _ensure_store_columns(conn) -> None:
