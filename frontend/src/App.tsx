@@ -62,6 +62,18 @@ const AdminDashboard = React.lazy(() =>
     default: m.AdminDashboard,
   }))
 );
+const AdminLayout = React.lazy(() =>
+  import('@/components/layout/AdminLayout').then((m) => ({ default: m.AdminLayout }))
+);
+const AdminUsers = React.lazy(() =>
+  import('@/pages/admin/AdminUsers').then((m) => ({ default: m.AdminUsers }))
+);
+const AdminSubscriptions = React.lazy(() =>
+  import('@/pages/admin/AdminSubscriptions').then((m) => ({ default: m.AdminSubscriptions }))
+);
+const AdminAudit = React.lazy(() =>
+  import('@/pages/admin/AdminAudit').then((m) => ({ default: m.AdminAudit }))
+);
 const Products = React.lazy(() =>
   import('@/pages/Products').then((m) => ({ default: m.Products }))
 );
@@ -234,10 +246,15 @@ const App: React.FC = () => {
             path="/admin"
             element={
               <ProtectedRoute requireAdmin>
-                <RouteErrorBoundary><AdminDashboard /></RouteErrorBoundary>
+                <RouteErrorBoundary><AdminLayout /></RouteErrorBoundary>
               </ProtectedRoute>
             }
-          />
+          >
+            <Route index element={<AdminDashboard />} />
+            <Route path="users" element={<AdminUsers />} />
+            <Route path="subscriptions" element={<AdminSubscriptions />} />
+            <Route path="audit" element={<AdminAudit />} />
+          </Route>
         </Route>
 
         {/* 404 */}
