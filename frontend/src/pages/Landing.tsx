@@ -1674,126 +1674,6 @@ export const Landing: React.FC = () => {
         </div>
       </section>
 
-      {/* ============ 关于 Nexora：发展历程 + 创始人 ============ */}
-      <section id="about" className="relative z-10 py-24 sm:py-32 px-4 sm:px-6 lg:px-8 text-white overflow-hidden" style={{ background: 'linear-gradient(160deg, #0b1023 0%, #151238 45%, #0b1023 100%)' }}>
-        {/* 背景装饰 */}
-        <div className="absolute inset-0 pointer-events-none">
-          <div className="absolute -top-32 -left-32 w-[500px] h-[500px] rounded-full bg-violet-600/10 blur-[120px]" />
-          <div className="absolute -bottom-32 -right-32 w-[500px] h-[500px] rounded-full bg-fuchsia-600/10 blur-[120px]" />
-        </div>
-        <div className="max-w-7xl mx-auto relative z-10">
-          {/* 标题 */}
-          <div className="text-center mb-16">
-            <span className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-white/5 border border-white/10 text-violet-300 text-sm font-medium">
-              <Sparkles size={14} />
-              关于 Nexora
-            </span>
-            <h2 className="mt-5 text-3xl sm:text-5xl font-extrabold tracking-tight leading-tight">
-              一个人，一支队伍，
-              <br />
-              <span className="bg-gradient-to-r from-violet-400 via-purple-400 to-fuchsia-400 bg-clip-text text-transparent">
-                从第一行代码到真实店铺运营。
-              </span>
-            </h2>
-            <p className="mt-5 text-base text-[#8e8e93] max-w-2xl mx-auto leading-relaxed">
-              Nexora 不是团队作业的产物——它由创始人独立完成全部后端、前端、AI 与数据工程。
-              下面是这段旅程的每一步，以及站在它背后的人。
-            </p>
-          </div>
-
-          {/* 发展历程 timeline */}
-          <div className="mb-20">
-            <h3 className="text-lg font-bold text-white/90 mb-8 flex items-center gap-2">
-              <span className="w-1.5 h-5 rounded-full bg-gradient-to-b from-violet-400 to-fuchsia-500" />
-              发展历程
-            </h3>
-            <div className="relative">
-              {/* 竖线 */}
-              <div className="absolute left-[7px] top-2 bottom-2 w-px bg-gradient-to-b from-violet-500/60 via-fuchsia-500/40 to-transparent hidden sm:block" />
-              <div className="space-y-8">
-                {[
-                  { v: 'v1.0', t: '2026.06', title: '立项 · 从 0 到 1', desc: '完成全栈架构设计：多租户工作空间体系 + 商品 / 订单 / 客户 / 库存全流程 CRUD，FastAPI + React 双端同日跑通。' },
-                  { v: 'v2.0', t: '2026.07', title: '安全与工程化', desc: '6 大平台适配器接入、JWT + 2FA 双因素认证、Fernet 凭证加密、路由层重构瘦身 60%，28 项 pytest 集成测试筑底。' },
-                  { v: 'v3.0', t: '2026.08', title: 'AI 深度融合', desc: '接入通义千问，落地 8 个真实 AI 面板：BI 对话、销售分析、智能定价、销量预测、经营日报 / 周报——全部真实模型调用，拒绝规则伪装。' },
-                  { v: 'v4.0', t: '2026.08', title: '真实数据引擎', desc: '接入真实 Shopify 店铺（Admin REST API）：商品 / 订单 / 客户 / 优惠券 / 退款双向同步，凭证 Fernet 加密落库，增量同步上线。' },
-                  { v: 'v5.0', t: '2026.08', title: '经营智能体', desc: '对话式 Agent 上线：一句话指令 → AI 拆解任务 → 调用真实工具 → Shopify 回写验证，全程留审计；利润分析毛利看板 + 自动巡检同日发布。' },
-                ].map((m, i) => (
-                  <div key={m.v} className="relative sm:pl-12 flex gap-4">
-                    {/* 节点 */}
-                    <div className="hidden sm:flex absolute left-0 top-1 w-[15px] h-[15px] rounded-full bg-gradient-to-br from-violet-500 to-fuchsia-500 shadow-lg shadow-violet-500/40 ring-4 ring-slate-900" />
-                    <div className="flex-shrink-0 w-16">
-                      <span className="text-xs font-bold text-violet-300">{m.v}</span>
-                      <p className="text-[11px] text-[#8e8e93] mt-0.5">{m.t}</p>
-                    </div>
-                    <div className="flex-1 rounded-2xl bg-white/[0.03] border border-white/10 px-5 py-4 hover:border-violet-500/40 hover:bg-white/[0.05] transition-all duration-300">
-                      <p className="text-sm font-bold text-white">{m.title}</p>
-                      <p className="text-sm text-[#a1a1aa] mt-1.5 leading-relaxed">{m.desc}</p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-
-          {/* 创始人卡 */}
-          <div className="rounded-3xl bg-gradient-to-br from-white/[0.06] to-white/[0.02] border border-white/10 p-8 sm:p-10 backdrop-blur">
-            <h3 className="text-lg font-bold text-white/90 mb-8 flex items-center gap-2">
-              <span className="w-1.5 h-5 rounded-full bg-gradient-to-b from-amber-400 to-orange-500" />
-              创始人
-            </h3>
-            <div className="flex flex-col lg:flex-row gap-10">
-              {/* 左：头像 + 名片 */}
-              <div className="lg:w-[300px] flex-shrink-0">
-                <div className="flex items-center gap-4">
-                  <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-violet-500 via-purple-500 to-fuchsia-500 flex items-center justify-center text-3xl font-extrabold text-white shadow-xl shadow-violet-500/30 select-none">
-                    浩
-                  </div>
-                  <div>
-                    <p className="text-xl font-extrabold text-white">李浩棋</p>
-                    <p className="text-sm text-violet-300 font-medium">创始人 · 全栈工程师</p>
-                    <p className="text-xs text-[#8e8e93] mt-1">Nexora 独立开发者</p>
-                  </div>
-                </div>
-                <p className="mt-6 text-sm text-[#a1a1aa] leading-relaxed">
-                  "不是报表，是建议。"——我相信中小卖家需要的不是又一个后台，而是一个替他们思考、并能真正动手执行的经营智能体。
-                </p>
-                <span className="inline-flex items-center gap-1.5 mt-5 px-3 py-1.5 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs font-semibold">
-                  挑战者杯参赛项目
-                </span>
-              </div>
-              {/* 右：数字成就 + 技术栈 */}
-              <div className="flex-1">
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
-                  {[
-                    { n: '46,000+', l: '行代码 · 独立编写' },
-                    { n: '137+', l: 'REST API 端点' },
-                    { n: '26', l: '张数据库表' },
-                    { n: '8', l: '个真实 AI 面板' },
-                    { n: '39', l: '条自动化测试' },
-                    { n: '1', l: '家真实 Shopify 店铺' },
-                  ].map((s) => (
-                    <div key={s.l} className="rounded-2xl bg-white/[0.04] border border-white/10 px-4 py-5 text-center hover:border-violet-400/40 hover:bg-white/[0.07] transition-all duration-300 group">
-                      <p className="text-2xl sm:text-3xl font-extrabold tabular-nums tracking-tight bg-gradient-to-r from-white to-violet-200 bg-clip-text text-transparent group-hover:scale-105 transition-transform duration-300">{s.n}</p>
-                      <p className="text-xs text-[#8e8e93] mt-1.5">{s.l}</p>
-                    </div>
-                  ))}
-                </div>
-                <div className="mt-7">
-                  <p className="text-xs font-semibold text-white/60 uppercase tracking-wider mb-3">技术栈</p>
-                  <div className="flex flex-wrap gap-2">
-                    {['FastAPI', 'React 18', 'TypeScript', 'SQLAlchemy', '通义千问', 'Shopify Admin API', 'ECharts', 'Tailwind CSS', 'Playwright', 'APScheduler'].map((tech) => (
-                      <span key={tech} className="px-3 py-1.5 rounded-full bg-white/[0.05] border border-white/10 text-xs text-[#c4c4cc] font-medium hover:border-violet-400/50 hover:text-white transition-all duration-200">
-                        {tech}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
-
       {/* ============ Footer ============ */}
       <footer className="bg-slate-900 text-[#8e8e93] py-16 px-4 sm:px-6 lg:px-8">
         <div className="max-w-7xl mx-auto">
@@ -1864,12 +1744,12 @@ export const Landing: React.FC = () => {
               <h4 className="text-sm font-semibold text-white mb-4">公司</h4>
               <ul className="space-y-2.5">
                 <li>
-                  <button
-                    onClick={() => document.getElementById('about')?.scrollIntoView({ behavior: 'smooth' })}
+                  <Link
+                    to="/about"
                     className="text-sm hover:text-white transition-colors text-left cursor-pointer"
                   >
                     关于我们
-                  </button>
+                  </Link>
                 </li>
                 <li>
                   <button

@@ -104,6 +104,9 @@ const Profit = React.lazy(() =>
 const AICommandCenter = React.lazy(() =>
   import('@/pages/AICommandCenter').then((m) => ({ default: m.AICommandCenter }))
 );
+const About = React.lazy(() =>
+  import('@/pages/About').then((m) => ({ default: m.About }))
+);
 const ResetPassword = React.lazy(() =>
   import('@/pages/ResetPassword').then((m) => ({ default: m.ResetPassword }))
 );
@@ -198,6 +201,7 @@ const App: React.FC = () => {
         <Route path="/privacy" element={<RouteErrorBoundary><Privacy /></RouteErrorBoundary>} />
         <Route path="/changelog" element={<RouteErrorBoundary><Changelog /></RouteErrorBoundary>} />
         <Route path="/status" element={<RouteErrorBoundary><Status /></RouteErrorBoundary>} />
+          <Route path="/about" element={<RouteErrorBoundary><About /></RouteErrorBoundary>} />
 
         {/* 需要认证的路由 — 共享同一个 AppLayout，避免每次切换都重建 Sidebar */}
         <Route
