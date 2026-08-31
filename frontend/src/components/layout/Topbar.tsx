@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
-  ShieldCheck, Bell, Search, Menu, Package, ShoppingBag, UserCheck, CheckCircle, AlertTriangle, XCircle, Info, Sun, Moon, Monitor, Home } from 'lucide-react';
+  ShieldCheck, Bell, Search, Menu, Package, ShoppingBag, UserCheck, CheckCircle, AlertTriangle, XCircle, Info, Megaphone, Sun, Moon, Monitor, Home } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { useWorkspace } from '@/hooks/useWorkspace';
 import { useTheme } from '@/hooks/useTheme';
@@ -503,23 +503,18 @@ const NotificationBell: React.FC = () => {
 
     const fetchNotifications = async () => {
       try {
-        if (wsConnected) {
-          // WebSocket is live and owns the real-time list; only sync the unread count
-          // from the server (which already includes WS-delivered notifications).
-          const countRes = await api.get(`/workspaces/${currentWorkspace.slug}/notifications/count`, { signal: abortController.signal });
-          wsMergedSinceFetchRef.current = 0;
-          setUnreadCount(countRes.data?.unread_count || 0);
-        } else {
-          const [notifRes, countRes] = await Promise.all([
-            api.get(`/workspaces/${currentWorkspace.slug}/notifications?limit=10`, { signal: abortController.signal }),
-            api.get(`/workspaces/${currentWorkspace.slug}/notifications/count`, { signal: abortController.signal }),
-          ]);
-          const list = notifRes.data || [];
-          setNotifications(list);
-          knownIdsRef.current = new Set(list.map((n: any) => String(n.id)));
-          wsMergedSinceFetchRef.current = 0;
-          setUnreadCount(countRes.data?.unread_count || 0);
-        }
+        // 始终同时拉取列表 + 未读数：即使 WebSocket 在线，列表也以 HTTP 为基础，
+        // WS 只负责实时增量追加（见下方 wsNotifications 合并，knownIds 去重避免重复）。
+        // 仅靠 WS 会导致历史公告永远无法出现在列表中（WS 不重放历史消息）。
+        const [notifRes, countRes] = await Promise.all([
+          api.get(`/workspaces/${currentWorkspace.slug}/notifications?limit=10`, { signal: abortController.signal }),
+          api.get(`/workspaces/${currentWorkspace.slug}/notifications/count`, { signal: abortController.signal }),
+        ]);
+        const list = notifRes.data || [];
+        setNotifications(list);
+        knownIdsRef.current = new Set(list.map((n: any) => String(n.id)));
+        wsMergedSinceFetchRef.current = 0;
+        setUnreadCount(countRes.data?.unread_count || 0);
       } catch (err: any) {
         // Silently ignore aborted requests (expected on unmount / re-run)
         if (err?.name === 'CanceledError' || err?.code === 'ERR_CANCELED') return;
@@ -527,9 +522,9 @@ const NotificationBell: React.FC = () => {
       }
     };
 
-    // When the WebSocket is connected, fall back to a low-frequency count sync;
-    // otherwise poll the full list + count every 30s as the primary channel.
-    const interval = wsConnected ? 15 * 60 * 1000 : 30000;
+    // Poll the full list + count every 60s as the base channel; the WebSocket
+    // adds real-time increments on top (deduped by server id).
+    const interval = 60000;
 
     const startPolling = () => {
       // Avoid leaking duplicate intervals if already running.
@@ -590,6 +585,7 @@ const NotificationBell: React.FC = () => {
     warning: <AlertTriangle size={14} className="text-yellow-500" />,
     error: <XCircle size={14} className="text-red-500" />,
     info: <Info size={14} className="text-blue-500" />,
+    announcement: <Megaphone size={14} className="text-[#EB9D2A]" />,
   };
 
   return (

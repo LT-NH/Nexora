@@ -452,21 +452,36 @@ async def admin_announce(
         raise HTTPException(status_code=400, detail="标题与内容不能为空")
     workspaces = (await db.execute(select(Workspace))).scalars().all()
     sent = 0
+    created: list[tuple[str, Notification]] = []  # (workspace_id, notification)
     for ws in workspaces:
         members = (
             await db.execute(select(WorkspaceMember.user_id).where(WorkspaceMember.workspace_id == ws.id))
         ).scalars().all()
         for uid in members:
-            db.add(Notification(
+            note = Notification(
                 workspace_id=ws.id,
                 user_id=uid,
                 title=title,
                 message=message,
                 notification_type="announcement",
                 link=None,
-            ))
+            )
+            db.add(note)
+            created.append((str(ws.id), note))
             sent += 1
     await db.commit()
+    # 实时推送 WebSocket：在线商户的通知中心立即收到公告
+    from app.api.ws import notify_workspace
+    for ws_id, note in created:
+        await notify_workspace(ws_id, "notification", {
+            "id": str(note.id),
+            "title": note.title,
+            "message": note.message,
+            "notification_type": note.notification_type,
+            "link": None,
+            "is_read": False,
+            "created_at": note.created_at.isoformat() if note.created_at else None,
+        })
     from app.utils.audit import create_audit_log
     await create_audit_log(db, None, sa.id, "admin.announcement.broadcast", "announcement",
                            details={"title": title, "recipients": sent})
