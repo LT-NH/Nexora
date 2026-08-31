@@ -44,14 +44,19 @@ export const AdminUsers: React.FC = () => {
     fetchUsers();
   }, [fetchUsers]);
 
-  const act = async (url: string, okMsg: string, refetch = true) => {
+  const act = async (url: string, okMsg: string) => {
     try {
       await api.post(url);
-      addToast('success', okMsg);
-      if (refetch) fetchUsers();
     } catch (e: any) {
-      addToast('error', '操作失败', e?.response?.data?.detail || '');
+      try { addToast('error', '操作失败', e?.response?.data?.detail || ''); } catch { /* ignore */ }
+      return;
     }
+    try { addToast('success', okMsg); } catch (err) { console.error('addToast threw:', err); }
+    // 刷新列表（独立 try，任何异常都不阻断）
+    try {
+      const res: any = await api.get('/admin/users', { params: { limit: 100 } });
+      setUsers(res.data?.items || []);
+    } catch { /* ignore */ }
   };
 
   const resetPwd = async (u: AdminUser) => {
