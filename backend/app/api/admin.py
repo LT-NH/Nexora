@@ -294,7 +294,7 @@ async def admin_disable_user(
     user.is_active = False
     await db.commit()
     from app.utils.audit import create_audit_log
-    await create_audit_log(db, sa.id, "admin.user.disable", user_id=user.id, detail=f"禁用用户 {user.email}")
+    await create_audit_log(db, None, sa.id, "admin.user.disable", "user", resource_id=user.id, details={"email": user.email, "op": "disable"})
     return {"ok": True}
 
 
@@ -311,7 +311,7 @@ async def admin_enable_user(
     user.is_active = True
     await db.commit()
     from app.utils.audit import create_audit_log
-    await create_audit_log(db, sa.id, "admin.user.enable", user_id=user.id, detail=f"启用用户 {user.email}")
+    await create_audit_log(db, None, sa.id, "admin.user.enable", "user", resource_id=user.id, details={"email": user.email, "op": "enable"})
     return {"ok": True}
 
 
@@ -331,7 +331,7 @@ async def admin_reset_password(
     user.password_hash = hash_password(tmp)
     await db.commit()
     from app.utils.audit import create_audit_log
-    await create_audit_log(db, sa.id, "admin.user.reset_password", user_id=user.id, detail=f"重置密码 {user.email}")
+    await create_audit_log(db, None, sa.id, "admin.user.reset_password", "user", resource_id=user.id, details={"email": user.email, "op": "reset_password"})
     return {"ok": True, "temporary_password": tmp}
 
 
@@ -352,8 +352,8 @@ async def admin_toggle_superadmin(
     user.is_superadmin = not user.is_superadmin
     await db.commit()
     from app.utils.audit import create_audit_log
-    await create_audit_log(db, sa.id, "admin.user.toggle_superadmin", user_id=user.id,
-                           detail=f"{user.email} -> superadmin={user.is_superadmin}")
+    await create_audit_log(db, None, sa.id, "admin.user.toggle_superadmin", "user",
+                           resource_id=user.id, details={"email": user.email, "superadmin": user.is_superadmin})
     return {"ok": True, "is_superadmin": user.is_superadmin}
 
 
@@ -401,8 +401,8 @@ async def admin_change_plan(
         sub.plan_id = plan.id
     await db.commit()
     from app.utils.audit import create_audit_log
-    await create_audit_log(db, sa.id, "admin.subscription.change_plan", user_id=None,
-                           detail=f"订阅 {sub.id} 变更套餐 -> {plan_slug or '仅备注'}：{note}")
+    await create_audit_log(db, None, sa.id, "admin.subscription.change_plan", "subscription",
+                           resource_id=sub.id, details={"plan_slug": plan_slug or "", "note": note})
     return {"ok": True}
 
 
@@ -424,8 +424,8 @@ async def admin_extend_subscription(
     sub.current_period_end = (sub.current_period_end or datetime.utcnow()) + timedelta(days=days)
     await db.commit()
     from app.utils.audit import create_audit_log
-    await create_audit_log(db, sa.id, "admin.subscription.extend", user_id=None,
-                           detail=f"订阅 {sub.id} 延长 {days} 天")
+    await create_audit_log(db, None, sa.id, "admin.subscription.extend", "subscription",
+                           resource_id=sub.id, details={"days": days})
     return {"ok": True, "new_period_end": sub.current_period_end}
 
 
@@ -462,8 +462,8 @@ async def admin_mark_paid(
     p.status = PaymentStatus.PAID
     await db.commit()
     from app.utils.audit import create_audit_log
-    await create_audit_log(db, sa.id, "admin.payment.mark_paid", user_id=None,
-                           detail=f"支付 {p.id} 标记为已支付")
+    await create_audit_log(db, None, sa.id, "admin.payment.mark_paid", "payment",
+                           resource_id=p.id, details={"op": "mark_paid"})
     return {"ok": True}
 
 
@@ -486,7 +486,7 @@ async def admin_audit(
         "items": [
             {
                 "id": r.id, "action": r.action, "user_id": r.user_id,
-                "resource_id": r.resource_id, "detail": r.detail,
+                "resource_id": r.resource_id, "details": r.details,
                 "created_at": r.created_at,
             }
             for r in rows

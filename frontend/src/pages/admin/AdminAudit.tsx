@@ -4,7 +4,7 @@ import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import api from '@/services/api';
 
-interface AuditItem { id: string; action: string; user_id: string | null; resource_id: string | null; detail: string | null; created_at: string | null; }
+interface AuditItem { id: string; action: string; user_id: string | null; resource_id: string | null; details: any; created_at: string | null; }
 
 const riskyActions = ['admin.', 'delete', 'disable', 'reset_password', 'toggle_superadmin', 'subscription'];
 
@@ -85,7 +85,7 @@ export const AdminAudit: React.FC = () => {
                   </td>
                   <td className="py-3 text-xs text-gray-500 font-mono">{a.user_id?.slice(0, 8) || '—'}</td>
                   <td className="py-3 text-xs text-gray-500 font-mono">{a.resource_id?.slice(0, 8) || '—'}</td>
-                  <td className="py-3 text-xs text-gray-600 dark:text-gray-300 max-w-[360px] truncate" title={a.detail || ''}>{a.detail || '—'}</td>
+                  <td className="py-3 text-xs text-gray-600 dark:text-gray-300 max-w-[360px] truncate" title={typeof a.details === 'string' ? a.details : JSON.stringify(a.details || '')}>{typeof a.details === 'string' ? a.details : JSON.stringify(a.details || '—')}</td>
                   <td className="py-3 text-xs text-gray-400 tabular-nums whitespace-nowrap">{fmt(a.created_at)}</td>
                 </tr>
               ))}
