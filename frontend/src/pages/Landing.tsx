@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
+import { useAuth } from '@/hooks/useAuth';
 import {
   Shield,
   CreditCard,
@@ -886,6 +887,7 @@ const PARTICLES = Array.from({ length: 24 }, (_, i) => {
 });
 
 export const Landing: React.FC = () => {
+  const { isAuthenticated: isAuthed, user: authUser } = useAuth();
   const [openFaqIndex, setOpenFaqIndex] = useState<number | null>(null);
   const [isYearly, setIsYearly] = useState(false);
   const [scrolled, setScrolled] = useState(false);
@@ -1147,16 +1149,29 @@ export const Landing: React.FC = () => {
             </div>
             <div className="flex items-center gap-3">
               <div className="hidden md:flex items-center gap-3">
-                <TransitionLink to="/login">
-                  <Button variant="outline" size="sm">
-                    登录
-                  </Button>
-                </TransitionLink>
-                <TransitionLink to="/register">
-                  <Button variant="primary" size="sm">
-                    免费注册
-                  </Button>
-                </TransitionLink>
+                {isAuthed ? (
+                  <>
+                    <span className="text-xs text-[#8e8e93] hidden lg:inline">已登录：{authUser?.email}</span>
+                    <TransitionLink to="/dashboard">
+                      <Button variant="primary" size="sm">
+                        进入工作台
+                      </Button>
+                    </TransitionLink>
+                  </>
+                ) : (
+                  <>
+                    <TransitionLink to="/login">
+                      <Button variant="outline" size="sm">
+                        登录
+                      </Button>
+                    </TransitionLink>
+                    <TransitionLink to="/register">
+                      <Button variant="primary" size="sm">
+                        免费注册
+                      </Button>
+                    </TransitionLink>
+                  </>
+                )}
               </div>
               {/* Mobile hamburger menu */}
               <button
