@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "resources": [
+    {
+      "id": "host-1788234058363057771",
+      "type": "host",
+      "filePath": "C:\\Users\\lihaoqi\\Desktop\\nexora-preview\\nexora-optimized\\frontend\\dist",
+      "publicUrl": "https://uehcui.gicp.fun?verify_code=0791",
+      "resourceId": "1788234058363057771",
+      "fileName": "dist",
+      "status": "active",
+      "createdAt": "2026-09-01T04:25:36.261Z",
+      "lastCheckedAt": "2026-09-01T04:25:36.263Z"
+    }
+  ]
+}

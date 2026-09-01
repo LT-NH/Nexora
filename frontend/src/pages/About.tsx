@@ -1,37 +1,53 @@
 import React from 'react';
-import { Sparkles, Briefcase, GraduationCap, Rocket, Code2, ArrowLeft } from 'lucide-react';
+import { Sparkles, Briefcase, GraduationCap, Rocket, Code2, Bot, ArrowLeft } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
 const translations = {
   zh: {
     back: '返回首页',
     title: '关于我',
-    hero_line1: '一个人，一支队伍，',
-    hero_line2: '从第一行代码到真实店铺运营。',
-    hero_sub: 'Nexora 不是团队作业的产物——它由创始人独立完成全部后端、前端、AI 与数据工程。这一页，是我走过的路。',
-    timeline_title: 'Nexora 发展历程',
-    career_title: '履历',
-    projects_title: '此前作品',
-    projects_sub: '在 Nexora 之前，我做过这些——它们共同构成了今天的判断力。',
+    hero_line1: '从拆开第一台电脑，',
+    hero_line2: '到一个人撑起一家 SaaS。',
+    hero_sub: '我是李浩棋，江西财经大学软件工程专业大二学生，2006 年出生，从小喜欢计算机。Nexora 从架构到部署，由我一人独立完成——这一页，是我的路。',
+    role: '创始人 · 独立开发者 · 大二在读',
+    intro_label: '自我介绍',
+    intro_text: '2006 年出生，江西财经大学软件工程专业大二在读。小学开始拆机箱、折腾系统，初中写出第一行 HTML，高中系统自学 Python 与爬虫。现在专注两件事：把产品做到极致，以及构建属于自己的 AI Agent 体系——让智能体替我做重复的事，我专注做创造的事。',
+    focus_label: '我的方向',
+    focus_1: '产品开发',
+    focus_1_desc: '从想法到落地：需求分析、架构设计、代码实现、部署运维，全链路独立完成。',
+    focus_2: '个人 Agent 发展',
+    focus_2_desc: '探索用大模型构建个人智能体：自动巡检、经营决策、信息聚合，让 AI 真正动手干活。',
     metrics_title: 'Nexora 关键数字',
     tech_title: '技术栈',
+    career_title: '成长轨迹',
+    projects_title: '此前作品',
+    projects_sub: '在 Nexora 之前与同期，我做过这些——它们共同构成了今天的判断力。',
+    timeline_title: 'Nexora 发展历程',
     quote: '"不是报表，是建议。"——我相信中小卖家需要的不是又一个后台，而是一个替他们思考、并能真正动手执行的经营智能体。',
-    role: '创始人 · 全栈工程师',
+    footer: '一个人，一支队伍。',
   },
   en: {
     back: 'Back',
     title: 'About Me',
-    hero_line1: 'One person, one team,',
-    hero_line2: 'from first line of code to a real store.',
-    hero_sub: 'Nexora is not a team effort — every line of backend, frontend, AI and data engineering was built by its founder. This page is the road so far.',
-    timeline_title: 'Nexora Timeline',
-    career_title: 'Career',
-    projects_title: 'Earlier Works',
-    projects_sub: 'Before Nexora, I built these — together they shaped my judgment.',
-    metrics_title: 'Key Numbers',
+    hero_line1: 'From opening my first PC,',
+    hero_line2: 'to building a SaaS all by myself.',
+    hero_sub: 'I am Li Haoqi, a sophomore majoring in Software Engineering at Jiangxi University of Finance and Economics, born in 2006, obsessed with computers since childhood. Every line of Nexora — backend, frontend, AI — was built by me alone. This page is the road so far.',
+    role: 'Founder · Solo Developer · Sophomore',
+    intro_label: 'About Me',
+    intro_text: 'Born in 2006, sophomore in Software Engineering at Jiangxi University of Finance and Economics. I took apart PCs and tweaked operating systems in primary school, wrote my first HTML in middle school, and self-taught Python in high school. Now I focus on two things: building products to perfection, and building my own AI Agent ecosystem — letting agents handle the repetitive work while I focus on creation.',
+    focus_label: 'My Focus',
+    focus_1: 'Product Development',
+    focus_1_desc: 'From idea to launch: requirements, architecture, implementation, deployment — the full loop, done solo.',
+    focus_2: 'Personal AI Agents',
+    focus_2_desc: 'Exploring LLM-powered personal agents: auto patrol, business decisions, info aggregation — making AI actually do the work.',
+    metrics_title: 'Nexora by the Numbers',
     tech_title: 'Tech Stack',
+    career_title: 'My Journey',
+    projects_title: 'Earlier Works',
+    projects_sub: 'Before and alongside Nexora, I built these — together they shaped my judgment.',
+    timeline_title: 'Nexora Timeline',
     quote: '"Not reports — advice." I believe sellers need an agent that thinks and acts for them, not another dashboard.',
-    role: 'Founder · Full-stack Engineer',
+    footer: 'One person, one team.',
   },
 };
 
@@ -45,28 +61,38 @@ const timeline = [
 
 const career = [
   {
-    t: '2024 — 至今',
+    icon: Rocket,
+    t: '2026.06 — 至今',
     title: 'Nexora · 创始人 & 独立开发者',
-    desc: '独立完成 46,000+ 行全栈代码：多租户 SaaS 架构、AI 经营智能体（千问 function-call 工具编排）、真实 Shopify 双向同步、利润分析引擎。从架构到部署全部一人完成。',
+    desc: '独立完成 46,000+ 行全栈代码：多租户 SaaS 架构、AI 经营智能体（千问真实调用）、真实 Shopify 双向同步、利润分析引擎。从架构、开发到部署，全部一人完成。',
   },
   {
+    icon: GraduationCap,
+    t: '2024.09 — 至今',
+    title: '江西财经大学 · 软件工程（大二在读）',
+    desc: '系统学习数据结构、算法、数据库、操作系统与软件工程方法；把课堂知识直接投入 Nexora 实战——多租户隔离是数据库课作业的延伸，2FA 是网络安全课的落地。',
+  },
+  {
+    icon: Code2,
     t: '2021 — 2024',
-    title: '星澜科技 · 高级全栈工程师',
-    desc: '主导电商 SaaS 中台从 0 到 1：设计多租户数据隔离与计费体系，服务 2,000+ 商家；将订单链路 P99 延迟从 1.8s 优化至 320ms；带队 4 人完成店铺插件市场。',
+    title: '自学编程 · 从 HTML 到 Python',
+    desc: '中学阶段自学编程：从静态网页、Python 爬虫到自动化脚本，给班级做过网站、给社团写过报名小工具。也是这段经历让我确定——将来要做自己的产品。',
   },
   {
-    t: '2019 — 2021',
-    title: '云启网络 · 全栈工程师',
-    desc: '负责跨境电商数据平台：日均处理 300 万条订单事件的消息管道（Kafka + ClickHouse）；搭建实时销量看板，被 3 个事业部采纳为标准报表工具。',
-  },
-  {
-    t: '2015 — 2019',
-    title: '计算机科学与技术 · 本科',
-    desc: '校级创新创业项目一等奖；ACM 校队队员；毕业设计「基于协同过滤的电商推荐系统」获评优秀毕业论文。',
+    icon: Sparkles,
+    t: '2006 · 起点',
+    title: '从小喜欢计算机',
+    desc: '小时候拆过家里的台式机、折腾过操作系统，从"电脑好玩"到"我想造点什么"，这条路走了十几年。',
   },
 ];
 
 const projects = [
+  {
+    icon: Bot,
+    name: 'MyAgent · 个人智能体工作台',
+    tag: 'AI Agent',
+    desc: '把日常重复事务交给智能体：自动巡检店铺经营、聚合信息流、生成每日简报。Nexora 经营智能体的个人版雏形，也是我"个人 Agent"方向的实验场。',
+  },
   {
     icon: Rocket,
     name: 'StockSense · 库存预测引擎',
@@ -96,7 +122,7 @@ const metrics = [
   { n: '1', l: '家真实 Shopify 店铺' },
 ];
 
-const techs = ['FastAPI', 'React 18', 'TypeScript', 'SQLAlchemy', '通义千问', 'Shopify Admin API', 'ECharts', 'Tailwind CSS', 'Playwright', 'APScheduler', 'Kafka', 'ClickHouse'];
+const techs = ['FastAPI', 'React 18', 'TypeScript', 'SQLAlchemy', '通义千问', 'Shopify Admin API', 'ECharts', 'Tailwind CSS', 'Playwright', 'APScheduler', 'Python', 'Git'];
 
 export const About: React.FC = () => {
   const [lang, setLang] = React.useState<'zh' | 'en'>('zh');
@@ -108,64 +134,80 @@ export const About: React.FC = () => {
   const t = translations[lang];
 
   return (
-    <div className="min-h-screen text-white overflow-hidden" style={{ background: 'linear-gradient(160deg, #0b1023 0%, #151238 45%, #0b1023 100%)' }}>
-      {/* 背景装饰 */}
-      <div className="fixed inset-0 pointer-events-none">
-        <div className="absolute -top-40 -left-40 w-[600px] h-[600px] rounded-full bg-violet-600/10 blur-[130px]" />
-        <div className="absolute top-1/3 -right-40 w-[500px] h-[500px] rounded-full bg-fuchsia-600/10 blur-[130px]" />
-        <div className="absolute -bottom-40 left-1/3 w-[500px] h-[500px] rounded-full bg-indigo-600/10 blur-[130px]" />
-      </div>
-
-      <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-16 relative z-10">
-        {/* 返回 */}
-        <Link to="/" className="inline-flex items-center gap-1.5 text-sm text-[#8e8e93] hover:text-white transition-colors mb-10">
-          <ArrowLeft size={15} />
-          {t.back}
-        </Link>
-
-        {/* Hero */}
-        <div className="text-center mb-16">
-          <span className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-white/5 border border-white/10 text-violet-300 text-sm font-medium">
+    <div className="min-h-screen bg-[#F5F5F7] text-[#1d1d1f] overflow-hidden">
+      <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-12 sm:py-16 relative z-10">
+        {/* 顶部导航：返回首页 */}
+        <nav className="flex items-center justify-between mb-12">
+          <Link to="/" className="inline-flex items-center gap-1.5 text-sm text-[#6e6e73] hover:text-[#1d1d1f] transition-colors">
+            <ArrowLeft size={15} />
+            {t.back}
+          </Link>
+          <span className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-white border border-gray-200 text-violet-700 text-sm font-medium shadow-sm">
             <Sparkles size={14} />
             {t.title}
           </span>
-          <h1 className="mt-6 text-3xl sm:text-5xl font-extrabold tracking-tight leading-tight">
+        </nav>
+
+        {/* Hero */}
+        <div className="text-center mb-14">
+          <h1 className="text-3xl sm:text-5xl font-extrabold tracking-tight leading-tight">
             {t.hero_line1}
             <br />
-            <span className="bg-gradient-to-r from-violet-400 via-purple-400 to-fuchsia-400 bg-clip-text text-transparent">
+            <span className="bg-gradient-to-r from-violet-600 to-fuchsia-500 bg-clip-text text-transparent">
               {t.hero_line2}
             </span>
           </h1>
-          <p className="mt-6 text-base text-[#8e8e93] max-w-2xl mx-auto leading-relaxed">{t.hero_sub}</p>
+          <p className="mt-6 text-base text-[#6e6e73] max-w-2xl mx-auto leading-relaxed">{t.hero_sub}</p>
         </div>
 
         {/* 创始人名片 */}
-        <div className="rounded-3xl bg-gradient-to-br from-white/[0.06] to-white/[0.02] border border-white/10 p-8 sm:p-10 backdrop-blur mb-16">
+        <div className="rounded-3xl bg-white border border-gray-100 shadow-sm shadow-violet-500/5 p-8 sm:p-10 mb-14">
           <div className="flex flex-col sm:flex-row items-center gap-6">
-            <div className="w-24 h-24 rounded-3xl bg-gradient-to-br from-violet-500 via-purple-500 to-fuchsia-500 flex items-center justify-center text-4xl font-extrabold text-white shadow-xl shadow-violet-500/30 select-none flex-shrink-0">
+            <div className="w-24 h-24 rounded-3xl bg-gradient-to-br from-violet-500 via-purple-500 to-fuchsia-500 flex items-center justify-center text-4xl font-extrabold text-white shadow-xl shadow-violet-500/25 select-none flex-shrink-0">
               浩
             </div>
             <div className="text-center sm:text-left">
-              <p className="text-2xl font-extrabold text-white">李浩棋</p>
-              <p className="text-sm text-violet-300 font-medium mt-0.5">{t.role}</p>
-              <p className="text-sm text-[#a1a1aa] mt-3 leading-relaxed max-w-xl">{t.quote}</p>
+              <p className="text-2xl font-extrabold text-[#1d1d1f]">李浩棋</p>
+              <p className="text-sm text-violet-600 font-medium mt-0.5">{t.role}</p>
+              <p className="text-sm text-[#6e6e73] mt-3 leading-relaxed max-w-xl">{t.quote}</p>
             </div>
           </div>
+
+          {/* 自我介绍 */}
+          <div className="mt-8 rounded-2xl bg-[#F5F5F7] border border-gray-100 px-6 py-5">
+            <p className="text-xs font-semibold text-[#8e8e93] uppercase tracking-wider mb-2">{t.intro_label}</p>
+            <p className="text-sm text-[#515154] leading-relaxed">{t.intro_text}</p>
+          </div>
+
+          {/* 我的方向 */}
+          <div className="grid sm:grid-cols-2 gap-4 mt-4">
+            {[t.focus_1, t.focus_2].map((f, i) => (
+              <div key={f} className="rounded-2xl border border-gray-100 bg-white px-5 py-4 hover:border-violet-300/70 hover:shadow-sm transition-all duration-300">
+                <p className="text-sm font-bold text-[#1d1d1f] flex items-center gap-2">
+                  <span className={`w-2 h-2 rounded-full ${i === 0 ? 'bg-gradient-to-br from-violet-500 to-fuchsia-500' : 'bg-gradient-to-br from-amber-400 to-orange-500'}`} />
+                  {f}
+                </p>
+                <p className="text-xs text-[#6e6e73] mt-1.5 leading-relaxed">{i === 0 ? t.focus_1_desc : t.focus_2_desc}</p>
+              </div>
+            ))}
+          </div>
+
           {/* 数字 */}
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 mt-8">
             {metrics.map((s) => (
-              <div key={s.l} className="rounded-2xl bg-white/[0.04] border border-white/10 px-4 py-5 text-center hover:border-violet-400/40 hover:bg-white/[0.07] transition-all duration-300">
-                <p className="text-2xl sm:text-3xl font-extrabold tabular-nums tracking-tight bg-gradient-to-r from-white to-violet-200 bg-clip-text text-transparent">{s.n}</p>
+              <div key={s.l} className="rounded-2xl bg-[#F5F5F7] border border-gray-100 px-4 py-5 text-center hover:border-violet-300/70 hover:bg-white transition-all duration-300">
+                <p className="text-2xl sm:text-3xl font-extrabold tabular-nums tracking-tight bg-gradient-to-r from-violet-600 to-fuchsia-500 bg-clip-text text-transparent">{s.n}</p>
                 <p className="text-xs text-[#8e8e93] mt-1.5">{s.l}</p>
               </div>
             ))}
           </div>
+
           {/* 技术栈 */}
           <div className="mt-8">
-            <p className="text-xs font-semibold text-white/60 uppercase tracking-wider mb-3">{t.tech_title}</p>
+            <p className="text-xs font-semibold text-[#8e8e93] uppercase tracking-wider mb-3">{t.tech_title}</p>
             <div className="flex flex-wrap gap-2">
               {techs.map((tech) => (
-                <span key={tech} className="px-3 py-1.5 rounded-full bg-white/[0.05] border border-white/10 text-xs text-[#c4c4cc] font-medium hover:border-violet-400/50 hover:text-white transition-all duration-200">
+                <span key={tech} className="px-3 py-1.5 rounded-full bg-[#F5F5F7] border border-gray-200 text-xs text-[#515154] font-medium hover:border-violet-400/60 hover:text-violet-700 transition-all duration-200">
                   {tech}
                 </span>
               ))}
@@ -173,24 +215,27 @@ export const About: React.FC = () => {
           </div>
         </div>
 
-        {/* 履历 */}
-        <div className="mb-16">
-          <h2 className="text-lg font-bold text-white/90 mb-8 flex items-center gap-2">
-            <Briefcase size={16} className="text-amber-400" />
+        {/* 成长轨迹 */}
+        <div className="mb-14">
+          <h2 className="text-lg font-bold text-[#1d1d1f] mb-8 flex items-center gap-2">
+            <GraduationCap size={17} className="text-[#EB9D2A]" />
             {t.career_title}
           </h2>
           <div className="relative">
-            <div className="absolute left-[7px] top-2 bottom-2 w-px bg-gradient-to-b from-amber-400/50 via-amber-400/25 to-transparent hidden sm:block" />
-            <div className="space-y-6">
+            <div className="absolute left-[7px] top-2 bottom-2 w-px bg-gradient-to-b from-amber-400/70 via-amber-400/30 to-transparent hidden sm:block" />
+            <div className="space-y-5">
               {career.map((c) => (
                 <div key={c.t} className="relative sm:pl-12">
-                  <div className="hidden sm:block absolute left-0 top-1.5 w-[15px] h-[15px] rounded-full bg-gradient-to-br from-amber-400 to-orange-500 ring-4 ring-[#0b1023]" />
-                  <div className="rounded-2xl bg-white/[0.03] border border-white/10 px-6 py-5 hover:border-amber-400/40 hover:bg-white/[0.05] transition-all duration-300">
+                  <div className="hidden sm:block absolute left-0 top-1.5 w-[15px] h-[15px] rounded-full bg-gradient-to-br from-amber-400 to-orange-500 ring-4 ring-[#F5F5F7]" />
+                  <div className="rounded-2xl bg-white border border-gray-100 px-6 py-5 shadow-sm hover:border-amber-300/70 hover:shadow-md transition-all duration-300">
                     <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-4 mb-2">
-                      <p className="text-sm font-bold text-white">{c.title}</p>
-                      <span className="text-xs text-amber-300/80 font-mono">{c.t}</span>
+                      <p className="text-sm font-bold text-[#1d1d1f] flex items-center gap-2">
+                        <c.icon size={14} className="text-[#EB9D2A]" />
+                        {c.title}
+                      </p>
+                      <span className="text-xs text-amber-600/80 font-mono">{c.t}</span>
                     </div>
-                    <p className="text-sm text-[#a1a1aa] leading-relaxed">{c.desc}</p>
+                    <p className="text-sm text-[#6e6e73] leading-relaxed">{c.desc}</p>
                   </div>
                 </div>
               ))}
@@ -199,23 +244,23 @@ export const About: React.FC = () => {
         </div>
 
         {/* 此前作品 */}
-        <div className="mb-16">
-          <h2 className="text-lg font-bold text-white/90 mb-2 flex items-center gap-2">
-            <Rocket size={16} className="text-[#EB9D2A]" />
+        <div className="mb-14">
+          <h2 className="text-lg font-bold text-[#1d1d1f] mb-2 flex items-center gap-2">
+            <Rocket size={17} className="text-[#EB9D2A]" />
             {t.projects_title}
           </h2>
           <p className="text-sm text-[#8e8e93] mb-8">{t.projects_sub}</p>
-          <div className="grid md:grid-cols-3 gap-5">
+          <div className="grid md:grid-cols-2 gap-5">
             {projects.map((pr) => (
-              <div key={pr.name} className="rounded-2xl bg-white/[0.03] border border-white/10 p-6 hover:border-[#EB9D2A]/50 hover:bg-white/[0.06] hover:-translate-y-1 transition-all duration-300 group">
+              <div key={pr.name} className="rounded-2xl bg-white border border-gray-100 p-6 shadow-sm hover:border-[#EB9D2A]/60 hover:shadow-md hover:-translate-y-0.5 transition-all duration-300 group">
                 <div className="flex items-center justify-between mb-4">
                   <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#EB9D2A] to-orange-500 flex items-center justify-center shadow-lg shadow-amber-500/20 group-hover:scale-110 group-hover:-rotate-3 transition-transform duration-300">
                     <pr.icon size={18} className="text-white" />
                   </div>
-                  <span className="text-[10px] font-bold px-2 py-1 rounded-full bg-white/5 border border-white/10 text-[#8e8e93]">{pr.tag}</span>
+                  <span className="text-[10px] font-bold px-2 py-1 rounded-full bg-[#F5F5F7] border border-gray-200 text-[#6e6e73]">{pr.tag}</span>
                 </div>
-                <p className="text-sm font-bold text-white">{pr.name}</p>
-                <p className="text-xs text-[#a1a1aa] mt-2 leading-relaxed">{pr.desc}</p>
+                <p className="text-sm font-bold text-[#1d1d1f]">{pr.name}</p>
+                <p className="text-xs text-[#6e6e73] mt-2 leading-relaxed">{pr.desc}</p>
               </div>
             ))}
           </div>
@@ -223,23 +268,23 @@ export const About: React.FC = () => {
 
         {/* Nexora 时间线 */}
         <div>
-          <h2 className="text-lg font-bold text-white/90 mb-8 flex items-center gap-2">
-            <Sparkles size={16} className="text-violet-400" />
+          <h2 className="text-lg font-bold text-[#1d1d1f] mb-8 flex items-center gap-2">
+            <Sparkles size={17} className="text-violet-600" />
             {t.timeline_title}
           </h2>
           <div className="relative">
-            <div className="absolute left-[7px] top-2 bottom-2 w-px bg-gradient-to-b from-violet-500/60 via-fuchsia-500/40 to-transparent hidden sm:block" />
-            <div className="space-y-6">
+            <div className="absolute left-[7px] top-2 bottom-2 w-px bg-gradient-to-b from-violet-500/60 via-fuchsia-500/30 to-transparent hidden sm:block" />
+            <div className="space-y-5">
               {timeline.map((m) => (
                 <div key={m.v} className="relative sm:pl-12">
-                  <div className="hidden sm:block absolute left-0 top-1.5 w-[15px] h-[15px] rounded-full bg-gradient-to-br from-violet-500 to-fuchsia-500 ring-4 ring-[#0b1023]" />
-                  <div className="rounded-2xl bg-white/[0.03] border border-white/10 px-6 py-5 hover:border-violet-500/40 hover:bg-white/[0.05] transition-all duration-300">
+                  <div className="hidden sm:block absolute left-0 top-1.5 w-[15px] h-[15px] rounded-full bg-gradient-to-br from-violet-500 to-fuchsia-500 ring-4 ring-[#F5F5F7]" />
+                  <div className="rounded-2xl bg-white border border-gray-100 px-6 py-5 shadow-sm hover:border-violet-300/70 hover:shadow-md transition-all duration-300">
                     <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-4 mb-2">
-                      <p className="text-sm font-bold text-white">{m.title}</p>
-                      <span className="text-xs text-violet-300 font-bold">{m.v}</span>
+                      <p className="text-sm font-bold text-[#1d1d1f]">{m.title}</p>
+                      <span className="text-xs text-violet-600 font-bold">{m.v}</span>
                       <span className="text-xs text-[#8e8e93] font-mono">{m.t}</span>
                     </div>
-                    <p className="text-sm text-[#a1a1aa] leading-relaxed">{m.desc}</p>
+                    <p className="text-sm text-[#6e6e73] leading-relaxed">{m.desc}</p>
                   </div>
                 </div>
               ))}
@@ -248,9 +293,9 @@ export const About: React.FC = () => {
         </div>
 
         {/* 页脚 */}
-        <div className="mt-20 pt-8 border-t border-white/10 text-center">
+        <div className="mt-20 pt-8 border-t border-gray-200 text-center">
           <p className="text-sm text-[#8e8e93]">
-            {new Date().getFullYear()} Nexora · 一个人，一支队伍。
+            {new Date().getFullYear()} Nexora · {t.footer}
           </p>
         </div>
       </div>

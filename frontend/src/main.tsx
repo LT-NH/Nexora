@@ -1,12 +1,20 @@
 import React, { useEffect } from 'react';
 import ReactDOM from 'react-dom/client';
-import { BrowserRouter } from 'react-router-dom';
+import { BrowserRouter, HashRouter } from 'react-router-dom';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { AuthProvider } from '@/contexts/AuthContext';
 import { WorkspaceProvider } from '@/contexts/WorkspaceContext';
 import { ToastProvider, useToast } from '@/components/ui/Toast';
 import App from './App';
 import './index.css';
+
+// ── Router 选择 ──────────────────────────────────────────────────
+// 静态托管（花生壳 Drop 等无 SPA fallback 的纯文件服务器）必须用 HashRouter：
+// 这类服务器只认精确文件路径，/dashboard、/login 等子路由刷新或直链访问会返回
+// {"code":404,"message":"file not found"}。Hash 路由把路径放在 # 之后，不发给服务器。
+// 仅在构建静态托管版时设置 VITE_STATIC_HOST=1 启用；本地开发与内网穿透版保持
+// BrowserRouter（干净 URL，且需要通过服务端代理 /api/ 访问后端）。
+const Router = import.meta.env.VITE_STATIC_HOST ? HashRouter : BrowserRouter;
 
 // ── Stale-state guard ───────────────────────────────────────────
 // When a new app version is detected, OR when the URL contains ?reset=1,
@@ -48,7 +56,7 @@ const AppUpdateNotifier: React.FC = () => {
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <ErrorBoundary>
-      <BrowserRouter>
+      <Router>
         <ToastProvider>
           <AppUpdateNotifier />
           <AuthProvider>
@@ -57,7 +65,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
             </WorkspaceProvider>
           </AuthProvider>
         </ToastProvider>
-      </BrowserRouter>
+      </Router>
     </ErrorBoundary>
   </React.StrictMode>
 );
