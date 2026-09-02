@@ -923,7 +923,8 @@ html { scroll-behavior: smooth; }
     z-index: 1;
   }
   html[data-vt='theme']::view-transition-new(root) {
-    animation: themeReveal 0.65s cubic-bezier(0.22, 1, 0.36, 1);
+    /* easeInOutCubic：首尾速度均衡，避免 easeOut 尾巴拖沓导致远角（左下）延迟切换 */
+    animation: themeReveal 0.5s cubic-bezier(0.65, 0, 0.35, 1);
     mix-blend-mode: normal;
     z-index: 9999;
   }
