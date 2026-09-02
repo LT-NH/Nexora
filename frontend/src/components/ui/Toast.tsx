@@ -9,6 +9,8 @@ interface Toast {
   title: string;
   message?: string;
   action?: { label: string; onClick: () => void };
+  /** 退场动画标记：true 时播放滑出，随后真正移除 */
+  leaving?: boolean;
 }
 
 interface ToastContextType {
@@ -42,6 +44,14 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({
     };
   }, []);
 
+  /** 两段式移除：先播放退场动画，220ms 后真正移除（下方 Toast 平滑上移补位） */
+  const dismissToast = useCallback((id: string) => {
+    setToasts((prev) => prev.map((t) => (t.id === id ? { ...t, leaving: true } : t)));
+    setTimeout(() => {
+      setToasts((prev) => prev.filter((t) => t.id !== id));
+    }, 230);
+  }, []);
+
   const addToast = useCallback(
     (type: ToastType, title: string, message?: string, action?: { label: string; onClick: () => void }) => {
       const id = Math.random().toString(36).substring(2, 9);
@@ -50,20 +60,16 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({
       setToasts((prev) => [...prev, { id, type, title, message: safeMessage, action }]);
       const timer = setTimeout(() => {
         timersRef.current.delete(id);
-        setToasts((prev) => prev.filter((t) => t.id !== id));
+        dismissToast(id);
       }, 5000);
       timersRef.current.set(id, timer);
     },
-    []
+    [dismissToast]
   );
 
-  const removeToast = useCallback((id: string) => {
-    setToasts((prev) => prev.filter((t) => t.id !== id));
-  }, []);
-
   const value = useMemo(
-    () => ({ toasts, addToast, removeToast }),
-    [toasts, addToast, removeToast]
+    () => ({ toasts, addToast, removeToast: dismissToast }),
+    [toasts, addToast, dismissToast]
   );
 
   return (
@@ -100,7 +106,7 @@ const ToastContainer: React.FC = () => {
           key={toast.id}
           className={`
             flex items-start gap-3 p-4 bg-white dark:bg-gray-800 rounded-xl shadow-lg border dark:border-gray-700
-            animate-slide-in-right
+            ${toast.leaving ? 'animate-toast-out' : 'animate-slide-in-right'}
             ${bgMap[toast.type]}
           `}
         >

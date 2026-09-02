@@ -43,6 +43,39 @@ export function withViewTransition(update: () => void, kind: 'page' | 'inner' = 
 }
 
 /* ────────────────────────────────────────────────────────────
+   主题切换涟漪：从点击位置圆形揭示新主题（View Transitions）
+   ──────────────────────────────────────────────────────────── */
+export function withThemeTransition(update: () => void, x: number, y: number): void {
+  const doc = document as Document & { startViewTransition?: StartViewTransition };
+
+  const reduced =
+    typeof window.matchMedia === 'function' &&
+    window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  if (typeof doc.startViewTransition !== 'function' || reduced) {
+    update();
+    return;
+  }
+
+  const root = document.documentElement;
+  root.style.setProperty('--tx', `${Math.round(x)}px`);
+  root.style.setProperty('--ty', `${Math.round(y)}px`);
+  root.dataset.vt = 'theme';
+
+  try {
+    const transition = doc.startViewTransition(() => {
+      flushSync(update);
+    });
+    void transition.finished.finally(() => {
+      delete root.dataset.vt;
+    });
+  } catch {
+    delete root.dataset.vt;
+    update();
+  }
+}
+
+/* ────────────────────────────────────────────────────────────
    路由加载进度条（懒加载 chunk 期间显示，NProgress 风格细条）
    ──────────────────────────────────────────────────────────── */
 type ProgressListener = (visible: boolean) => void;

@@ -1554,16 +1554,16 @@ export const Products: React.FC = () => {
         </Card>
       )}
 
-      {/* Image Lightbox */}
+      {/* Image Lightbox（背景淡入 + 图片缩放浮现） */}
       {enlargedImage && (
         <div
-          className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4 cursor-pointer"
+          className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 cursor-pointer animate-fade-in"
           onClick={() => setEnlargedImage(null)}
         >
           <img
             src={enlargedImage}
             alt="Enlarged"
-            className="max-w-[90vw] max-h-[90vh] object-contain rounded-lg"
+            className="max-w-[90vw] max-h-[90vh] object-contain rounded-lg shadow-2xl animate-img-zoom-in"
             onClick={(e) => e.stopPropagation()}
           />
           <button

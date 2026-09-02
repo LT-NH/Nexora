@@ -1,6 +1,7 @@
 import React from 'react';
 import { TrendingUp, TrendingDown } from 'lucide-react';
 import { Skeleton } from './Skeleton';
+import { CountUp } from './CountUp';
 
 interface StatCardProps {
   icon: React.ReactNode;
@@ -28,7 +29,13 @@ export const StatCard: React.FC<StatCardProps> = ({
   gradientIcon = true,
   iconGradient,
   trendLabel = '较上周',
-}) => (
+}) => {
+  // 自动检测：value 是数字时启用 CountUp 滚动动画（diff + 首次进入都生效）
+  const renderedValue =
+    typeof value === 'number' && Number.isFinite(value)
+      ? <CountUp value={value as number} />
+      : value;
+  return (
   <div
     className={`group bg-white dark:bg-gray-800 rounded-2xl border border-gray-200 dark:border-gray-700 shadow-sm p-6 hover:shadow-lg hover:shadow-slate-900/10 hover:border-gray-300 dark:hover:border-gray-600 transition-all duration-200 card-lift spotlight-card spotlight-soft ${className}`}
     onMouseMove={(e) => {
@@ -40,7 +47,7 @@ export const StatCard: React.FC<StatCardProps> = ({
     <div className="flex items-center justify-between">
       <div>
         <p className="text-[13px] font-semibold text-[#6B7280] dark:text-gray-400">{label}</p>
-        <p className="mt-2 text-[26px] font-extrabold tracking-tight text-[#111827] dark:text-gray-100 tabular-nums animate-number">{value}</p>
+        <p className="mt-2 text-[26px] font-extrabold tracking-tight text-[#111827] dark:text-gray-100 tabular-nums animate-number">{renderedValue}</p>
         {subtext && (
           <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">{subtext}</p>
         )}
@@ -71,7 +78,8 @@ export const StatCard: React.FC<StatCardProps> = ({
       </div>
     )}
   </div>
-);
+  );
+};
 
 /** Loading skeleton variant of StatCard */
 export const SkeletonStatCard: React.FC = () => (

@@ -13,6 +13,7 @@ import api from '@/services/api';
 import { LanguageToggle } from '@/components/LanguageToggle';
 import { useWebSocketNotifications } from '@/hooks/useWebSocketNotifications';
 import { useI18n } from '@/i18n';
+import { withThemeTransition } from '@/lib/viewTransition';
 
 interface TopbarProps {
   title: string;
@@ -125,9 +126,12 @@ export const Topbar: React.FC<TopbarProps> = ({ title, breadcrumb, onMenuClick }
         {/* Notifications */}
         <NotificationBell />
 
-        {/* Theme Toggle */}
+        {/* Theme Toggle（点击位置为圆心的涟漪过渡） */}
         <button
-          onClick={toggleTheme}
+          onClick={(e) => {
+            const r = (e.currentTarget as HTMLButtonElement).getBoundingClientRect();
+            withThemeTransition(toggleTheme, r.left + r.width / 2, r.top + r.height / 2);
+          }}
           className="p-2 rounded-lg text-gray-500 hover:text-gray-600 hover:bg-gray-100 dark:text-gray-400 dark:hover:text-gray-300 dark:hover:bg-gray-800 transition-colors"
           aria-label={themeLabel}
           title={themeLabel}

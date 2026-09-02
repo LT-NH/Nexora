@@ -19,7 +19,8 @@ function formatNumber(n: number, decimals: number): string {
 
 /**
  * CountUp —— 数字滚动动画（requestAnimationFrame，60fps）。
- * 挂载后从 0 滚动到 value，配合 StatCard 使用增强数据感。
+ * 挂载后从 0 滚动到 value；**value 变化时从旧值平滑滚到新值**（diff 动画），
+ * 配合 StatCard / 自动同步刷新使用，数据更新时数字"活"起来。
  */
 export const CountUp: React.FC<CountUpProps> = ({
   value,
@@ -29,19 +30,28 @@ export const CountUp: React.FC<CountUpProps> = ({
   suffix = '',
   className,
 }) => {
+  // display 用 ref 驱动 rAF，避免每帧 setState 之外的闭包旧值
   const [display, setDisplay] = useState(0);
+  const fromRef = useRef(0);
   const rafRef = useRef<number | null>(null);
 
   useEffect(() => {
-    const start = performance.now();
-    const from = 0;
+    const from = fromRef.current;
     const to = value;
+    if (from === to) return;
+    const start = performance.now();
     const tick = (now: number) => {
       const p = Math.min((now - start) / duration, 1);
       // easeOutCubic：先快后慢，质感更好
       const eased = 1 - Math.pow(1 - p, 3);
-      setDisplay(from + (to - from) * eased);
-      if (p < 1) rafRef.current = requestAnimationFrame(tick);
+      const current = from + (to - from) * eased;
+      setDisplay(current);
+      fromRef.current = current;
+      if (p < 1) {
+        rafRef.current = requestAnimationFrame(tick);
+      } else {
+        fromRef.current = to;
+      }
     };
     rafRef.current = requestAnimationFrame(tick);
     return () => {
