@@ -13,6 +13,7 @@ import { useNavigate } from 'react-router-dom';
 import { useGlobalSearch } from '@/hooks/useGlobalSearch';
 import { useI18n } from '@/i18n';
 import { useTheme } from '@/hooks/useTheme';
+import { withThemeTransition } from '@/lib/viewTransition';
 
 // Filtered results grouped by type
 type CommandItem = {
@@ -163,7 +164,7 @@ export const CommandPalette: React.FC = () => {
         description: '在浅色 / 深色模式之间切换',
         icon: <Moon size={14} className="text-primary-500 flex-shrink-0" />,
         action: () => {
-          toggleTheme();
+          withThemeTransition(toggleTheme, window.innerWidth / 2, 80);
           setOpen(false);
         },
       },

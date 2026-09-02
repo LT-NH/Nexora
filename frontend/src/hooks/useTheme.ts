@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useLayoutEffect, useCallback } from 'react';
 
 type Theme = 'light' | 'dark' | 'system';
 
@@ -33,7 +33,11 @@ function applyThemeClass(resolved: 'light' | 'dark') {
 export function useTheme() {
   const [theme, setThemeState] = useState<Theme>(getStoredTheme);
 
-  useEffect(() => {
+  // useLayoutEffect 而非 useEffect：View Transitions 的 startViewTransition 会在
+  // flushSync(toggleTheme) 返回后立即捕获"新快照"；passive effect 异步执行会让
+  // dark class 来不及应用 → 涟漪揭示的是旧主题快照，真正变色变成动画后的跳变。
+  // layout effect 在 commit 阶段同步执行，快照正确。
+  useLayoutEffect(() => {
     const resolved = getResolvedTheme(theme);
     applyThemeClass(resolved);
 
