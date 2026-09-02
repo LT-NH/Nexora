@@ -909,13 +909,21 @@ html { scroll-behavior: smooth; }
 
 /* 18. 主题切换涟漪：以点击位置为圆心，新主题圆形揭示铺满全屏 */
 @media (prefers-reduced-motion: no-preference) {
+  /* 关键修复：主题切换时取消布局子层的独立过渡命名。
+     否则 sidebar/topbar/content 会以默认交叉淡化叠在 root 快照之上，
+     圆形揭示被上层遮挡，观感变成生硬的整体切换 */
+  html[data-vt='theme'] .vt-sidebar,
+  html[data-vt='theme'] .vt-topbar,
+  html[data-vt='theme'] .vt-content {
+    view-transition-name: none;
+  }
   html[data-vt='theme']::view-transition-old(root) {
     animation: none;
     mix-blend-mode: normal;
     z-index: 1;
   }
   html[data-vt='theme']::view-transition-new(root) {
-    animation: themeReveal 0.55s cubic-bezier(0.22, 1, 0.36, 1);
+    animation: themeReveal 0.65s cubic-bezier(0.22, 1, 0.36, 1);
     mix-blend-mode: normal;
     z-index: 9999;
   }

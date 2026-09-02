@@ -60,6 +60,14 @@ export function withThemeTransition(update: () => void, x: number, y: number): v
   const root = document.documentElement;
   root.style.setProperty('--tx', `${Math.round(x)}px`);
   root.style.setProperty('--ty', `${Math.round(y)}px`);
+  // 精确半径：圆心到视口最远角的距离，保证揭示弧线自然铺满全屏
+  const maxR = Math.max(
+    Math.hypot(x, y),
+    Math.hypot(window.innerWidth - x, y),
+    Math.hypot(x, window.innerHeight - y),
+    Math.hypot(window.innerWidth - x, window.innerHeight - y),
+  );
+  root.style.setProperty('--theme-reveal-r', `${Math.ceil(maxR + 24)}px`);
   root.dataset.vt = 'theme';
 
   try {
