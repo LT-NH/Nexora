@@ -210,7 +210,74 @@ async def daily_summary(
     existing_types = {e.insight_type for e in existing}
 
     new_insights: list[dict] = []
-    for ins in _build_insights(workspace.id, ind):
+
+    # ────────────────────────────────────────────────────────────────
+    # 职能切分（v6）：决策助手 = AI 行动层。
+    # 真实千问基于指标快照【自主发现问题 + 给出可执行建议】（不再用规则模板
+    # 复刻健康引擎的异常发现，避免两套同源规则重复）。
+    # 千问不可用/解析失败时降级到规则模板 _build_insights 兜底，服务不中断。
+    # ────────────────────────────────────────────────────────────────
+    try:
+        from app.services.ai import _extract_json
+        _snapshot = {
+            "refund_rate_30d": round(ind["refund_rate"], 1),
+            "stockout_risk": [
+                {"name": s["name"], "days_left": s["days"], "stock": s["stock"], "product_id": s["product_id"]}
+                for s in ind["stockout_risk"][:6]
+            ],
+            "overstock": [
+                {"name": o["name"], "days_to_sell": o["days"], "stock": o["stock"], "product_id": o["product_id"]}
+                for o in ind["overstock"][:6]
+            ],
+            "churn_risk": [
+                {"name": c["name"], "inactive_days": c["last_order_days"], "orders": c["total_orders"]}
+                for c in ind["churn_risk"][:6]
+            ],
+        }
+        _prompt = (
+            "你是多店铺电商经营决策副驾（AI 决策助手）。下面是系统从真实数据库采集的店铺指标快照（JSON）。\n"
+            "请从快照中自主发现【今天最值得处理的 2~3 个经营问题】，不局限于快照列出的风险类别，也可结合常识判断数据里的深层问题。\n"
+            "每条输出字段：\n"
+            "  insight_type ∈ stockout|refund|overstock|churn|profit|growth（问题类型）\n"
+            "  action_type ∈ restock|clearance|retention|refund_check|keep（动作类型，keep=仅观察无需动作）\n"
+            "  title：≤26 字、直接有力（如「XX 库存只够撑 9 天，今日下单补货」）\n"
+            "  detail：≤100 字，含数据证据 + 因果 + 建议动作\n"
+            "  confidence：0.3~0.99 该问题成立的可信度\n"
+            "  params：{product_id?} 或 {customer?}，尽量引用快照中的实体\n"
+            "只输出 JSON 数组，不要任何解释文字。\n快照：" + json.dumps(_snapshot, ensure_ascii=False)
+        )
+        _raw = await _qwen_enhance(_prompt)
+        _parsed = _extract_json(_raw) if _raw else None
+        _valid_types = {"stockout", "refund", "overstock", "churn", "profit", "growth"}
+        _valid_actions = {"restock", "clearance", "retention", "refund_check", "keep"}
+        if isinstance(_parsed, list):
+            for _it in _parsed:
+                if not isinstance(_it, dict):
+                    continue
+                _itype = str(_it.get("insight_type", "")).lower()
+                if _itype not in _valid_types:
+                    continue
+                if not _it.get("title") or not _it.get("detail"):
+                    continue
+                _atype = str(_it.get("action_type", "keep")).lower()
+                _params = _it.get("params")
+                new_insights.append({
+                    "insight_type": _itype,
+                    "action_type": _atype if _atype in _valid_actions else "keep",
+                    "title": str(_it["title"])[:60],
+                    "detail": str(_it["detail"])[:220],
+                    "confidence": round(_clamp(float(_it.get("confidence", 0.7)), 0.3, 0.99), 2),
+                    "action_params": json.dumps(_params if isinstance(_params, dict) else {}, ensure_ascii=False),
+                })
+    except Exception:
+        pass
+    # 降级：千问不可用/解析失败 → 规则模板兜底（保证每日摘要总有产出）
+    if not new_insights:
+        new_insights = _build_insights(workspace.id, ind)
+
+    # 落库（AI 洞察去重：24h 内同类不重复）
+    _stored: list[dict] = []
+    for ins in new_insights[:3]:
         if ins["insight_type"] in existing_types:
             continue
         row = AiInsight(
@@ -230,34 +297,12 @@ async def daily_summary(
         existing_types.add(ins["insight_type"])
         ins["id"] = row.id
         ins["status"] = "pending"
-        new_insights.append(ins)
-    # 千问润色：把规则结论改写成更有洞察的标题/详情（失败则保留规则模板）
-    if new_insights:
-        try:
-            from app.services.ai import _extract_json
-            _prompt = (
-                "以下是系统基于真实数据生成的 3 条运营结论（JSON 数组）。"
-                "请把每条改写成更有洞察力、更具体的标题和详情，"
-                "保留每条的 insight_type 和 action_type 不变，中文回复。\n"
-                + json.dumps(new_insights, ensure_ascii=False)
-                + "\n返回严格 JSON 数组，元素格式：{\"insight_type\": 原值, \"action_type\": 原值, \"title\": 新标题, \"detail\": 新详情}"
-            )
-            _raw = await _qwen_enhance(_prompt)
-            _polished = _extract_json(_raw) if _raw else None
-            if isinstance(_polished, list):
-                _map = {str(i.get("insight_type")): i for i in _polished if isinstance(i, dict)}
-                for _ins in new_insights:
-                    _p = _map.get(_ins["insight_type"])
-                    if _p and _p.get("title") and _p.get("detail"):
-                        _ins["title"] = _p["title"]
-                        _ins["detail"] = _p["detail"]
-        except Exception:
-            pass
+        _stored.append(ins)
 
     await db.commit()
 
     # 今日可见：本次生成的 + 24h 内已有未完成的
-    visible = new_insights + [
+    visible = _stored + [
         {
             "id": e.id, "insight_type": e.insight_type, "title": e.title, "detail": e.detail,
             "confidence": e.confidence, "action_type": e.action_type, "action_params": e.action_params,
