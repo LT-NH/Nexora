@@ -319,121 +319,82 @@ export const HealthScoreCard: React.FC<{ slug: string }> = ({ slug }) => {
         </div>
       )}
 
-      {/* ── Score + Dimensions ── */}
-      <div className="p-6 pb-5 grid grid-cols-1 lg:grid-cols-[320px_1fr] gap-8">
-        {/* Score ring + trend */}
-        <div className="flex flex-col items-center lg:items-start">
-          <div className="relative w-[160px] h-[160px]">
-            <svg viewBox="0 0 160 160" className="w-full h-full -rotate-90">
-              <circle cx="80" cy="80" r="70" fill="none" stroke="rgba(0,0,0,0.06)" strokeWidth="12" />
-              <circle
-                cx="80" cy="80" r="70" fill="none"
-                stroke={color} strokeWidth="12" strokeLinecap="round"
-                strokeDasharray={ringLen}
-                strokeDashoffset={ringLen * (1 - (data.score / 100))}
-                className="transition-all duration-1000"
-              />
-            </svg>
-            <div className="absolute inset-0 flex flex-col items-center justify-center">
-              <span className="text-[52px] font-bold leading-none text-slate-900 dark:text-gray-100 tabular-nums tracking-tight">
+      {/* ── 雷达图主视觉 + 维度条 + 评分方法（占主要版面） ── */}
+      <div className="p-6 pb-5">
+        {/* 六维健康雷达图：凹陷即薄弱 —— 占满宽度作为主视觉 */}
+        <div className="rounded-2xl border border-gray-100 dark:border-gray-700/60 bg-white dark:bg-gray-800/40 p-5">
+          <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+            <div className="flex items-center gap-2">
+              <ShieldCheck size={16} className="text-primary-500" />
+              <p className="text-[14px] font-bold text-gray-700 dark:text-gray-200">{t('radar_title')}</p>
+              <span className="text-[11px] text-gray-400 dark:text-gray-500 hidden sm:inline">{t('radar_hint')}</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-[12px] text-gray-500 dark:text-gray-400">综合分</span>
+              <span className="text-xl font-extrabold leading-none tabular-nums" style={{ color }}>
                 {data.score}
               </span>
               <span
-                className="mt-2 text-[13px] font-semibold px-2.5 py-1 rounded-full"
+                className="text-[11px] font-semibold px-2 py-0.5 rounded-full"
                 style={{ backgroundColor: `${color}18`, color }}
               >
                 {levelLabel(data.level, t)}
               </span>
+              {data.ai_generated && (
+                <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full bg-violet-50 dark:bg-violet-500/15 text-violet-600 dark:text-violet-300">
+                  <Sparkles size={10} />
+                  AI 解读
+                </span>
+              )}
             </div>
           </div>
-
-          <div className="mt-4 flex flex-col items-center lg:items-start gap-1">
-            <span className="text-[12px] text-gray-400 dark:text-gray-500 flex items-center gap-1">
-              <LineChartIcon size={13} />
-              {t('score_trend')}
-            </span>
-            <TrendSpark points={history} color={color} />
-            {data.computed_at && (
-              <span className="text-[11px] text-gray-400 dark:text-gray-500 mt-1">
-                {t('computed_at')} · {(() => {
-                  // 后端存 naive UTC —— 按 UTC 解析再转本地时区（避免差 8 小时）
-                  const d = new Date(data.computed_at);
-                  const utcMs = Date.UTC(d.getFullYear(), d.getMonth(), d.getDate(), d.getHours(), d.getMinutes(), d.getSeconds());
-                  return new Date(utcMs).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
-                })()}
-              </span>
-            )}
-          </div>
-
-          <p className="mt-3 text-sm leading-relaxed text-gray-600 dark:text-gray-300 text-center lg:text-left max-w-[280px]">
-            {data.summary}
-          </p>
-          {data.ai_generated && (
-            <span className="mt-2 inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full bg-violet-50 dark:bg-violet-500/15 text-violet-600 dark:text-violet-300">
-              <Sparkles size={10} />
-              AI 解读
-            </span>
-          )}
+          <HealthRadarChart dimensions={data.dimensions} />
         </div>
 
-        {/* Dimensions grid */}
-        <div className="min-w-0">
-          {/* 六维健康雷达图：凹陷即薄弱 */}
-          <div className="mb-6 rounded-2xl border border-gray-100 dark:border-gray-700/60 bg-white dark:bg-gray-800/40 p-4">
-            <div className="flex items-center justify-between mb-1">
-              <p className="text-[13px] font-bold text-gray-700 dark:text-gray-200 flex items-center gap-1.5">
-                <ShieldCheck size={14} className="text-primary-500" />
-                {t('radar_title')}
-              </p>
-              <span className="text-[11px] text-gray-400 dark:text-gray-500 hidden sm:inline">{t('radar_hint')}</span>
-            </div>
-            <HealthRadarChart dimensions={data.dimensions} />
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-5 content-center">
-            {data.dimensions.map((dim) => {
-              const c = levelColor(dim.level);
-              return (
-                <div key={dim.key} className="min-w-0">
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-sm font-semibold text-gray-700 dark:text-gray-200 flex items-center gap-1.5">
-                      <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: c }} />
-                      {dim.name}
-                    </span>
-                    <span className="text-base font-bold tabular-nums leading-none" style={{ color: c }}>
-                      {dim.score}
-                      <span className="text-[11px] font-normal text-gray-400 dark:text-gray-500 ml-0.5">/100</span>
-                    </span>
-                  </div>
-                  <div className="h-1.5 rounded-full bg-gray-100 dark:bg-gray-700/60 overflow-hidden">
-                    <div
-                      className="h-full rounded-full transition-all duration-700"
-                      style={{ width: `${Math.max(4, dim.score)}%`, backgroundColor: c }}
-                    />
-                  </div>
-                  <p className="text-[13px] text-gray-500 dark:text-gray-400 mt-2 leading-relaxed line-clamp-2">
-                    {dim.reasons.join(' · ')}
-                  </p>
+        {/* 维度条（2 列：上方雷达主视觉 + 下方细节） */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-5 content-center mt-6">
+          {data.dimensions.map((dim) => {
+            const c = levelColor(dim.level);
+            return (
+              <div key={dim.key} className="min-w-0">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-sm font-semibold text-gray-700 dark:text-gray-200 flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: c }} />
+                    {dim.name}
+                  </span>
+                  <span className="text-base font-bold tabular-nums leading-none" style={{ color: c }}>
+                    {dim.score}
+                    <span className="text-[11px] font-normal text-gray-400 dark:text-gray-500 ml-0.5">/100</span>
+                  </span>
                 </div>
-              );
-            })}
-          </div>
-
-          {/* Scoring method explainer */}
-          <div className={`mt-5 rounded-xl border border-gray-100 dark:border-gray-700/60 bg-gray-50/70 dark:bg-gray-800/40 transition-all ${showMethod ? 'block' : 'hidden'}`}>
-            <div className="flex items-center gap-2 px-4 pt-3">
-              <ShieldCheck size={13} className="text-primary-500" />
-              <span className="text-[12px] font-bold text-gray-600 dark:text-gray-300 tracking-wide">{t('score_method_title')}</span>
-              <span className="h-px flex-1 bg-gray-100 dark:bg-gray-700/60" />
-            </div>
-            <div className="px-4 py-3 grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2">
-              {data.dimensions.map((dim) => (
-                <div key={dim.key} className="flex items-start gap-2 text-[12px] text-gray-500 dark:text-gray-400 leading-relaxed">
-                  <span className="font-semibold text-gray-600 dark:text-gray-300 whitespace-nowrap flex-shrink-0">{dim.name}</span>
-                  <span>{DIM_DESC[dim.key]?.[lang] || ''}</span>
+                <div className="h-1.5 rounded-full bg-gray-100 dark:bg-gray-700/60 overflow-hidden">
+                  <div
+                    className="h-full rounded-full transition-all duration-700"
+                    style={{ width: `${Math.max(4, dim.score)}%`, backgroundColor: c }}
+                  />
                 </div>
-              ))}
-            </div>
+                <p className="text-[13px] text-gray-500 dark:text-gray-400 mt-2 leading-relaxed line-clamp-2">
+                  {dim.reasons.join(' · ')}
+                </p>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* 评分方法弹层 */}
+        <div className={`mt-5 rounded-xl border border-gray-100 dark:border-gray-700/60 bg-gray-50/70 dark:bg-gray-800/40 transition-all ${showMethod ? 'block' : 'hidden'}`}>
+          <div className="flex items-center gap-2 px-4 pt-3">
+            <ShieldCheck size={13} className="text-primary-500" />
+            <span className="text-[12px] font-bold text-gray-600 dark:text-gray-300 tracking-wide">{t('score_method_title')}</span>
+            <span className="h-px flex-1 bg-gray-100 dark:bg-gray-700/60" />
+          </div>
+          <div className="px-4 py-3 grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2">
+            {data.dimensions.map((dim) => (
+              <div key={dim.key} className="flex items-start gap-2 text-[12px] text-gray-500 dark:text-gray-400 leading-relaxed">
+                <span className="font-semibold text-gray-600 dark:text-gray-300 whitespace-nowrap flex-shrink-0">{dim.name}</span>
+                <span>{DIM_DESC[dim.key]?.[lang] || ''}</span>
+              </div>
+            ))}
           </div>
         </div>
       </div>

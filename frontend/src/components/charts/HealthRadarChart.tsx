@@ -51,8 +51,8 @@ export const HealthRadarChart: React.FC<{ dimensions: HealthDimension[] }> = ({ 
       },
       radar: {
         indicator: names.map((n) => ({ name: n, max: 100 })),
-        radius: '62%',
-        center: ['50%', '54%'],
+        radius: '72%',
+        center: ['50%', '50%'],
         splitNumber: 4,
         shape: 'polygon',
         axisName: {
@@ -91,5 +91,5 @@ export const HealthRadarChart: React.FC<{ dimensions: HealthDimension[] }> = ({ 
 
   const ref = useEChart(option, [dims]);
 
-  return <div ref={ref} style={{ width: '100%', height: '252px' }} />;
+  return <div ref={ref} style={{ width: '100%', height: '420px' }} />;
 };
