@@ -12,6 +12,7 @@ from app.api.products import router as products_router
 from app.api.orders import router as orders_router
 from app.api.customers import router as customers_router
 from app.api.health import router as health_router
+from app.api.store_agent import router as store_agent_router
 from app.api.stores import router as stores_router
 from app.api.ai import router as ai_router
 from app.api.notifications import router as notifications_router
@@ -54,6 +55,7 @@ api_router.include_router(products_router, tags=["E-Commerce - Products"])
 api_router.include_router(orders_router, tags=["E-Commerce - Orders"])
 api_router.include_router(customers_router, tags=["E-Commerce - Customers"])
 api_router.include_router(health_router, tags=["E-Commerce - Health"])
+api_router.include_router(store_agent_router, tags=["AI - Store Sentinel Agent"])
 api_router.include_router(stores_router, tags=["E-Commerce - Stores"])
 api_router.include_router(ai_router, tags=["E-Commerce - AI"])
 api_router.include_router(notifications_router, tags=["Notifications"])
