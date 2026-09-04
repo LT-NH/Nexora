@@ -46,4 +46,7 @@ __all__ = [
     "WorkspacePermission",
     "Refund",
     "Payment",
+    "AiInsight",
+    "InventoryMovement",
+    "AgentTask",
 ]

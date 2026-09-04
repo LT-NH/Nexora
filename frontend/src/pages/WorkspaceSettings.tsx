@@ -542,7 +542,7 @@ export const WorkspaceSettings: React.FC = () => {
               onClick={async () => {
                 setIsSendingTest(true);
                 try {
-                  await api.post('/workspaces/test-email');
+                  await api.post(`/workspaces/${currentWorkspace?.slug}/test-email`);
                   addToast('success', t('test_email_sent'), t('test_email_sent_msg'));
                 } catch (err: any) {
                   addToast('error', t('send_failed'), err?.response?.data?.detail || t('error_occurred'));

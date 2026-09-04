@@ -18,7 +18,8 @@ from app.database import Base
 # Import all model modules to ensure they are loaded
 from app.models import (user, workspace, product, order, customer, store, 
                         subscription, apikey, coupon, refund, review, 
-                        notification, feedback, permission, audit, webhook)
+                        notification, feedback, permission, audit, webhook,
+                        payment, ai_insight, inventory_movement, agent_task)
 
 target_metadata = Base.metadata
 

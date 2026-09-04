@@ -499,4 +499,40 @@ async def global_search(
         for c in customer_result.scalars().all()
     ]
 
+
+@router.post("/{slug}/test-email", summary="发送测试邮件（验证 SMTP 配置）")
+async def send_test_email(
+    slug: str,
+    current_user: Annotated[User, Depends(get_current_active_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> dict:
+    """向当前登录用户邮箱发送一封测试邮件，用于验证工作空间的 SMTP 邮件设置。
+
+    SMTP 未配置或发送失败时返回 502，前端据此提示检查邮件服务器配置。
+    """
+    from app.services.email import send_email_async
+
+    # 需要工作空间管理权限（workspace 设置页操作）
+    await _require_member(slug, current_user, db, WorkspaceRole.ADMIN)
+
+    html = f"""
+    <div style="font-family:sans-serif;max-width:600px;margin:0 auto;padding:20px;border:1px solid #eee;border-radius:12px;">
+      <h2 style="color:#2560eb;margin:0 0 12px;">✅ Nexora 邮件配置测试</h2>
+      <p style="color:#374151;line-height:1.6;">如果你收到了这封邮件，说明工作空间
+      <strong>{slug}</strong> 的 SMTP 设置正确，邮件通知可以正常送达。</p>
+      <p style="color:#6b7280;font-size:13px;">发送时间：{__import__('datetime').datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}</p>
+    </div>
+    """
+    ok = await send_email_async(
+        current_user.email,
+        f"SMTP 配置测试 · {slug}",
+        html,
+    )
+    if not ok:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="SMTP 未配置或发送失败，请检查邮件服务器设置",
+        )
+    return {"sent": True, "to": current_user.email}
+
     return results

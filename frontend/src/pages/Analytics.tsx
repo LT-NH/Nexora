@@ -691,7 +691,7 @@ export const Analytics: React.FC = () => {
     }
     setExporting(true);
     try {
-      const res = await api.get(`/workspaces/${slug}/orders/export`, { responseType: 'blob' });
+      const res = await api.get(`/workspaces/${slug}/export/orders`, { responseType: 'blob' });
       const url = window.URL.createObjectURL(res.data);
       const a = document.createElement('a');
       a.href = url;

@@ -13,7 +13,7 @@ from app.database import async_session_factory
 from app.models.notification import Notification
 from app.models.order import Order
 from app.models.product import Product
-from app.models.workspace import Workspace
+from app.models.workspace import Workspace, WorkspaceMember
 from app.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -73,19 +73,31 @@ async def _patrol_workspace(db: AsyncSession, ws: Workspace) -> None:
     exists = await db.execute(
         select(Notification).where(
             Notification.workspace_id == ws.id,
-            Notification.title == title, datetime(today.year, today.month, today.day),
+            Notification.title == title,
+            # 只查今天的通知（created_at >= 当天 00:00:00）
+            Notification.created_at >= datetime(today.year, today.month, today.day),
         )
     )
     if exists.scalar_one_or_none() is not None:
         return
 
-    db.add(Notification(
-        workspace_id=ws.id,
-        notification_type="ai_patrol",
-        title=title,
-        message="；".join(alerts),
-        is_read=False,
-        created_at=datetime.utcnow(),
-    ))
+    # 写给工作空间所有成员（复用 admin_ops 的通知投递模式）
+    member_ids = (
+        await db.execute(
+            select(WorkspaceMember.user_id).where(WorkspaceMember.workspace_id == ws.id)
+        )
+    ).scalars().all()
+    if not member_ids:
+        return
+    for uid in member_ids:
+        db.add(Notification(
+            workspace_id=ws.id,
+            user_id=uid,
+            notification_type="ai_patrol",
+            title=title,
+            message="；".join(alerts),
+            is_read=False,
+            created_at=datetime.utcnow(),
+        ))
     await db.commit()
-    logger.info("patrol ws %s: %s", ws.id, title)
+    logger.info("patrol ws %s: %s (%d 个成员)", ws.id, title, len(member_ids))
