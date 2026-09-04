@@ -141,6 +141,13 @@ frontend/
 
 **v5.3.1（2026-08-31）**：修复「全平台广播未送达」问题——根因是公告写库后未推送 WebSocket 实时事件，加上 Topbar 在 WS 秒连时只同步未读数不拉取列表，导致在线商户的铃铛列表无法显示历史公告。修复：`admin_ops.announce` 提交后遍历所有受通知调 `notify_workspace()` 推送 `notification` 事件；`Topbar.fetchNotifications` 改为始终拉取列表+未读数（WS 只做实时增量追加，去重防重复）；`Topbar.typeIcons` 加 `announcement` 专属大喇叭黄图标。
 
+**v5.4（2026-09-04）**：经营健康引擎升级六维健康画像 + AI 职能切分与经验闭环——
+① **六维健康雷达图**：5 维扩展为 6 维（新增「利润健康 Profit」：近 14 天真实毛利 = 收入 − Product.cost_price×销量成本 − 退款损耗，按收入归属率摊派；无成本数据时中性降级并如实标注）；权重重分（cashflow 0.2 / inventory 0.2 / customer 0.15 / channel 0.1 / growth 0.15 / profit 0.2）。前端新增 ECharts **Radar 六维画像**（`HealthRadarChart.tsx`），凹陷即薄弱一眼可辨，tooltip 完整展示六维评分（修复单一 data 导致只显示现金流的 bug）。
+② **AI 决策助手职能切分**：助手 daily-summary 从「规则模板发现 + 千问润色」升级为**真实千问基于指标快照自主发现问题并给出可执行建议**（AI 决策主路径），规则模板降级为兜底——消除与健康引擎双轨同源规则重复；支持 profit/growth 等新洞察类型与 price_adjust 定价执行。
+③ **健康引擎 AI 总结**：`GET /health?ai=1` 由千问基于六维画像+异常雷达生成个性化经营总结（前端「重新体检」按钮触发，带 AI 解读标签），失败自动回落规则总结。
+④ **Agent 经验库闭环**：AI 建议执行时记录 `result_before` 指标基线、回访反馈时记录 `result_after`（真实指标对比）；下次 AI 生成时**注入最近 4 条执行经验**（title/反馈/指标变化），让 AI「记得上次建议的效果」，系统在持续使用中沉淀自有知识资产。
+⑤ **基础修复**：AI 巡检僵尸任务（去重查询语法错 + 通知缺 user_id，从未成功落一条 → 修复并实测 3 工作空间落库去重）、Analytics 导出路径 404、test-email 幽灵按钮（补真实 SMTP 端点）、Alembic 迁移补 4 张运行时表（payments/ai_insights/inventory_movements/agent_tasks，env.py 补 import + 新迁移 `97baf56a92f2`）、删除 search.py 影子端点（与 workspaces global_search 重复注册被遮蔽）。
+
 **v5.2（2026-08-28）**：账号切换体验修复——切换账号后工作空间自动跟随（自动归属校验 + 登出清空残留）；操作后列表即时刷新（写操作成功后清空 GET 缓存，用户管理/订阅支付等所有列表页点击后立即可见变化）；新手引导改为非阻塞（demo 账号自动跳过、点击遮罩即关闭）；「退出登录」彻底清除会话凭证与工作空间选择。
 
 **v5.1（2026-08-30）**：ECharts 按需引入（构建体积 -60% + 稳定性修复）、Landing 页与工作台视觉重设计、图表组件（Top 商品/时段分布）重绘、导航与布局优化。
