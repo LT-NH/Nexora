@@ -21,7 +21,7 @@ from app.api.deps import _require_member
 from app.database import get_db
 from app.middleware.auth import AuthContext, get_principal
 from app.models.customer import Customer
-from app.models.order import Order, OrderStatus
+from app.models.order import Order, OrderItem, OrderStatus
 from app.models.product import Product
 from app.models.workspace import WorkspaceRole
 
@@ -64,6 +64,7 @@ async def workspace_health(
     order_rows = (
         await db.execute(
             select(
+                Order.id,
                 Order.created_at,
                 Order.total,
                 Order.status,
@@ -77,11 +78,13 @@ async def workspace_health(
     daily_rev: dict[str, float] = {}
     daily_ord: dict[str, int] = {}
     refund_cnt = 0
+    refund_amt = 0.0
+    recent_order_ids: list[str] = []
     total_orders = 0
     total_rev = 0.0
     platform_rev: dict[str, float] = {}
     platform_prev: dict[str, float] = {}
-    for created_at, total, status, platform in order_rows:
+    for oid, created_at, total, status, platform in order_rows:
         if created_at is None:
             continue
         day = created_at.date().isoformat()
@@ -89,8 +92,10 @@ async def workspace_health(
         total_orders += 1
         if status == OrderStatus.REFUNDED:
             refund_cnt += 1
+            refund_amt += float(total or 0)
         if is_excluded:
             continue
+        recent_order_ids.append(oid)
         amt = float(total or 0)
         daily_rev[day] = daily_rev.get(day, 0.0) + amt
         daily_ord[day] = daily_ord.get(day, 0) + 1
@@ -154,6 +159,48 @@ async def workspace_health(
     churn_rate = _pct(c_churn, c_total) if c_total else 0.0
 
     # ------------------------------------------------------------------
+    # 3.5 利润健康（近 14 天毛利：收入 − 销售成本 − 退款损失）
+    #     销售成本 = 订单行商品数量 × Product.cost_price（当前成本价近似）
+    # ------------------------------------------------------------------
+    cost_map: dict[str, float | None] = {p.id: (float(p.cost_price) if p.cost_price is not None else None) for p in products}
+    sold_qty_by_product: dict[str, int] = {}
+    item_revenue = 0.0
+    item_cost = 0.0
+    item_count = 0
+    if recent_order_ids:
+        order_items = (
+            await db.execute(
+                select(OrderItem.product_id, OrderItem.quantity, OrderItem.total_price)
+                .where(OrderItem.order_id.in_(recent_order_ids))
+            )
+        ).all()
+        for pid, qty, total_price in order_items:
+            if pid is None or qty is None:
+                continue
+            item_revenue += float(total_price or 0)
+            sold_qty_by_product[pid] = sold_qty_by_product.get(pid, 0) + qty
+            item_count += 1
+        # 有成本价的商品才计入毛利（无成本价的部分不计入成本基数，避免低估）
+        for pid, qty in sold_qty_by_product.items():
+            cost = cost_map.get(pid)
+            if cost is not None:
+                item_cost += cost * qty
+    # 毛利率 = 1 − 可归属成本 / 可归属行收入（行收入为 0 时按整店收入兜底）
+    if item_revenue > 0 and item_count > 0:
+        attribution = item_revenue / max(total_rev, 1.0)
+        effective_cost = item_cost * attribution  # 仅按归属比例摊派成本
+        gross_margin = (total_rev - effective_cost - refund_amt) / total_rev * 100.0
+        coverage = item_revenue / max(total_rev, 1.0)
+    elif total_rev > 0:
+        # 有收入但无订单行/成本价——利润无法可靠核算，给中性基线并明确标注
+        gross_margin = 55.0
+        coverage = 0.0
+    else:
+        gross_margin = 0.0
+        coverage = 0.0
+    refund_loss_rate = _pct(refund_amt, total_rev) if total_rev else 0.0
+
+    # ------------------------------------------------------------------
     # 4. 维度评分（0-100，越高越健康）
     # ------------------------------------------------------------------
     # 现金流：基准 85，退款率每 1% 扣 4 分；营收环比上升加分
@@ -182,6 +229,10 @@ async def workspace_health(
     # 增长：营收环比 + 订单量基础
     growth_score = _clamp(50.0 + growth * 1.0)
 
+    # 利润健康：毛利率基准 45%（电商 SaaS 常见健康线），每 ±1% 调 2 分；
+    # 退款损失每 1% 扣 1.5 分；行归因覆盖不足时轻微打折（数据口径警示）
+    profit = _clamp(60.0 + (gross_margin - 45.0) * 2.0 - refund_loss_rate * 1.5 - (1.0 - coverage) * 8.0)
+
     dims = [
         {"key": "cashflow", "name": "现金流", "score": round(cashflow), "level": _level(cashflow),
          "reasons": _cashflow_reasons(refund_rate, growth)},
@@ -193,8 +244,10 @@ async def workspace_health(
          "reasons": _channel_reasons(platform_rev, platform_prev)},
         {"key": "growth", "name": "增长", "score": round(growth_score), "level": _level(growth_score),
          "reasons": _growth_reasons(growth, last7, prev7)},
+        {"key": "profit", "name": "利润", "score": round(profit), "level": _level(profit),
+         "reasons": _profit_reasons(gross_margin, refund_loss_rate, item_count, coverage)},
     ]
-    weights = {"cashflow": 0.25, "inventory": 0.25, "customer": 0.2, "channel": 0.15, "growth": 0.15}
+    weights = {"cashflow": 0.2, "inventory": 0.2, "customer": 0.15, "channel": 0.1, "growth": 0.15, "profit": 0.2}
     score = round(sum(d["score"] * weights[d["key"]] for d in dims))
     level = _level(score)
 
@@ -287,6 +340,26 @@ def _growth_reasons(growth: float, last7: float, prev7: float) -> list[str]:
     if prev7 > 0:
         return [f"近 7 天营收 {last7:.0f} 元，环比 {growth:+.0f}%"]
     return [f"近 7 天营收 {last7:.0f} 元，需持续积累基线"]
+
+
+def _profit_reasons(
+    gross_margin: float, refund_loss_rate: float, item_count: int, coverage: float
+) -> list[str]:
+    """利润健康归因：毛利率 / 退款损耗 / 成本数据覆盖度。"""
+    reasons = []
+    if item_count:
+        reasons.append(f"近 14 天毛利率 {gross_margin:.1f}%")
+    else:
+        reasons.append("近 14 天无订单行数据，利润按收入与退款估算")
+    if refund_loss_rate >= 3:
+        reasons.append(f"退款损耗占收入 {refund_loss_rate:.1f}%")
+    if coverage < 0.8:
+        reasons.append(f"成本归因覆盖 {coverage * 100:.0f}%（部分商品未设成本价）")
+    if gross_margin >= 45 and refund_loss_rate < 3:
+        reasons.append("毛利结构健康，定价有空间")
+    elif gross_margin < 35:
+        reasons.append("毛利率偏低，建议核查定价与成本价")
+    return reasons or ["毛利结构未见明显异常"]
 
 
 def _build_actions(
@@ -405,7 +478,7 @@ def _scan_anomalies(
     # 2. 退款率异常（近 3 天 vs 近 30 天基线）
     refund_by_day: dict[str, int] = {}
     total_by_day: dict[str, int] = {}
-    for created_at, total, status, _p in order_rows:
+    for _oid, created_at, total, status, _p in order_rows:
         if created_at is None:
             continue
         d = created_at.date().isoformat()

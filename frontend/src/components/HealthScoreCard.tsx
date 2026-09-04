@@ -6,6 +6,7 @@ import { useNavigate } from 'react-router-dom';
 import { useToast } from '@/components/ui/Toast';
 import api from '@/services/api';
 import { usePageT, useI18n } from '@/i18n';
+import { HealthRadarChart } from '@/components/charts/HealthRadarChart';
 
 interface HealthAction {
   type: string;
@@ -53,7 +54,9 @@ const D = {
     exec_fail: '执行失败',
     score_trend: '体检趋势',
     score_method: '评分方法',
-    score_method_title: '五个维度 · 自动评分',
+    score_method_title: '六个维度 · 自动评分',
+    radar_title: '六维健康画像',
+    radar_hint: '凹陷处即薄弱环节，优先处理低分维度',
     priority_0: 'P0 紧急',
     priority_1: 'P1 优先',
     priority_2: 'P2 关注',
@@ -78,7 +81,9 @@ const D = {
     exec_fail: 'Failed',
     score_trend: 'Check-up trend',
     score_method: 'Scoring method',
-    score_method_title: '5 dimensions · auto scored',
+    score_method_title: '6 dimensions · auto scored',
+    radar_title: 'Health Radar',
+    radar_hint: 'Dip = weak dimension, handle low scores first',
     priority_0: 'P0 Urgent',
     priority_1: 'P1 High',
     priority_2: 'P2 Watch',
@@ -94,6 +99,7 @@ const DIM_DESC: Record<string, { zh: string; en: string }> = {
   customer: { zh: '客户：复购率 ×0.9 + 45 基准，流失率每 +1% 扣 1.5 分', en: 'Customers: repeat rate ×0.9 + 45 base, -1.5 per +1% churn' },
   channel: { zh: '渠道：单一渠道占比超 60% 或最差渠道负增长扣分', en: 'Channel: high concentration or worst channel negative growth' },
   growth: { zh: '增长：近 7 天对比前 7 天营收增速，负增长按比例扣分', en: 'Growth: 7-day vs prior 7-day revenue growth deduction' },
+  profit: { zh: '利润：近 14 天毛利率基准 45%，每偏离 1% 调 2 分；退款损耗与成本覆盖不足扣分', en: 'Profit: 14-day gross margin, base 45%; ±2 per %; refund loss & coverage penalty' },
 };
 
 const levelColor = (level: string) =>
@@ -359,6 +365,18 @@ export const HealthScoreCard: React.FC<{ slug: string }> = ({ slug }) => {
 
         {/* Dimensions grid */}
         <div className="min-w-0">
+          {/* 六维健康雷达图：凹陷即薄弱 */}
+          <div className="mb-6 rounded-2xl border border-gray-100 dark:border-gray-700/60 bg-white dark:bg-gray-800/40 p-4">
+            <div className="flex items-center justify-between mb-1">
+              <p className="text-[13px] font-bold text-gray-700 dark:text-gray-200 flex items-center gap-1.5">
+                <ShieldCheck size={14} className="text-primary-500" />
+                {t('radar_title')}
+              </p>
+              <span className="text-[11px] text-gray-400 dark:text-gray-500 hidden sm:inline">{t('radar_hint')}</span>
+            </div>
+            <HealthRadarChart dimensions={data.dimensions} />
+          </div>
+
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-5 content-center">
             {data.dimensions.map((dim) => {
               const c = levelColor(dim.level);

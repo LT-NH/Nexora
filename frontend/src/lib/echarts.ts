@@ -12,7 +12,7 @@
  * ——类型在构建时擦除，不产生任何运行时代价。
  */
 import * as echarts from 'echarts/core';
-import { LineChart, BarChart, PieChart, HeatmapChart } from 'echarts/charts';
+import { LineChart, BarChart, PieChart, HeatmapChart, RadarChart } from 'echarts/charts';
 import {
   GridComponent,
   TooltipComponent,
@@ -20,6 +20,7 @@ import {
   TitleComponent,
   DatasetComponent,
   VisualMapComponent,
+  RadarComponent,
 } from 'echarts/components';
 import { SVGRenderer, CanvasRenderer } from 'echarts/renderers';
 
@@ -30,11 +31,12 @@ function register() {
   registered = true;
   echarts.use([
     // 图表类型（项目实际使用：SalesTrend/Aov/Forecast=line, Hourly/TopProducts/CustomerInsight=bar+line,
-    // OrderStatus/PlatformRevenue=pie, Cohort/EnterpriseHeatmap=heatmap）
+    // OrderStatus/PlatformRevenue=pie, Cohort/EnterpriseHeatmap=heatmap, HealthRadar=radar）
     LineChart,
     BarChart,
     PieChart,
     HeatmapChart,
+    RadarChart,
     // 组件
     GridComponent,
     TooltipComponent,
@@ -42,6 +44,7 @@ function register() {
     TitleComponent,
     DatasetComponent,
     VisualMapComponent,
+    RadarComponent,
     // 渲染器（useEChart 用 svg；保留 canvas 以防直接 init 的场景）
     SVGRenderer,
     CanvasRenderer,
