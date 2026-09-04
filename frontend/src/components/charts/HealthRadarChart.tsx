@@ -32,12 +32,21 @@ export const HealthRadarChart: React.FC<{ dimensions: HealthDimension[] }> = ({ 
       backgroundColor: 'transparent',
       tooltip: {
         trigger: 'item',
-        formatter: (p: any) => {
-          const idx = p.dataIndex ?? p.seriesIndex;
-          const d = dims[idx];
-          if (!d) return '';
-          const lv = d.level === 'green' ? '健康' : d.level === 'yellow' ? '需关注' : '需干预';
-          return `${d.name}<br/><b>${d.score}</b> 分 · ${lv}`;
+        // ECharts Radar 只有一个 series data（多边形整体），无法按"轴"区分悬停，
+        // dataIndex 恒为 0（会永远指向第一个维度）。改为展示六维完整清单，
+        // 各维度分数按健康等级着色，信息完整且不误导。
+        formatter: () => {
+          const rows = dims
+            .map((d) => {
+              const lv = d.level === 'green' ? '健康' : d.level === 'yellow' ? '需关注' : '需干预';
+              const color = LEVEL_COLOR[d.level] ?? '#8b5cf6';
+              return `<div style="display:flex;justify-content:space-between;gap:16px;align-items:baseline;line-height:1.9;">
+                <span>${d.name}</span>
+                <span><b style="color:${color};font-variant-numeric:tabular-nums">${d.score}</b>
+                <span style="color:${color};font-size:11px">${lv}</span></span></div>`;
+            })
+            .join('');
+          return `<div style="font-size:12px;min-width:170px">${rows}</div>`;
         },
       },
       radar: {
