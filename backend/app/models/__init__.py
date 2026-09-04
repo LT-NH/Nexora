@@ -20,6 +20,7 @@ from app.models.payment import Payment
 from app.models.ai_insight import AiInsight
 from app.models.inventory_movement import InventoryMovement
 from app.models.agent_task import AgentTask
+from app.models.agent_experience import AgentExperience
 
 __all__ = [
     "User",
@@ -49,4 +50,5 @@ __all__ = [
     "AiInsight",
     "InventoryMovement",
     "AgentTask",
+    "AgentExperience",
 ]

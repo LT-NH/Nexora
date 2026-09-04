@@ -21,7 +21,7 @@ interface AiInsightItem {
 const D = {
   zh: {
     title: 'AI 决策助手',
-    subtitle: '主动洞察 · 点击执行 · 闭环验证',
+    subtitle: '千问生成洞察 · 真实执行 · 经验沉淀',
     today: '今日运营摘要',
     no_insight: '今日无待处理洞察，经营状态良好',
     execute: '执行',
@@ -44,7 +44,7 @@ const D = {
   },
   en: {
     title: 'AI Decision Assistant',
-    subtitle: 'Proactive insights · click to execute · loop verified',
+    subtitle: 'Qwen insights · real execute · experience loop',
     today: "Today's business summary",
     no_insight: 'No pending insights today — business looks good',
     execute: 'Execute',
@@ -155,9 +155,14 @@ export const AiDecisionPanel: React.FC<{ slug: string }> = ({ slug }) => {
             <Brain size={17} className="text-white" />
           </div>
           <div>
-            <h3 className="text-base font-bold tracking-tight text-slate-900 dark:text-gray-100 leading-none">
-              {t('title')}
-            </h3>
+            <div className="flex items-center gap-2">
+              <h3 className="text-base font-bold tracking-tight text-slate-900 dark:text-gray-100 leading-none">
+                {t('title')}
+              </h3>
+              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-500/15 text-amber-700 dark:text-amber-400 flex-shrink-0 leading-tight">
+                {lang === 'zh' ? '千问驱动' : 'Qwen AI'}
+              </span>
+            </div>
             <p className="text-[12px] text-gray-400 dark:text-gray-500 mt-1">{t('subtitle')}</p>
           </div>
         </div>

@@ -257,9 +257,14 @@ export const HealthScoreCard: React.FC<{ slug: string }> = ({ slug }) => {
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <h3 className="text-lg font-bold tracking-tight text-slate-900 dark:text-gray-100 leading-none">
-                {t('health_title')}
-              </h3>
+              <div className="flex items-center gap-2">
+                <h3 className="text-lg font-bold tracking-tight text-slate-900 dark:text-gray-100 leading-none">
+                  {t('health_title')}
+                </h3>
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-sky-100 dark:bg-sky-500/15 text-sky-700 dark:text-sky-400 flex-shrink-0 leading-tight">
+                  {lang === 'zh' ? '六维体检' : '6-D Health'}
+                </span>
+              </div>
               {anomalyCount > 0 && (
                 <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full bg-rose-50 dark:bg-rose-500/15 text-rose-600 dark:text-rose-400">
                   <AlertTriangle size={11} />

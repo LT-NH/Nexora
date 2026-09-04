@@ -14,6 +14,7 @@ from app.api.deps import _require_member
 from app.database import get_db
 from app.middleware.auth import AuthContext, get_principal
 from app.models.ai_insight import AiInsight
+from app.models.agent_experience import AgentExperience
 from app.models.customer import Customer
 from app.models.order import Order, OrderItem
 from app.models.product import Product
@@ -234,27 +235,27 @@ async def daily_summary(
                 for c in ind["churn_risk"][:6]
             ],
         }
-        # 经验库注入：最近已执行且有回访反馈的建议 → AI 参考上次效果再判断
+        # 经验库注入：从 agent_experiences 检索最近闭环经验（含真实结果与教训），
+        # 让 AI 参考"上次同样动作到底有没有用"再决定本次建议
         _exp_rows = (
             await db.execute(
-                select(AiInsight).where(
-                    AiInsight.workspace_id == workspace.id,
-                    AiInsight.status == "executed",
-                    AiInsight.feedback.isnot(None),
-                ).order_by(AiInsight.feedback_at.desc()).limit(4)
+                select(AgentExperience).where(
+                    AgentExperience.workspace_id == workspace.id,
+                ).order_by(AgentExperience.feedback_at.desc().nulls_last()).limit(4)
             )
         ).scalars().all()
         _exp_text = ""
         if _exp_rows:
             _parts = []
             for _e in _exp_rows:
-                _fb = "命中改善" if _e.feedback == "improved" else "未命中"
+                _fb = "命中改善" if _e.outcome == "improved" else ("未命中" if _e.outcome == "not_improved" else "待定")
                 _delta = ""
                 if _e.result_before is not None and _e.result_after is not None:
                     _d = round(float(_e.result_after) - float(_e.result_before), 2)
                     _delta = f"，主指标 {_e.result_before}→{_e.result_after}（{_d:+.2f}）"
-                _parts.append(f"「{_e.title}」执行后反馈={_fb}{_delta}")
-            _exp_text = "\n近期同类建议执行经验（供你参考上次效果，避免重蹈覆辙）：\n- " + "\n- ".join(_parts)
+                _lesson = f"。教训：{_e.lesson}" if _e.lesson else ""
+                _parts.append(f"「{_e.title}」[{_e.action_type}] 执行后反馈={_fb}{_delta}{_lesson}")
+            _exp_text = "\n近期同类建议执行经验（经验库，供你参考真实效果，避免重蹈覆辙）：\n- " + "\n- ".join(_parts)
         _prompt = (
             "你是多店铺电商经营决策副驾（AI 决策助手）。下面是系统从真实数据库采集的店铺指标快照（JSON）。\n"
             "请从快照中自主发现【今天最值得处理的 2~3 个经营问题】，不局限于快照列出的风险类别，也可结合常识判断数据里的深层问题。\n"
@@ -511,7 +512,7 @@ async def execute_insight(
 
     message = await _execute_insight_action(db, workspace, ins, principal)
     ins.status = "executed"
-    ins.executed_at = datetime.now(timezone.utc)
+    ins.executed_at = datetime.utcnow()
     # 经验库：执行前记录主要指标基线（供回访对比该建议是否真的改善）
     _metric_before = _primary_metric(ins.action_type, await _metric_snapshot(db, workspace.id))
     if _metric_before is not None:
@@ -536,11 +537,44 @@ async def feedback_insight(
     improved = bool(body.get("improved"))
     ins.feedback = "improved" if improved else "not_improved"
     ins.feedback_note = body.get("note")
-    ins.feedback_at = datetime.now(timezone.utc)
+    ins.feedback_at = datetime.utcnow()
     # 经验库：回访时记录执行后指标 → result_after 与 result_before 对比可得"改善幅度"
     _metric_after = _primary_metric(ins.action_type, await _metric_snapshot(db, workspace.id))
     if _metric_after is not None:
         ins.result_after = _metric_after
+
+    # ── 经验库沉淀：走完闭环（executed + 回访）→ 写入 agent_experiences ──
+    if ins.status == "executed":
+        # SQLite 存 naive UTC —— executed_at 读回为 naive，统一用 naive 计算间隔
+        _exec = ins.executed_at or datetime.utcnow()
+        if _exec.tzinfo is not None:
+            _exec = _exec.replace(tzinfo=None)
+        _delta = max((datetime.utcnow() - _exec).days, 0)
+        _feedback_now = datetime.utcnow()
+        _lesson = None
+        if improved and ins.result_before is not None and _metric_after is not None:
+            _d = round(float(_metric_after) - float(ins.result_before), 2)
+            _lesson = (
+                f"执行后主指标 {ins.result_before} → {_metric_after}（{_d:+.2f}），回访判定命中。"
+                "同类场景可优先复用该动作。"
+            )
+        elif ins.feedback == "not_improved":
+            _lesson = "回访判定未命中——该动作对同类问题效果有限，下次应换策略（如换渠道/换动作类型）。"
+        db.add(AgentExperience(
+            workspace_id=workspace.id,
+            insight_id=ins.id,
+            insight_type=ins.insight_type,
+            action_type=ins.action_type,
+            title=ins.title,
+            context=ins.action_params,
+            result_before=ins.result_before,
+            result_after=_metric_after,
+            outcome=ins.feedback,
+            lesson=_lesson,
+            delta_days=_delta,
+            feedback_at=_feedback_now,
+        ))
+
     await db.commit()
     return {"saved": True, "feedback": ins.feedback}
 
@@ -578,6 +612,49 @@ async def insight_stats(
         "feedback_total": total,
         "improved": improved,
         "hit_rate": round(improved / total * 100, 1) if total else None,
+    }
+
+
+@router.get("/experiences", summary="Agent 经验库列表（闭环沉淀的知识资产）")
+async def list_experiences(
+    slug: str,
+    principal: Annotated[AuthContext, Depends(get_principal)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    limit: int = 50,
+) -> dict:
+    workspace, _ = await _require_member(slug, principal, db, WorkspaceRole.VIEWER)
+    rows = (
+        await db.execute(
+            select(AgentExperience)
+            .where(AgentExperience.workspace_id == workspace.id)
+            .order_by(AgentExperience.feedback_at.desc().nulls_last(), AgentExperience.created_at.desc())
+            .limit(min(limit, 200))
+        )
+    ).scalars().all()
+    total = (
+        await db.execute(
+            select(func.count(AgentExperience.id)).where(AgentExperience.workspace_id == workspace.id)
+        )
+    ).scalar_one()
+    improved = sum(1 for r in rows if r.outcome == "improved")
+    return {
+        "total": total,
+        "recent_improved": improved,
+        "items": [
+            {
+                "id": r.id,
+                "insight_type": r.insight_type,
+                "action_type": r.action_type,
+                "title": r.title,
+                "result_before": r.result_before,
+                "result_after": r.result_after,
+                "outcome": r.outcome,
+                "lesson": r.lesson,
+                "delta_days": r.delta_days,
+                "feedback_at": r.feedback_at.isoformat() if r.feedback_at else None,
+            }
+            for r in rows
+        ],
     }
 
 

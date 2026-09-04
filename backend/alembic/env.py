@@ -19,7 +19,8 @@ from app.database import Base
 from app.models import (user, workspace, product, order, customer, store, 
                         subscription, apikey, coupon, refund, review, 
                         notification, feedback, permission, audit, webhook,
-                        payment, ai_insight, inventory_movement, agent_task)
+                        payment, ai_insight, inventory_movement, agent_task,
+                        agent_experience)
 
 target_metadata = Base.metadata
 
