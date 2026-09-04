@@ -32,6 +32,7 @@ interface HealthData {
   dimensions: HealthDimension[];
   actions: HealthAction[];
   anomalies?: { severity: number; tag: string; title: string; detail: string }[];
+  ai_generated?: boolean;
   computed_at?: string;
 }
 
@@ -203,10 +204,11 @@ export const HealthScoreCard: React.FC<{ slug: string }> = ({ slug }) => {
     }
   };
 
-  const fetchHealth = async () => {
+  const fetchHealth = async (withAI = false) => {
     setLoading(true);
     try {
-      const res = await api.get(`/workspaces/${slug}/health`, { timeout: 15000 });
+      // withAI=true：千问基于六维画像生成个性化 AI 总结（首次加载快速返回规则版，手动刷新出 AI 解读）
+      const res = await api.get(`/workspaces/${slug}/health${withAI ? '?ai=1' : ''}`, { timeout: 30000 });
       setData(res.data);
       setHistory(h => [...h.slice(-9), { score: res.data.score }]);
     } catch {
@@ -277,7 +279,7 @@ export const HealthScoreCard: React.FC<{ slug: string }> = ({ slug }) => {
             <Info size={16} />
           </button>
           <button
-            onClick={fetchHealth}
+            onClick={() => fetchHealth(true)}
             disabled={loading}
             title={t('refresh')}
             className="p-2 rounded-lg text-gray-400 hover:text-primary-500 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors"
@@ -361,6 +363,12 @@ export const HealthScoreCard: React.FC<{ slug: string }> = ({ slug }) => {
           <p className="mt-3 text-sm leading-relaxed text-gray-600 dark:text-gray-300 text-center lg:text-left max-w-[280px]">
             {data.summary}
           </p>
+          {data.ai_generated && (
+            <span className="mt-2 inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full bg-violet-50 dark:bg-violet-500/15 text-violet-600 dark:text-violet-300">
+              <Sparkles size={10} />
+              AI 解读
+            </span>
+          )}
         </div>
 
         {/* Dimensions grid */}

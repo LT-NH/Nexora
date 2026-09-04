@@ -10,10 +10,11 @@ GET /workspaces/{slug}/health 返回：
   actions:    今日行动清单（明确处方 + 预估影响），按严重度排序
 """
 
+import json
 from datetime import datetime, timezone, timedelta
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -50,6 +51,7 @@ async def workspace_health(
     slug: str,
     principal: Annotated[AuthContext, Depends(get_principal)],
     db: Annotated[AsyncSession, Depends(get_db)],
+    ai: int = Query(0, description="传 1 时用千问基于六维画像生成 AI 经营总结（失败自动回落规则总结）"),
 ) -> dict:
     """Compute the workspace health score and today's action list (real data)."""
     workspace, _ = await _require_member(slug, principal, db, WorkspaceRole.VIEWER)
@@ -272,6 +274,14 @@ async def workspace_health(
 
     anomalies = _scan_anomalies(daily_ord, daily_rev, order_rows, stockout_risk, platform_rev, platform_prev, now)
 
+    # AI 经营总结（可选）：千问基于六维画像与异常雷达写个性化总结，失败回落规则 summary
+    ai_generated = False
+    if ai:
+        _ai_text = await _ai_health_summary(score, dims, anomalies, summary)
+        if _ai_text:
+            summary = _ai_text
+            ai_generated = True
+
     return {
         "workspace_id": ws_id,
         "score": score,
@@ -280,13 +290,65 @@ async def workspace_health(
         "dimensions": dims,
         "actions": actions,
         "anomalies": anomalies,
+        "ai_generated": ai_generated,
         "computed_at": now.isoformat(),
     }
+
+
+async def _ai_health_summary(score: float, dims: list[dict], anomalies: list[dict], rule_summary: str) -> str | None:
+    """千问生成个性化经营总结（基于六维画像 + 异常雷达）。失败返回 None 由调用方回落规则。"""
+    import httpx as _httpx
+    try:
+        from app.services.ai import _get_qwen_config
+        key, model, base_url = _get_qwen_config()
+        if not key:
+            return None
+        payload = {
+            "score": score,
+            "dimensions": [
+                {"name": d["name"], "score": d["score"], "level": d["level"], "reasons": d["reasons"]}
+                for d in dims
+            ],
+            "anomalies": [
+                {"title": a.get("title"), "detail": a.get("detail"), "severity": a.get("severity")}
+                for a in (anomalies or [])
+            ][:6],
+            "rule_summary": rule_summary,
+        }
+        prompt = (
+            "你是资深电商运营专家。下面是店铺『经营健康六维画像』与『异常雷达』（真实数据，score 0-100，"
+            "level: green健康/yellow需关注/red需干预）。\n"
+            + json.dumps(payload, ensure_ascii=False)
+            + "\n请写一段 3~4 句的『今日经营总结』：①整体状态一句话（结合总分与最突出维度）；"
+            "②指出最需要优先处理的 1~2 个薄弱维度，用数据说明为什么是短板；③给一条最优先的可执行行动建议。"
+            "语气专业务实，不要空话套话，只输出总结正文，不要标题与 Markdown。"
+        )
+        async with _httpx.AsyncClient(timeout=30, trust_env=False) as _client:
+            _resp = await _client.post(
+                f"{base_url}/chat/completions",
+                headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
+                json={
+                    "model": model,
+                    "messages": [
+                        {"role": "system", "content": "你是资深电商运营专家，全程使用中文，直接输出结果。"},
+                        {"role": "user", "content": prompt},
+                    ],
+                    "temperature": 0.5,
+                    "max_tokens": 700,
+                },
+            )
+        if _resp.status_code != 200:
+            return None
+        text = _resp.json()["choices"][0]["message"]["content"].strip()
+        return text[:600] if text else None
+    except Exception:
+        return None
 
 
 # ----------------------------------------------------------------------
 # 归因 & 动作生成
 # ----------------------------------------------------------------------
+
 
 def _cashflow_reasons(refund_rate: float, growth: float) -> list[str]:
     reasons = []

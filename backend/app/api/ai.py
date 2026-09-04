@@ -234,22 +234,44 @@ async def daily_summary(
                 for c in ind["churn_risk"][:6]
             ],
         }
+        # 经验库注入：最近已执行且有回访反馈的建议 → AI 参考上次效果再判断
+        _exp_rows = (
+            await db.execute(
+                select(AiInsight).where(
+                    AiInsight.workspace_id == workspace.id,
+                    AiInsight.status == "executed",
+                    AiInsight.feedback.isnot(None),
+                ).order_by(AiInsight.feedback_at.desc()).limit(4)
+            )
+        ).scalars().all()
+        _exp_text = ""
+        if _exp_rows:
+            _parts = []
+            for _e in _exp_rows:
+                _fb = "命中改善" if _e.feedback == "improved" else "未命中"
+                _delta = ""
+                if _e.result_before is not None and _e.result_after is not None:
+                    _d = round(float(_e.result_after) - float(_e.result_before), 2)
+                    _delta = f"，主指标 {_e.result_before}→{_e.result_after}（{_d:+.2f}）"
+                _parts.append(f"「{_e.title}」执行后反馈={_fb}{_delta}")
+            _exp_text = "\n近期同类建议执行经验（供你参考上次效果，避免重蹈覆辙）：\n- " + "\n- ".join(_parts)
         _prompt = (
             "你是多店铺电商经营决策副驾（AI 决策助手）。下面是系统从真实数据库采集的店铺指标快照（JSON）。\n"
             "请从快照中自主发现【今天最值得处理的 2~3 个经营问题】，不局限于快照列出的风险类别，也可结合常识判断数据里的深层问题。\n"
             "每条输出字段：\n"
             "  insight_type ∈ stockout|refund|overstock|churn|profit|growth（问题类型）\n"
-            "  action_type ∈ restock|clearance|retention|refund_check|keep（动作类型，keep=仅观察无需动作）\n"
+            "  action_type ∈ restock|clearance|retention|refund_check|price_adjust|keep（动作类型，keep=仅观察无需动作）\n"
             "  title：≤26 字、直接有力（如「XX 库存只够撑 9 天，今日下单补货」）\n"
             "  detail：≤100 字，含数据证据 + 因果 + 建议动作\n"
             "  confidence：0.3~0.99 该问题成立的可信度\n"
             "  params：{product_id?} 或 {customer?}，尽量引用快照中的实体\n"
             "只输出 JSON 数组，不要任何解释文字。\n快照：" + json.dumps(_snapshot, ensure_ascii=False)
+            + _exp_text
         )
         _raw = await _qwen_enhance(_prompt)
         _parsed = _extract_json(_raw) if _raw else None
         _valid_types = {"stockout", "refund", "overstock", "churn", "profit", "growth"}
-        _valid_actions = {"restock", "clearance", "retention", "refund_check", "keep"}
+        _valid_actions = {"restock", "clearance", "retention", "refund_check", "price_adjust", "keep"}
         if isinstance(_parsed, list):
             for _it in _parsed:
                 if not isinstance(_it, dict):
@@ -356,6 +378,27 @@ async def list_insights(
     }
 
 
+async def _metric_snapshot(db: AsyncSession, ws_id: str) -> dict:
+    """执行/回访时的经营指标快照（轻量，供经验库记录 result_before/after）。"""
+    ind = await _compute_indicators(db, ws_id)
+    return {
+        "refund_rate": round(ind["refund_rate"], 2),
+        "stockout": len(ind["stockout_risk"]),
+        "overstock": len(ind["overstock"]),
+        "churn": len(ind["churn_risk"]),
+    }
+
+
+def _primary_metric(action_type: str, snap: dict) -> float | None:
+    """该建议针对的主要指标（用于前后对比，判断是否改善）。"""
+    return {
+        "refund_check": snap["refund_rate"],
+        "restock": snap["stockout"],
+        "clearance": snap["overstock"],
+        "retention": snap["churn"],
+    }.get(action_type)
+
+
 async def _execute_insight_action(
     db: AsyncSession, workspace: Workspace, ins: AiInsight, principal: AuthContext,
 ) -> str:
@@ -427,6 +470,30 @@ async def _execute_insight_action(
     if action == "refund_check":
         return "已引导至退款售后页：请核查近 30 天高频退款订单。"
 
+    if action == "price_adjust":
+        # AI 定价建议执行：真实调整本地商品价格（可配 Shopify 反向同步）
+        pid = params.get("product_id")
+        product = await db.get(Product, pid) if pid else None
+        if product is None:
+            return "商品不存在，无法执行定价调整。"
+        old_price = float(product.price or 0)
+        delta_pct = float(params.get("change_pct", params.get("discount_pct", -10)))
+        new_price = round(old_price * (1 + delta_pct / 100.0), 2)
+        if new_price <= 0:
+            return "目标价格无效（≤0），未执行定价调整。"
+        written = False
+        # 仅降价场景反向同步 Shopify（其 API 语义为 discount_pct>0）
+        if delta_pct < 0 and shopify_cfg and integ and product.sku and product.sku.startswith("shopify-"):
+            try:
+                written = await integ.update_product_price(shopify_cfg, product.sku[8:], discount_pct=abs(delta_pct))
+            except Exception:
+                written = False
+        if written or shopify_cfg is None:
+            product.price = new_price
+            await db.commit()
+            return f"已调整价格 {delta_pct:+.0f}%：¥{old_price:.2f} → ¥{new_price:.2f}" + ("（已同步 Shopify）" if written else "")
+        return f"Shopify 写入失败，未调整价格（¥{old_price:.2f} 保持不变）"
+
     return "该动作已引导至对应页面处理。"
 
 
@@ -445,6 +512,10 @@ async def execute_insight(
     message = await _execute_insight_action(db, workspace, ins, principal)
     ins.status = "executed"
     ins.executed_at = datetime.now(timezone.utc)
+    # 经验库：执行前记录主要指标基线（供回访对比该建议是否真的改善）
+    _metric_before = _primary_metric(ins.action_type, await _metric_snapshot(db, workspace.id))
+    if _metric_before is not None:
+        ins.result_before = _metric_before
     await db.commit()
     return {"executed": True, "message": message, "insight_id": ins.id}
 
@@ -466,6 +537,10 @@ async def feedback_insight(
     ins.feedback = "improved" if improved else "not_improved"
     ins.feedback_note = body.get("note")
     ins.feedback_at = datetime.now(timezone.utc)
+    # 经验库：回访时记录执行后指标 → result_after 与 result_before 对比可得"改善幅度"
+    _metric_after = _primary_metric(ins.action_type, await _metric_snapshot(db, workspace.id))
+    if _metric_after is not None:
+        ins.result_after = _metric_after
     await db.commit()
     return {"saved": True, "feedback": ins.feedback}
 
