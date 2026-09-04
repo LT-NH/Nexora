@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import {
-  Brain, PackageX, RefreshCw, ShoppingCart, Sparkles, Target, TrendingDown, UserX, CheckCircle2, XCircle, ChevronDown, ChevronUp, CalendarClock, Zap,
+  Brain, PackageX, RefreshCw, ShoppingCart, Sparkles, Target, TrendingDown, TrendingUp, UserX, CheckCircle2, XCircle, ChevronDown, ChevronUp, CalendarClock, Zap,
 } from 'lucide-react';
 import { useToast } from '@/components/ui/Toast';
 import api from '@/services/api';
@@ -38,6 +38,7 @@ const D = {
     no_predict: '未来 7 天无缺货风险',
     no_churn: '暂无流失风险客户',
     exec_done: '执行成功',
+    exec_fail: '执行失败，请重试',
     feedback_saved: '反馈已记录，谢谢',
     conf: '置信度',
   },
@@ -60,6 +61,7 @@ const D = {
     no_predict: 'No stockout risk in next 7 days',
     no_churn: 'No churn-risk customers',
     exec_done: 'Executed',
+    exec_fail: 'Execution failed, please retry',
     feedback_saved: 'Feedback saved, thanks',
     conf: 'confidence',
   },
@@ -70,7 +72,7 @@ const typeTheme: Record<string, { bg: string; fg: string; icon: any }> = {
   refund: { bg: 'bg-amber-50 dark:bg-amber-500/15', fg: 'text-amber-600 dark:text-amber-400', icon: TrendingDown },
   overstock: { bg: 'bg-orange-50 dark:bg-orange-500/15', fg: 'text-orange-600 dark:text-orange-400', icon: RefreshCw },
   churn: { bg: 'bg-violet-50 dark:bg-violet-500/15', fg: 'text-violet-600 dark:text-violet-400', icon: UserX },
-  growth: { bg: 'bg-emerald-50 dark:bg-emerald-500/15', fg: 'text-emerald-600 dark:text-emerald-400', icon: TrendingDown },
+  growth: { bg: 'bg-emerald-50 dark:bg-emerald-500/15', fg: 'text-emerald-600 dark:text-emerald-400', icon: TrendingUp },
 };
 
 export const AiDecisionPanel: React.FC<{ slug: string }> = ({ slug }) => {
@@ -114,7 +116,7 @@ export const AiDecisionPanel: React.FC<{ slug: string }> = ({ slug }) => {
       setInsights(prev => prev.map(i => (i.id === ins.id ? { ...i, status: 'executed' } : i)));
       load();
     } catch {
-      addToast('error', t('exec_done'), '');
+      addToast('error', t('exec_fail'), '');
     } finally {
       setExecutingId(null);
     }

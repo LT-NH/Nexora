@@ -19,7 +19,6 @@ from app.api.webhooks import router as webhooks_router
 from app.api.webhooks import outbound as webhooks_outbound
 from app.api.export import router as export_router
 from app.api.import_csv import router as import_router
-from app.api.search import router as search_router
 from app.api.reports import router as reports_router
 from app.api.coupons import router as coupons_router
 from app.api.reviews import router as reviews_router
@@ -62,7 +61,6 @@ api_router.include_router(webhooks_router, tags=["Webhooks"])
 api_router.include_router(webhooks_outbound, tags=["Outbound Webhooks"])
 api_router.include_router(export_router, tags=["Export"])
 api_router.include_router(import_router, tags=["Import"])
-api_router.include_router(search_router, tags=["Search"])
 api_router.include_router(reports_router, tags=["Reports"])
 api_router.include_router(coupons_router, tags=["E-Commerce - Coupons"])
 api_router.include_router(reviews_router, tags=["E-Commerce - Reviews"])
