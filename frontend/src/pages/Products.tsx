@@ -1489,7 +1489,7 @@ export const Products: React.FC = () => {
                           {review.is_verified && <Badge variant="success">{t('verified_purchase')}</Badge>}
                           {!review.is_approved && <Badge variant="warning">{t('hidden')}</Badge>}
                         </div>
-                        <span className="text-xs text-gray-500">{new Date(review.created_at).toLocaleDateString('zh-CN')}</span>
+                        <span className="text-xs text-gray-500">{new Date(review.created_at.includes('T') && !/Z|[+-]\d{2}:?\d{2}$/.test(review.created_at) ? review.created_at + 'Z' : review.created_at).toLocaleDateString('zh-CN')}</span>
                       </div>
                     </div>
                     <div className="flex items-center gap-2">

@@ -575,7 +575,7 @@ export const Profile: React.FC = () => {
               <span className="text-sm text-gray-600 dark:text-gray-400">{t('registered_at')}</span>
             </div>
             <span className="text-sm text-gray-900">
-              {new Date(user.created_at).toLocaleDateString('zh-CN', { year: 'numeric', month: 'long', day: 'numeric' })}
+              {new Date(/Z|[+-]\d{2}:?\d{2}$/.test(user.created_at) ? user.created_at : user.created_at + 'Z').toLocaleDateString('zh-CN', { year: 'numeric', month: 'long', day: 'numeric' })}
             </span>
           </div>
           <div className="flex items-center justify-between py-2">

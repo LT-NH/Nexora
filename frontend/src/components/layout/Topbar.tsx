@@ -641,7 +641,13 @@ const NotificationBell: React.FC = () => {
                     <p className="text-sm font-medium text-slate-900 dark:text-gray-100 truncate">{n.title}</p>
                     <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5 line-clamp-2">{n.message}</p>
                     <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                      {n.created_at ? new Date(n.created_at).toLocaleDateString('zh-CN', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : ''}
+                      {n.created_at ? (() => {
+                        // SQLite 存 naive UTC：无时区后缀的 ISO 需按 UTC 解析再转本地时区（否则慢 8 小时）
+                        const d = new Date(n.created_at);
+                        const hasTz = /Z|[+-]\d{2}:?\d{2}$/.test(n.created_at);
+                        const local = hasTz ? d : new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate(), d.getHours(), d.getMinutes(), d.getSeconds()));
+                        return local.toLocaleString('zh-CN', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+                      })() : ''}
                     </p>
                   </div>
                 </button>
