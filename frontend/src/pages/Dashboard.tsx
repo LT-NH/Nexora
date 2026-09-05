@@ -78,6 +78,7 @@ import { CountUp } from '@/components/ui/CountUp';
 import { useWebSocketNotifications } from '@/hooks/useWebSocketNotifications';
 import { HealthScoreCard } from '@/components/HealthScoreCard';
 import { AiDecisionPanel } from '@/components/AiDecisionPanel';
+import { StoreAgentPanel } from '@/components/StoreAgentPanel';
 import { WeeklyReviewCard } from '@/components/WeeklyReviewCard';
 import { SalesTrendChart } from '@/components/charts/SalesTrendChart';
 import { OrderStatusChart } from '@/components/charts/OrderStatusChart';
@@ -772,6 +773,11 @@ export const Dashboard: React.FC = () => {
       {/* AI 结论摘要条（第一屏焦点） */}
       <div className="animate-page-in-delay-1">
         <AiDecisionPanel slug={currentWorkspace?.slug || ''} />
+      </div>
+
+      {/* 巡店 Agent（自主当班 / 待确认 / 经验库） */}
+      <div className="animate-page-in-delay-2">
+        <StoreAgentPanel slug={currentWorkspace?.slug || ''} />
       </div>
 
       {/* 经营 KPI（真实利润数据） */}
