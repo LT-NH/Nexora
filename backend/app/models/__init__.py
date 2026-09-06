@@ -21,6 +21,7 @@ from app.models.ai_insight import AiInsight
 from app.models.inventory_movement import InventoryMovement
 from app.models.agent_task import AgentTask
 from app.models.agent_experience import AgentExperience
+from app.models.health_snapshot import HealthSnapshot
 
 __all__ = [
     "User",
@@ -51,4 +52,5 @@ __all__ = [
     "InventoryMovement",
     "AgentTask",
     "AgentExperience",
+    "HealthSnapshot",
 ]

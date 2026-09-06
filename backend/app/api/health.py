@@ -1,13 +1,21 @@
 """Nexora - 经营健康引擎 (Operational Health Engine).
 
-核心卖点：从"照镜子"（展示数据）升级为"当医生"（体检 + 归因 + 处方）。
+定位（v7 职责切分）：健康引擎 = 纯诊断层——体检、六维评分、归因、异常雷达、
+历史趋势沉淀；**不开处方**。可执行处方由 AI 决策助手（/ai/daily-summary）
+消费本引擎的诊断结果后生成，两引擎单向串联、零重复：
+
+  体检(health_snapshots) → 诊断 → 处方(ai_insights) → 执行 → 经验(agent_experiences)
 
 GET /workspaces/{slug}/health 返回：
   score:      0-100 加权健康分
   level:      green / yellow / red
-  summary:    一句话总结
-  dimensions: 5 大维度（现金流 / 库存 / 客户 / 渠道 / 增长）各带分数 + 红黄绿 + 归因
-  actions:    今日行动清单（明确处方 + 预估影响），按严重度排序
+  summary:    AI 经营总结（默认千问生成，失败回落规则模板）
+  dimensions: 六维（现金流/库存/客户/渠道/增长/利润）分数 + 红黄绿 + 归因
+  anomalies:  异常雷达（显著偏离事件）
+  prev:       上一次体检快照（供前端雷达图叠影对比）
+
+GET /workspaces/{slug}/health/history 返回持久化的体检趋势（真实历史，
+刷新/重登不丢失）。
 """
 
 import json
@@ -22,6 +30,7 @@ from app.api.deps import _require_member
 from app.database import get_db
 from app.middleware.auth import AuthContext, get_principal
 from app.models.customer import Customer
+from app.models.health_snapshot import HealthSnapshot
 from app.models.order import Order, OrderItem, OrderStatus
 from app.models.product import Product
 from app.models.workspace import WorkspaceRole
@@ -46,14 +55,14 @@ def _pct(a: float, b: float) -> float:
     return (a / b * 100.0) if b else 0.0
 
 
-@router.get("", summary="经营健康评分 + 今日行动清单")
+@router.get("", summary="经营健康诊断：六维评分 + AI 总结（纯诊断，不含处方）")
 async def workspace_health(
     slug: str,
     principal: Annotated[AuthContext, Depends(get_principal)],
     db: Annotated[AsyncSession, Depends(get_db)],
-    ai: int = Query(0, description="传 1 时用千问基于六维画像生成 AI 经营总结（失败自动回落规则总结）"),
+    ai: int = Query(1, description="默认 1：千问基于六维画像生成 AI 经营总结（失败自动回落规则总结）；传 0 强制规则版"),
 ) -> dict:
-    """Compute the workspace health score and today's action list (real data)."""
+    """Compute the workspace health diagnosis and persist a snapshot (real data)."""
     workspace, _ = await _require_member(slug, principal, db, WorkspaceRole.VIEWER)
     ws_id = workspace.id
     # SQLite 存 naive datetime —— 统一用 naive UTC 避免 aware/naive 比较错误
@@ -257,24 +266,13 @@ async def workspace_health(
     if score >= 80:
         summary = "经营状态良好，保持当前节奏，重点维护高复购客户。"
     elif score >= 60:
-        summary = f"整体健康，但「{worst['name']}」维度正在拖累评分，建议优先处理今日行动。"
+        summary = f"整体健康，但「{worst['name']}」维度正在拖累评分，可前往 AI 决策助手查看对应处方。"
     else:
-        summary = f"「{worst['name']}」健康度偏低，请立即处理今日行动清单，避免风险扩大。"
-
-    actions = _build_actions(
-        overstock=overstock,
-        stockout_risk=stockout_risk,
-        churn_count=c_churn,
-        refund_rate=refund_rate,
-        worst_growth=worst_growth,
-        platform_rev=platform_rev,
-        growth=growth,
-        low_dim=worst,
-    )
+        summary = f"「{worst['name']}」健康度偏低，建议尽快在 AI 决策助手中执行处置处方，避免风险扩大。"
 
     anomalies = _scan_anomalies(daily_ord, daily_rev, order_rows, stockout_risk, platform_rev, platform_prev, now)
 
-    # AI 经营总结（可选）：千问基于六维画像与异常雷达写个性化总结，失败回落规则 summary
+    # AI 经营总结（默认启用）：千问基于六维画像与异常雷达写个性化总结，失败回落规则 summary
     ai_generated = False
     if ai:
         _ai_text = await _ai_health_summary(score, dims, anomalies, summary)
@@ -282,17 +280,104 @@ async def workspace_health(
             summary = _ai_text
             ai_generated = True
 
+    # ------------------------------------------------------------------
+    # 5. 体检持久化（health_snapshots）+ 上期对比
+    #    去重：距上次 <30 分钟且总分变化 <1 时不重复落库（避免刷新污染趋势）；
+    #    分数变化 / 首次 AI 总结升级 则立即生成新快照，趋势真实可追溯。
+    # ------------------------------------------------------------------
+    prev_rows = (
+        await db.execute(
+            select(HealthSnapshot)
+            .where(HealthSnapshot.workspace_id == ws_id)
+            .order_by(HealthSnapshot.created_at.desc())
+            .limit(2)
+        )
+    ).scalars().all()
+    latest = prev_rows[0] if prev_rows else None
+    should_save = (
+        latest is None
+        or (now - latest.created_at).total_seconds() > 1800
+        or abs(latest.score - score) >= 1
+        or (ai_generated and not latest.ai_generated)
+    )
+    if should_save:
+        db.add(HealthSnapshot(
+            workspace_id=ws_id,
+            score=float(score),
+            level=level,
+            dimensions=json.dumps(dims, ensure_ascii=False),
+            anomalies=json.dumps(anomalies, ensure_ascii=False) if anomalies else None,
+            ai_generated=ai_generated,
+        ))
+        await db.commit()
+        prev_snap = latest  # 本次成为最新，上一期即原最新
+    else:
+        prev_snap = prev_rows[1] if len(prev_rows) > 1 else None
+
+    prev_block = None
+    if prev_snap is not None:
+        try:
+            prev_dims = json.loads(prev_snap.dimensions)
+        except Exception:
+            prev_dims = []
+        prev_block = {
+            "score": prev_snap.score,
+            "level": prev_snap.level,
+            "dimensions": prev_dims,
+            "computed_at": prev_snap.created_at.isoformat() if prev_snap.created_at else None,
+        }
+
     return {
         "workspace_id": ws_id,
         "score": score,
         "level": level,
         "summary": summary,
         "dimensions": dims,
-        "actions": actions,
         "anomalies": anomalies,
         "ai_generated": ai_generated,
+        "prev": prev_block,
         "computed_at": now.isoformat(),
     }
+
+
+@router.get("/history", summary="体检历史趋势（持久化快照，刷新不丢）")
+async def health_history(
+    slug: str,
+    principal: Annotated[AuthContext, Depends(get_principal)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    limit: int = Query(30, ge=1, le=200),
+) -> dict:
+    """最近 N 次体检快照（时间升序），支撑真实趋势图与本期 vs 上期对比。"""
+    workspace, _ = await _require_member(slug, principal, db, WorkspaceRole.VIEWER)
+    rows = (
+        await db.execute(
+            select(HealthSnapshot)
+            .where(HealthSnapshot.workspace_id == workspace.id)
+            .order_by(HealthSnapshot.created_at.desc())
+            .limit(limit)
+        )
+    ).scalars().all()
+    # 防御：created_at 可能混入异构格式（迁移/手工修复数据），归一后按时间排序
+    def _ts(r: HealthSnapshot) -> str:
+        ca = r.created_at
+        s = ca.isoformat() if hasattr(ca, "isoformat") else str(ca or "")
+        return s.replace("T", " ")
+
+    items = []
+    for r in sorted(rows, key=_ts):  # 升序：旧 → 新
+        try:
+            dims = json.loads(r.dimensions)
+        except Exception:
+            dims = []
+        items.append({
+            "id": r.id,
+            "score": r.score,
+            "level": r.level,
+            "dimensions": dims,
+            "ai_generated": bool(r.ai_generated),
+            "created_at": r.created_at.isoformat() if r.created_at else None,
+        })
+    return {"items": items, "total": len(items)}
 
 
 async def _ai_health_summary(score: float, dims: list[dict], anomalies: list[dict], rule_summary: str) -> str | None:
@@ -424,81 +509,8 @@ def _profit_reasons(
     return reasons or ["毛利结构未见明显异常"]
 
 
-def _build_actions(
-    overstock: list[dict],
-    stockout_risk: list[dict],
-    churn_count: int,
-    refund_rate: float,
-    worst_growth: float,
-    platform_rev: dict,
-    growth: float,
-    low_dim: dict,
-) -> list[dict]:
-    actions: list[dict] = []
-
-    for s in stockout_risk[:2]:
-        actions.append({
-            "type": "restock",
-            "severity": 3,
-            "product_id": s.get("product_id"),
-            "title": f"补货：{s['name']}",
-            "detail": f"库存仅剩 {s['stock']} 件，预计 {s['days']} 天后断货，建议尽快补货。",
-            "impact": "避免断货造成的订单损失",
-        })
-    for o in overstock[:2]:
-        actions.append({
-            "type": "clearance",
-            "severity": 2,
-            "product_id": o.get("product_id"),
-            "title": f"清仓：{o['name']}",
-            "detail": f"库存覆盖 {o['days']} 天（滞销 ¥{o['value']:,}），建议降价 15% 促销清仓。",
-            "impact": f"预计回笼约 ¥{round(o['value'] * 0.85):,}",
-        })
-    if churn_count:
-        actions.append({
-            "type": "retention",
-            "severity": 2,
-            "title": f"唤醒 {churn_count} 位流失客户",
-            "detail": f"{churn_count} 位客户超 30 天未复购，建议发放满 99 减 20 唤醒券。",
-            "impact": "预计挽回 20-30% 流失客户",
-        })
-    if refund_rate >= 5:
-        actions.append({
-            "type": "refund_check",
-            "severity": 2,
-            "title": "排查退款率",
-            "detail": f"退款率 {refund_rate:.1f}% 偏高，建议检查最近退款订单集中的商品。",
-            "impact": "每降低 1pp 退款率，约挽回 ¥{:.0f}".format(0),
-        })
-    if worst_growth <= -20:
-        for key, cur in sorted(platform_rev.items(), key=lambda x: -x[1]):
-            pass
-        actions.append({
-            "type": "channel_recovery",
-            "severity": 1,
-            "title": "修复渠道下滑",
-            "detail": f"有渠道近 7 天营收环比 {worst_growth:.0f}%，建议核查流量与活动。",
-            "impact": "稳住渠道基本盘",
-        })
-    if growth >= 15 and stockout_risk:
-        pass  # 已包含补货动作，避免重复
-
-    # 兜底：一切健康时给正向建议
-    if not actions:
-        actions.append({
-            "type": "keep",
-            "severity": 0,
-            "title": "保持当前节奏",
-            "detail": "经营各项指标健康，建议维持现有运营并持续关注客户复购。",
-            "impact": "稳定增长",
-        })
-
-    actions.sort(key=lambda a: -a["severity"])
-    return actions[:5]
-
-
 # ----------------------------------------------------------------------
-# 异常雷达 & 一键执行
+# 异常雷达
 # ----------------------------------------------------------------------
 
 def _scan_anomalies(
@@ -586,123 +598,6 @@ def _scan_anomalies(
     return anomalies[:5]
 
 
-@router.post("/execute", summary="一键执行健康动作")
-async def execute_action(
-    slug: str,
-    body: dict,
-    principal: Annotated[AuthContext, Depends(get_principal)],
-    db: Annotated[AsyncSession, Depends(get_db)],
-) -> dict:
-    """执行今日行动中的一条动作，并重新计算健康分。
-
-    body: {"type": "clearance"|"restock"|"retention", "product_id": "..."}
-    - clearance: 商品降价 15%（真实更新 price）
-    - restock:    跳转商品页（返回引导，不自动改库存）
-    - retention:  创建"满 99 减 20"唤醒券（真实创建优惠券）
-    """
-    workspace, _ = await _require_member(slug, principal, db, WorkspaceRole.ADMIN)
-    action_type = str(body.get("type", ""))
-    product_id = body.get("product_id")
-
-    # 反向写入 Shopify：找到工作空间已连接的 Shopify 店铺
-    from sqlalchemy import select as _select
-    from app.models.store import Store
-    from app.services.store import StoreService
-    from app.services.platforms import PLATFORM_REGISTRY
-
-    shopify_cfg: dict | None = None
-    shopify_integration = None
-    try:
-        store_row = (
-            await db.execute(
-                _select(Store).where(
-                    Store.workspace_id == workspace.id,
-                    Store.platform == "shopify",
-                ).order_by(Store.created_at.desc()).limit(1)
-            )
-        ).scalar_one_or_none()
-        if store_row is not None:
-            shopify_cfg = await StoreService.get_plain_credentials(store_row)
-            cls = PLATFORM_REGISTRY.get("shopify")
-            if cls is not None:
-                shopify_integration = cls()
-    except Exception:
-        shopify_cfg = None
-
-    message = ""
-    shopify_written = False
-    if action_type == "clearance" and product_id:
-        product = await db.get(Product, product_id)
-        if product is None or product.workspace_id != workspace.id:
-            raise HTTPException(status_code=404, detail="商品不存在")
-        old_price = float(product.price or 0)
-        new_price = round(old_price * 0.85, 2)
-        # 1) 先写真实 Shopify（成功才落地本地）
-        shopify_pid = None
-        if product.sku and product.sku.startswith("shopify-"):
-            shopify_pid = product.sku[len("shopify-"):]
-        if shopify_cfg and shopify_integration and shopify_pid:
-            ok = await shopify_integration.update_product_price(
-                shopify_cfg, shopify_pid, discount_pct=15.0
-            )
-            if ok:
-                shopify_written = True
-        if shopify_written or shopify_cfg is None:
-            # 有 Shopify 连接时要求真实写入成功；无连接时仅本地（兼容纯本地环境）
-            product.price = new_price
-            product.compare_at_price = product.compare_at_price or old_price
-            await db.commit()
-            message = f"已降价 15%：¥{old_price:.2f} → ¥{new_price:.2f}"
-            if shopify_written:
-                message += "（已同步 Shopify 真实价格）"
-        else:
-            message = f"Shopify 写入失败，未执行降价（¥{old_price:.2f} 保持不变）"
-    elif action_type == "retention":
-        from datetime import datetime as _dt, timedelta as _td
-        from app.models.coupon import Coupon
-        import random as _r
-        code = f"WAKE{_r.randint(1000, 9999)}"
-        # 1) 先写真实 Shopify（price rule + discount code）
-        if shopify_cfg and shopify_integration:
-            ok = await shopify_integration.create_coupon_on_shopify(
-                shopify_cfg,
-                code=code,
-                value=20.0,
-                min_amount=99.0,
-                max_uses=200,
-                expires_in_days=14,
-            )
-            if ok:
-                shopify_written = True
-            else:
-                message = "Shopify 优惠券创建失败，未在本地生成唤醒券"
-        if shopify_written or shopify_cfg is None:
-            coupon = Coupon(
-                workspace_id=workspace.id,
-                code=code,
-                type="fixed",
-                value=20.0,
-                min_order_amount=99.0,
-                max_uses=200,
-                expires_at=_dt.utcnow() + _td(days=14),
-            )
-            db.add(coupon)
-            await db.commit()
-            message = f"已创建唤醒券 {code}（满 99 减 20，14 天有效）"
-            if shopify_written:
-                message += "（已同步 Shopify 真实优惠券）"
-    else:
-        message = "该动作已引导至对应页面处理。"
-
-    # 重新计算健康分
-    result = await workspace_health(slug, principal, db)
-    return {
-        "executed": True,
-        "message": message,
-        "health": result,
-    }
-
-
 @router.get("/weekly-review", summary="经营周会：一页结论")
 async def weekly_review(
     slug: str,
@@ -741,12 +636,29 @@ async def weekly_review(
     elif data.get("total_orders", 0) == 0:
         changes.append({"tone": "bad", "title": "本周暂无订单", "detail": "建议核查流量与商品上架状态"})
 
-    # ---- 下周 3 件事（复用健康引擎今日行动，取前 3）----
-    health = await workspace_health(slug, principal, db)
+    # ---- 下周 3 件事（取自 AI 决策助手待处理处方——职责切分后，处方唯一来源）----
+    from app.models.ai_insight import AiInsight
+    pending = (
+        await db.execute(
+            select(AiInsight)
+            .where(
+                AiInsight.workspace_id == workspace.id,
+                AiInsight.status == "pending",
+            )
+            .order_by(AiInsight.suggested_at.desc())
+            .limit(3)
+        )
+    ).scalars().all()
     next_actions = [
-        {"type": a["type"], "title": a["title"], "impact": a.get("impact", "")}
-        for a in health.get("actions", [])[:3]
+        {"type": p.action_type or "keep", "title": p.title, "impact": (p.detail or "")[:60]}
+        for p in pending
     ]
+    if not next_actions:
+        next_actions = [{
+            "type": "keep",
+            "title": "保持当前节奏",
+            "impact": "经营各项指标健康，持续关注复购与库存周转",
+        }]
 
     # ---- 下周营收预测（本周日均 × 7 × 增长半衰保守系数）----
     daily_avg = data["total_revenue"] / 7.0

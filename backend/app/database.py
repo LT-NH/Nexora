@@ -91,6 +91,8 @@ async def _ensure_light_migrations(conn) -> None:
     migrations = [
         ("workspaces", "status", "VARCHAR(20) NOT NULL DEFAULT 'active'"),
         ("feedbacks", "status", "VARCHAR(20) NOT NULL DEFAULT 'new'"),
+        # 决策助手 → 体检快照 溯源列（健康引擎诊断 → 决策助手处方 单向流）
+        ("ai_insights", "snapshot_id", "VARCHAR(36)"),
     ]
     for table, column, ddl in migrations:
         try:

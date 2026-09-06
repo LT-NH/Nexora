@@ -37,6 +37,9 @@ class AiInsight(Base):
     action_type = Column(String(50), nullable=True)  # restock | clearance | stop_sale | retention | refund_check
     action_params = Column(Text, nullable=True)      # JSON 字符串，如 {"product_id": "..."}
 
+    # 溯源：本条处方基于哪一次体检诊断（健康引擎 → 决策助手 单向数据流）
+    snapshot_id = Column(String(36), ForeignKey("health_snapshots.id", ondelete="SET NULL"), nullable=True, index=True)
+
     # 生命周期
     status = Column(String(20), default=AiInsightStatus.PENDING, nullable=False, index=True)
     suggested_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)

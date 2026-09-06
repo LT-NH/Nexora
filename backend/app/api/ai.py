@@ -1,6 +1,12 @@
 """Nexora - AI Decision Loop API.
 
 闭环四段：主动摘要 → 点击执行 → 回访验证（命中率）→ 前置预测。
+
+职责切分（v7）：决策助手 = 行动层（开处方）。消费健康引擎（health_snapshots）
+已完成的诊断结论，生成可执行处方；每条处方通过 snapshot_id 溯源到具体体检，
+与健康引擎的"诊断层"彻底错开——同一问题不再被两套规则重复发现。
+
+  体检(health_snapshots) → 诊断 → 处方(ai_insights) → 执行 → 经验(agent_experiences)
 """
 import json
 from datetime import datetime, timedelta, timezone
@@ -16,6 +22,7 @@ from app.middleware.auth import AuthContext, get_principal
 from app.models.ai_insight import AiInsight
 from app.models.agent_experience import AgentExperience
 from app.models.customer import Customer
+from app.models.health_snapshot import HealthSnapshot
 from app.models.order import Order, OrderItem
 from app.models.product import Product
 from app.models.workspace import Workspace, WorkspaceRole
@@ -87,7 +94,9 @@ async def _compute_indicators(db: AsyncSession, ws_id: str):
             days_since = (now - c.last_order_at.replace(tzinfo=None)).days
             if days_since > 30:
                 churn_risk.append({
-                    "customer_id": c.id, "name": c.name or c.email, "last_order_days": days_since,
+                    "customer_id": c.id,
+                    "name": c.name or c.email or f"#{str(c.id)[:6]}",
+                    "last_order_days": days_since,
                     "total_orders": c.total_orders or 0,
                 })
 
@@ -198,6 +207,35 @@ async def daily_summary(
     workspace, _ = await _require_member(slug, principal, db, WorkspaceRole.VIEWER)
     ind = await _compute_indicators(db, workspace.id)
 
+    # ── 消费健康引擎诊断（单向流：体检 → 诊断 → 处方）────────────────────
+    # 决策助手不重复诊断，而是读取健康引擎最近一次体检结论作为处方依据，
+    # 并通过 snapshot_id 把每条处方溯源到该次体检。
+    latest_snap = (
+        await db.execute(
+            select(HealthSnapshot)
+            .where(HealthSnapshot.workspace_id == workspace.id)
+            .order_by(HealthSnapshot.created_at.desc())
+            .limit(1)
+        )
+    ).scalar_one_or_none()
+    diagnosis: dict | None = None
+    if latest_snap is not None:
+        try:
+            _dims = json.loads(latest_snap.dimensions)
+        except Exception:
+            _dims = []
+        _weakest = min(_dims, key=lambda d: d.get("score", 100)) if _dims else None
+        diagnosis = {
+            "snapshot_id": latest_snap.id,
+            "score": latest_snap.score,
+            "level": latest_snap.level,
+            "weakest": (
+                {"name": _weakest.get("name"), "score": _weakest.get("score")}
+                if _weakest else None
+            ),
+            "computed_at": latest_snap.created_at.isoformat() if latest_snap.created_at else None,
+        }
+
     # 去重：相同 insight_type 且 24h 内已有 pending/executed 的，不再重复生成
     cutoff = ind["now"] - timedelta(hours=24)
     existing = (
@@ -213,11 +251,21 @@ async def daily_summary(
     new_insights: list[dict] = []
 
     # ────────────────────────────────────────────────────────────────
-    # 职能切分（v6）：决策助手 = AI 行动层。
-    # 真实千问基于指标快照【自主发现问题 + 给出可执行建议】（不再用规则模板
-    # 复刻健康引擎的异常发现，避免两套同源规则重复）。
+    # 职能切分（v7）：决策助手 = 处方层。
+    # 健康引擎已完成诊断（体检快照），千问消费诊断结论【开可执行处方】：
+    # 聚焦"怎么做"（动作 + 对象 + 预期效果），不复述诊断、不重复发现问题。
     # 千问不可用/解析失败时降级到规则模板 _build_insights 兜底，服务不中断。
     # ────────────────────────────────────────────────────────────────
+    _diag_text = ""
+    if diagnosis:
+        _w = diagnosis.get("weakest") or {}
+        _diag_text = (
+            "\n健康引擎体检结论（诊断已完成，你无需重复诊断）：综合分 "
+            f"{diagnosis['score']:.0f}/100（{diagnosis['level']}）"
+            + (f"，最薄弱维度「{_w.get('name')}」{_w.get('score'):.0f} 分" if _w.get("name") else "")
+            + "。你的职责是【开处方】：针对诊断与快照给出今天最值得执行的 2~3 个动作，"
+            "聚焦怎么做（做什么/对谁做/预期效果），不要复述诊断描述。\n"
+        )
     try:
         from app.services.ai import _extract_json
         _snapshot = {
@@ -257,14 +305,17 @@ async def daily_summary(
                 _parts.append(f"「{_e.title}」[{_e.action_type}] 执行后反馈={_fb}{_delta}{_lesson}")
             _exp_text = "\n近期同类建议执行经验（经验库，供你参考真实效果，避免重蹈覆辙）：\n- " + "\n- ".join(_parts)
         _prompt = (
-            "你是多店铺电商经营决策副驾（AI 决策助手）。下面是系统从真实数据库采集的店铺指标快照（JSON）。\n"
-            "请从快照中自主发现【今天最值得处理的 2~3 个经营问题】，不局限于快照列出的风险类别，也可结合常识判断数据里的深层问题。\n"
+            "你是多店铺电商经营决策副驾（AI 决策助手，负责开处方）。下面是系统从真实数据库采集的店铺指标快照（JSON）。\n"
+            + _diag_text
+            + "请基于体检诊断与指标快照，开出【今天最值得执行的 2~3 条经营处方】。\n"
+            "要求：处方必须是动作（做什么 + 对谁做 + 预期效果），不是现象描述；"
+            "可结合常识挖掘快照里的深层问题，但标题与详情都要以动作收尾。\n"
             "每条输出字段：\n"
             "  insight_type ∈ stockout|refund|overstock|churn|profit|growth（问题类型）\n"
             "  action_type ∈ restock|clearance|retention|refund_check|price_adjust|keep（动作类型，keep=仅观察无需动作）\n"
-            "  title：≤26 字、直接有力（如「XX 库存只够撑 9 天，今日下单补货」）\n"
-            "  detail：≤100 字，含数据证据 + 因果 + 建议动作\n"
-            "  confidence：0.3~0.99 该问题成立的可信度\n"
+            "  title：≤26 字、动词开头、直接有力（如「今日补货 XX：库存仅够撑 9 天」）\n"
+            "  detail：≤100 字，数据证据 + 具体动作 + 预期效果\n"
+            "  confidence：0.3~0.99 该处方成立的可信度\n"
             "  params：{product_id?} 或 {customer?}，尽量引用快照中的实体\n"
             "只输出 JSON 数组，不要任何解释文字。\n快照：" + json.dumps(_snapshot, ensure_ascii=False)
             + _exp_text
@@ -315,11 +366,14 @@ async def daily_summary(
             status="pending",
             suggested_at=ind["now"],
             follow_up_days=30,
+            snapshot_id=diagnosis["snapshot_id"] if diagnosis else None,
         )
         db.add(row)
+        await db.flush()  # 立即生成 id，前端拿到即可执行
         existing_types.add(ins["insight_type"])
         ins["id"] = row.id
         ins["status"] = "pending"
+        ins["snapshot_id"] = row.snapshot_id
         _stored.append(ins)
 
     await db.commit()
@@ -329,7 +383,7 @@ async def daily_summary(
         {
             "id": e.id, "insight_type": e.insight_type, "title": e.title, "detail": e.detail,
             "confidence": e.confidence, "action_type": e.action_type, "action_params": e.action_params,
-            "status": e.status,
+            "status": e.status, "snapshot_id": e.snapshot_id,
         }
         for e in existing
         if e.status in ("pending", "executed")
@@ -338,6 +392,7 @@ async def daily_summary(
     return {
         "date": ind["now"].date().isoformat(),
         "insights": visible[:3],
+        "diagnosis": diagnosis,
         "metrics": {
             "refund_rate": round(ind["refund_rate"], 1),
             "stockout_count": len(ind["stockout_risk"]),
@@ -372,6 +427,7 @@ async def list_insights(
                 "status": r.status, "suggested_at": r.suggested_at.isoformat() if r.suggested_at else None,
                 "executed_at": r.executed_at.isoformat() if r.executed_at else None,
                 "feedback": r.feedback, "feedback_at": r.feedback_at.isoformat() if r.feedback_at else None,
+                "snapshot_id": r.snapshot_id,
             }
             for r in rows
         ],
@@ -701,7 +757,8 @@ async def predictions(
             days = (now - c.last_order_at.replace(tzinfo=None)).days
             if days >= 21:
                 churn_predictions.append({
-                    "customer_id": c.id, "name": c.name or c.email,
+                    "customer_id": c.id,
+                    "name": c.name or c.email or f"#{str(c.id)[:6]}",
                     "days_since_last": days, "total_orders": c.total_orders or 0,
                     "risk": "high" if days >= 45 else "medium",
                 })
