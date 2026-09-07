@@ -51,17 +51,19 @@ async def _activate_subscription(db: AsyncSession, order: SubscriptionOrder) -> 
         raise RuntimeError(f"plan {order.plan_slug} 不存在")
     months = PERIOD_MONTHS.get(order.period, 1)
     now = datetime.utcnow()
+    # 每个工作空间只保留一条当前订阅：换购/续费都更新同一条，避免同秒多行导致状态混乱
     sub = (
         await db.execute(
             select(Subscription).where(
                 Subscription.workspace_id == order.workspace_id,
-                Subscription.plan_id == plan.id,
             ).order_by(Subscription.created_at.desc()).limit(1)
         )
     ).scalar_one_or_none()
     if sub is None:
         sub = Subscription(workspace_id=order.workspace_id, plan_id=plan.id)
         db.add(sub)
+    else:
+        sub.plan_id = plan.id
     # 续费叠加：未过期则从 current_period_end 顺延
     base = sub.current_period_end.replace(tzinfo=None) if (sub.current_period_end and sub.current_period_end.replace(tzinfo=None) > now) else now
     sub.status = SubscriptionStatus.ACTIVE

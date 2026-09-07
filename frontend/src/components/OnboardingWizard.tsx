@@ -37,7 +37,7 @@ export const OnboardingWizard: React.FC = () => {
   
   return (
     // 遮罩背景点击即关闭引导（不再全屏拦截页面操作，避免"按钮点不动"）
-    <div className="fixed inset-0 z-[100] bg-black/50 flex items-end sm:items-center justify-center p-4" onClick={dismiss}>
+    <div className="fixed inset-0 z-40 bg-black/50 flex items-end sm:items-center justify-center p-4" onClick={dismiss}>
       <div onClick={(e) => e.stopPropagation()} className="bg-white dark:bg-gray-800 rounded-2xl w-full max-w-md p-6 shadow-2xl animate-scale-in relative">
         <button onClick={dismiss} className="absolute top-4 right-4 p-1 text-gray-400 hover:text-gray-600">
           <X size={20} />

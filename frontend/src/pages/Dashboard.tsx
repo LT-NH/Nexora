@@ -2,6 +2,7 @@ import React, { useEffect, useState, useRef } from 'react';
 import {
   Users,
   Loader2,
+  Lock,
   Key,
   CreditCard,
   Wallet,
@@ -151,6 +152,9 @@ const D = {
     based_on_sales_data: '基于实际销售数据分析',
     no_data: '暂无数据',
     ai_coverage_title: 'AI分析覆盖',
+    agent_lock_title: '自主巡店 Agent 是 Enterprise 专属',
+    agent_lock_hint: '升级后，你的 AI 运营员工每天 9:30 自主当班：发现问题 → 请你确认 → 沉淀经验',
+    agent_lock_cta: '升级解锁',
     orders_analyzed: '笔订单参与分析',
     trend_judgment_title: '趋势判断',
     trend_up: '销售呈上升趋势',
@@ -266,6 +270,9 @@ const D = {
     based_on_sales_data: 'Based on actual sales data',
     no_data: 'No data',
     ai_coverage_title: 'AI Analysis Coverage',
+    agent_lock_title: 'Store Sentinel Agent is Enterprise-only',
+    agent_lock_hint: 'Upgrade so your AI operator patrols daily at 9:30: finds issues → asks you → learns',
+    agent_lock_cta: 'Upgrade',
     orders_analyzed: 'orders analyzed',
     trend_judgment_title: 'Trend',
     trend_up: 'Sales are trending upward',
@@ -777,10 +784,32 @@ export const Dashboard: React.FC = () => {
         <AiDecisionPanel slug={currentWorkspace?.slug || ''} />
       </div>
 
-      {/* 巡店 Agent（自主当班 / 待确认 / 经验库） */}
-      <div className="animate-page-in-delay-2">
-        <StoreAgentPanel slug={currentWorkspace?.slug || ''} />
-      </div>
+      {/* 巡店 Agent：Enterprise 专属（自主当班 / 待确认 / 经验库） */}
+      {plan === 'enterprise' ? (
+        <div className="animate-page-in-delay-2">
+          <StoreAgentPanel slug={currentWorkspace?.slug || ''} />
+        </div>
+      ) : (
+        <div className="animate-page-in-delay-2 rounded-2xl border border-dashed border-violet-300/60 dark:border-violet-500/30 bg-violet-50/40 dark:bg-violet-500/[0.04] px-5 py-4 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <Lock size={18} className="text-violet-400 flex-shrink-0" />
+            <div>
+              <p className="text-sm font-bold text-violet-700 dark:text-violet-300">
+                {t('agent_lock_title')}
+              </p>
+              <p className="text-[12.5px] text-violet-500/80 dark:text-violet-400/70">
+                {t('agent_lock_hint')}
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={() => { window.location.hash = '#/billing'; }}
+            className="text-[12px] font-bold px-4 py-2 rounded-lg bg-violet-600 hover:bg-violet-700 text-white transition-colors flex-shrink-0"
+          >
+            {t('agent_lock_cta')}
+          </button>
+        </div>
+      )}
 
       {/* 经营 KPI（真实利润数据） */}
       <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-4 gap-4 animate-fade-in" aria-live="polite">

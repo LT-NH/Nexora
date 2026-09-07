@@ -85,6 +85,11 @@ interface BillingStatus {
 }
 
 const FEATURE_LABELS: Record<string, string> = {
+  ai_health: '经营健康引擎 · 六维诊断 + AI 总结',
+  ai_advisor: 'AI 决策助手 · 千问处方 + 一键执行',
+  store_sentinel: '自主巡店 Agent · 每日当班 + 待确认执行',
+  experience_base: '经验库沉淀 · 建议越用越准',
+  profit_analysis: '利润健康 · 单品毛利归因',
   api_access: 'API 接入',
   storage_gb: '存储',
   support: '支持',
@@ -278,12 +283,7 @@ export const Billing: React.FC = () => {
                     {f}
                   </li>
                 ))}
-                {plan.slug === 'enterprise' && (
-                  <li className="text-[13px] font-semibold text-violet-600 dark:text-violet-400 flex items-start gap-2">
-                    <Lock size={14} className="mt-0.5 flex-shrink-0" />
-                    {t('agent_flagship')}
-                  </li>
-                )}
+
               </ul>
               {isFree ? (
                 <Button variant="outline" disabled className="w-full">{t('free_forever')}</Button>

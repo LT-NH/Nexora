@@ -11,7 +11,7 @@
 import json
 from typing import Annotated
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -129,6 +129,25 @@ def _parse_plan(raw: str | None) -> tuple[str, list[dict]]:
         })
     return conclusion, plan
 
+
+
+
+async def _ws_plan_tier(db: AsyncSession, ws_id: str) -> str:
+    """当前订阅档位（free/pro/enterprise）；无订阅=free。"""
+    try:
+        from app.models.subscription import Subscription, SubscriptionPlan
+        sub = (
+            await db.execute(
+                select(Subscription).where(Subscription.workspace_id == ws_id)
+                .order_by(Subscription.created_at.desc()).limit(1)
+            )
+        ).scalar_one_or_none()
+        if sub is None:
+            return "free"
+        plan = await db.get(SubscriptionPlan, sub.plan_id)
+        return (plan.slug if plan else "free")
+    except Exception:
+        return "free"
 
 async def _is_uuid(s: str) -> bool:
     return len(s) == 36 and s[8] == "-" and s[13] == "-"
@@ -296,6 +315,10 @@ async def api_run_store_check(
     auto: int = 0,
 ) -> dict:
     workspace, _ = await _require_member(slug, principal, db, WorkspaceRole.ADMIN)
+    # 巡店 Agent 为 Enterprise 专属（超管不受限）
+    _is_admin = bool(getattr(getattr(principal, "user", None), "is_superadmin", False))
+    if not _is_admin and await _ws_plan_tier(db, workspace.id) != "enterprise":
+        raise HTTPException(status_code=403, detail="自主巡店 Agent 为 Enterprise 套餐专属，请升级后使用")
     return await run_store_check(db, workspace, principal.user_id, auto=bool(auto))
 
 
@@ -360,8 +383,16 @@ async def run_daily_store_agents() -> None:
                 ).scalars().first()
                 if not owner_id:
                     continue
+                # Enterprise 专属：非 enterprise 工作空间跳过（超管 workspace 单独在端点手动巡店）
+                try:
+                    if await _ws_plan_tier(db, ws.id) != "enterprise":
+                        continue
+                except Exception:
+                    continue
                 try:
                     await run_store_check(db, ws, owner_id, auto=False)
+                except Exception as e:  # noqa: BLE001
+                    logger.warning("sentinel ws %s failed: %s", ws.id, str(e)[:150])
                 except Exception as e:  # noqa: BLE001
                     logger.warning("sentinel ws %s failed: %s", ws.id, str(e)[:150])
     except Exception as e:  # noqa: BLE001

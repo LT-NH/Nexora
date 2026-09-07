@@ -104,6 +104,48 @@ async def lifespan(app: FastAPI):
     logger.info("Shutting down Nexora API.")
 
 
+
+# ── 套餐能力矩阵（电商 AI 能力语义键；价格/上限在 DB 独立可调） ────────────────
+_PLAN_FEATURES = {
+    "free": {
+        "description": "个人起步：电商管理 + 六维健康体检",
+        "ai_health": True,        # 经营健康引擎（六维诊断 + AI 总结）
+        "ai_advisor": False,      # AI 决策助手（千问开处方）
+        "store_sentinel": False,  # 自主巡店 Agent（旗舰专属）
+        "experience_base": False, # 经验库沉淀
+        "profit_analysis": False, # 利润健康/单品毛利归因
+        "api_keys": 1,
+        "support": "community",
+    },
+    "pro": {
+        "description": "成长商家：AI 决策助手开处方 + 利润归因",
+        "ai_health": True,
+        "ai_advisor": True,
+        "store_sentinel": False,  # 巡店 Agent 归 Enterprise
+        "experience_base": True,
+        "profit_analysis": True,
+        "api_keys": 10,
+        "support": "email",
+    },
+    "enterprise": {
+        "description": "旗舰：雇一位每天自主上班的 AI 运营员工",
+        "ai_health": True,
+        "ai_advisor": True,
+        "store_sentinel": True,   # 每日自主巡店 Agent（本档专属）
+        "experience_base": True,
+        "profit_analysis": True,
+        "api_keys": 50,
+        "support": "priority",
+        "custom_domain": True,
+        "audit_logs": True,
+    },
+}
+
+
+def _plan_feature_matrix(slug: str) -> dict:
+    return dict(_PLAN_FEATURES.get(slug, {}))
+
+
 async def seed_default_plans() -> None:
     """Seed the database with default subscription plans if they don't exist."""
     try:
@@ -113,7 +155,17 @@ async def seed_default_plans() -> None:
                 select(SubscriptionPlan).limit(1)
             )
             if result.scalar_one_or_none() is not None:
-                return  # Already seeded
+                # 已存在 → 幂等同步能力矩阵（不覆盖价格/上限，仅刷新功能档位）
+                for _slug in _PLAN_FEATURES:
+                    _p = (
+                        await session.execute(
+                            select(SubscriptionPlan).where(SubscriptionPlan.slug == _slug).limit(1)
+                        )
+                    ).scalar_one_or_none()
+                    if _p is not None:
+                        _p.features = _plan_feature_matrix(_slug)
+                await session.commit()
+                return
 
             plans = [
                 SubscriptionPlan(
@@ -182,6 +234,7 @@ async def seed_default_plans() -> None:
             ]
 
             for plan in plans:
+                plan.features = _plan_feature_matrix(plan.slug)
                 session.add(plan)
 
             await session.commit()
