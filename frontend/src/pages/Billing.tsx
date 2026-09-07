@@ -1,151 +1,100 @@
-import React, { useState, useEffect } from 'react';
-import { Check, CreditCard, Calendar, AlertTriangle } from 'lucide-react';
-import { Card } from '@/components/ui/Card';
+import React, { useEffect, useState } from 'react';
+import { Check, CreditCard, AlertTriangle, Crown, Lock, ShieldCheck } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { PageHeader } from '@/components/ui/PageHeader';
-import { Badge } from '@/components/ui/Badge';
 import { SkeletonStatCard } from '@/components/ui/StatCard';
-import { Modal, ModalFooter } from '@/components/ui/Modal';
-import { PaymentModal } from '@/components/billing/PaymentModal';
 import { useToast } from '@/components/ui/Toast';
 import { useWorkspace } from '@/hooks/useWorkspace';
 import { usePageTitle } from '@/hooks/usePageTitle';
-import { usePageT, type Lang } from '@/i18n';
-import { subscriptionService } from '@/services/subscription';
+import { usePageT } from '@/i18n';
+import { WechatPayModal } from '@/components/billing/WechatPayModal';
 import api from '@/services/api';
-import type { SubscriptionPlan, Subscription } from '@/types';
-
-// ============================================================
-// 收款码配置：把您的收款二维码图片放到 public 目录下即可。// 例如：public/qrcode.png → const QrPayUrl = '/qrcode.png'
-// ============================================================
-const QrCodeUrl = '/qrcode.png';
 
 const D = {
   zh: {
     billing_page_title: '订阅管理',
     billing_title: '计费与方案',
-    billing_subtitle: '管理您的订阅和计费设置',
+    billing_subtitle: '选择适合你的 AI 运营员工档位，随时升级',
     load_billing_failed: '加载计费数据失败',
     retry: '重试',
-    plan_updated_exclaim: '方案已更新！',
-    plan_updated_msg: '您的订阅方案已更新。',
-    update_failed: '更新失败',
-    error_occurred: '发生错误',
-    plan_updated: '方案已更新',
-    now_using: '您现在使用 {plan} 方案',
-    switch_failed: '切换失败',
-    retry_later: '请稍后重试',
-    payment_confirmed: '支付确认成功！',
-    upgraded_to: '您已升级到 {name} 方案。',
-    activation_failed: '激活失败',
-    contact_support: '请联系客服处理',
-    cancelled: '已取消',
-    sub_cancelled: '您的订阅已取消。',
-    cancel_failed: '取消失败',
-    status_active: '活跃',
-    status_trialing: '试用中',
-    status_trial: '试用',
-    status_past_due: '逾期',
-    status_cancelled: '已取消',
-    status_incomplete: '待支付',
-    feat_api_access: 'API 访问',
-    feat_storage: '存储空间',
-    feat_support: '技术支持',
-    feat_custom_domain: '自定义域名',
-    feat_audit_logs: '审计日志',
-    feat_api_keys: 'API 密钥',
-    feat_priority_support: '优先支持',
-    feat_sso: 'SSO 单点登录',
-    feat_white_label: '白标定制',
-    feat_dedicated_support: '专属支持',
-    unit_items: ' 个',
+    admin_free: '超管账号 · 全功能免费',
+    admin_free_hint: '管理员身份无需订阅，所有功能已解锁',
     current_plan: '当前方案',
-    current_plan_subtitle: '您当前使用的是 {name} 方案',
-    period_ends: '当前周期截止于',
-    cancel_plan: '取消方案',
-    available_plans: '可用方案',
-    current: '当前',
+    status_active: '生效中',
+    status_none: '未订阅',
+    status_expired: '已过期',
+    expires_at: '有效期至',
+    choose_period: '选择周期',
+    monthly: '月付',
+    yearly: '年付',
     per_month: '/月',
-    yearly_savings: '年付可节省 ${amount}/月',
-    upgrade_to: '升级到 {name}',
-    downgrade_to: '降级到 {name}',
-    billing_history: '账单历史',
-    billing_history_subtitle: '您的最近发票和付款记录',
-    no_history: '暂无账单历史。',
-    cancel_subscription: '取消订阅',
-    about_to_cancel: '您即将取消订阅',
-    cancel_warning: '您的访问权限将持续到当前计费周期结束。之后，您的订阅将被取消，您可能会失去高级功能的访问权限。',
-    cancel_confirm_prefix: '您确定要取消',
-    cancel_confirm_suffix: '方案吗？',
-    keep_plan: '保留方案',
+    per_year: '/年',
+    upgrade: '升级',
+    current: '当前方案',
+    free_forever: '免费',
+    agent_flagship: '含每日自主巡店 Agent',
+    checkout_failed: '下单失败',
+    load_success: '已刷新',
+    most_popular: '最受欢迎',
   },
   en: {
-    billing_page_title: 'Subscription Management',
+    billing_page_title: 'Subscription',
     billing_title: 'Billing & Plans',
-    billing_subtitle: 'Manage your subscription and billing settings',
+    billing_subtitle: 'Pick the AI operator tier that fits, upgrade anytime',
     load_billing_failed: 'Failed to load billing data',
     retry: 'Retry',
-    plan_updated_exclaim: 'Plan updated!',
-    plan_updated_msg: 'Your subscription plan has been updated.',
-    update_failed: 'Update Failed',
-    error_occurred: 'An error occurred',
-    plan_updated: 'Plan Updated',
-    now_using: 'You are now on the {plan} plan',
-    switch_failed: 'Switch Failed',
-    retry_later: 'Please try again later',
-    payment_confirmed: 'Payment confirmed!',
-    upgraded_to: 'You have been upgraded to the {name} plan.',
-    activation_failed: 'Activation Failed',
-    contact_support: 'Please contact support',
-    cancelled: 'Cancelled',
-    sub_cancelled: 'Your subscription has been cancelled.',
-    cancel_failed: 'Cancel Failed',
+    admin_free: 'Admin account · all features free',
+    admin_free_hint: 'Administrators bypass subscription — everything unlocked',
+    current_plan: 'Current plan',
     status_active: 'Active',
-    status_trialing: 'Trialing',
-    status_trial: 'Trial',
-    status_past_due: 'Past Due',
-    status_cancelled: 'Cancelled',
-    status_incomplete: 'Incomplete',
-    feat_api_access: 'API Access',
-    feat_storage: 'Storage',
-    feat_support: 'Support',
-    feat_custom_domain: 'Custom Domain',
-    feat_audit_logs: 'Audit Logs',
-    feat_api_keys: 'API Keys',
-    feat_priority_support: 'Priority Support',
-    feat_sso: 'SSO',
-    feat_white_label: 'White Label',
-    feat_dedicated_support: 'Dedicated Support',
-    unit_items: '',
-    current_plan: 'Current Plan',
-    current_plan_subtitle: 'You are currently on the {name} plan',
-    period_ends: 'Current period ends:',
-    cancel_plan: 'Cancel Plan',
-    available_plans: 'Available Plans',
-    current: 'Current',
+    status_none: 'Not subscribed',
+    status_expired: 'Expired',
+    expires_at: 'Valid until',
+    choose_period: 'Billing cycle',
+    monthly: 'Monthly',
+    yearly: 'Yearly',
     per_month: '/mo',
-    yearly_savings: 'Save ${amount}/yr with yearly billing',
-    upgrade_to: 'Upgrade to {name}',
-    downgrade_to: 'Downgrade to {name}',
-    billing_history: 'Billing History',
-    billing_history_subtitle: 'Your recent invoices and payments',
-    no_history: 'No billing history yet.',
-    cancel_subscription: 'Cancel Subscription',
-    about_to_cancel: 'You are about to cancel your subscription',
-    cancel_warning: 'Your access will continue until the end of the current billing period. After that, your subscription will be cancelled and you may lose access to premium features.',
-    cancel_confirm_prefix: 'Are you sure you want to cancel the',
-    cancel_confirm_suffix: 'plan?',
-    keep_plan: 'Keep Plan',
+    per_year: '/yr',
+    upgrade: 'Upgrade',
+    current: 'Current',
+    free_forever: 'Free',
+    agent_flagship: 'Includes daily autonomous Store Sentinel',
+    checkout_failed: 'Checkout failed',
+    load_success: 'Refreshed',
+    most_popular: 'Most popular',
   },
-} as Record<Lang, Record<string, string>>;
+};
 
-const formatDate = (dateStr: string | null | undefined) => {
-  if (!dateStr) return '—';
-  return new Date(dateStr).toLocaleDateString('zh-CN', {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-  });
+interface PlanInfo {
+  id: string;
+  slug: string;
+  name: string;
+  price_monthly: number;
+  price_yearly: number;
+  max_members: number;
+  max_workspaces: number;
+  features: Record<string, unknown>;
+}
+
+interface BillingStatus {
+  is_admin: boolean;
+  plan: { slug: string; name: string } | null;
+  status: string;
+  current_period_end?: string | null;
+  note?: string;
+}
+
+const FEATURE_LABELS: Record<string, string> = {
+  api_access: 'API 接入',
+  storage_gb: '存储',
+  support: '支持',
+  custom_domain: '自定义域名',
+  audit_logs: '审计日志',
+  api_keys: 'API Key 数',
+  priority_support: '优先支持',
+  sso: 'SSO 单点登录',
+  white_label: '白标',
+  dedicated_support: '专属客服',
 };
 
 export const Billing: React.FC = () => {
@@ -153,130 +102,50 @@ export const Billing: React.FC = () => {
   usePageTitle(t('billing_page_title'));
   const { currentWorkspace } = useWorkspace();
   const { addToast } = useToast();
-  const [plans, setPlans] = useState<SubscriptionPlan[]>([]);
-  const [subscription, setSubscription] = useState<Subscription | null>(null);
+  const slug = currentWorkspace?.slug || '';
+  const [plans, setPlans] = useState<PlanInfo[]>([]);
+  const [status, setStatus] = useState<BillingStatus | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [isSubscribing, setIsSubscribing] = useState<string | null>(null);
-  const [showCancelModal, setShowCancelModal] = useState(false);
-  const [isCanceling, setIsCanceling] = useState(false);
-  const [showPaymentModal, setShowPaymentModal] = useState(false);
-  const [enterprisePlan, setEnterprisePlan] = useState<SubscriptionPlan | null>(null);
+  const [period, setPeriod] = useState<'month' | 'year'>('month');
+  const [checkoutPlan, setCheckoutPlan] = useState<{ slug: string; name: string } | null>(null);
+
+  const load = async () => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      const [p, s] = await Promise.all([
+        api.get(`/workspaces/${slug}/billing/plans`, { timeout: 10000 }),
+        api.get(`/workspaces/${slug}/billing/status`, { timeout: 10000 }),
+      ]);
+      setPlans(p.data.plans || []);
+      setStatus(s.data);
+    } catch {
+      setError(t('load_billing_failed'));
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   useEffect(() => {
-    const loadData = async () => {
-      setIsLoading(true);
-      setError(null);
-      try {
-        const [plansData, subData] = await Promise.all([
-          subscriptionService.getPlans(),
-          currentWorkspace
-            ? subscriptionService.getSubscription(currentWorkspace.slug).catch((err) => {
-                if (err?.response?.status === 404) return null;
-                throw err;
-              })
-            : Promise.resolve(null),
-        ]);
-        setPlans(plansData);
-        setSubscription(subData);
-      } catch (err: any) {
-        setError(err?.response?.data?.detail || t('load_billing_failed'));
-      } finally {
-        setIsLoading(false);
-      }
-    };
+    if (slug) load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [slug]);
 
-    loadData();
-  }, [currentWorkspace]);
-
-  const handleSubscribe = async (planSlug: string) => {
-    if (!currentWorkspace) return;
-    setIsSubscribing(planSlug);
-    try {
-      const updated = await subscriptionService.subscribe(currentWorkspace.slug, {
-        plan_slug: planSlug,
-        billing_cycle: 'monthly',
-      });
-      setSubscription(updated);
-      addToast('success', t('plan_updated_exclaim'), t('plan_updated_msg'));
-    } catch (err: any) {
-      addToast('error', t('update_failed'), err?.response?.data?.detail || t('error_occurred'));
-    } finally {
-      setIsSubscribing(null);
+  const formatFeatures = (features: Record<string, unknown>): string[] => {
+    const labels: string[] = [];
+    for (const [key, value] of Object.entries(features)) {
+      if (key === 'description') continue;
+      const label = FEATURE_LABELS[key] || key;
+      if (typeof value === 'boolean') { if (value) labels.push(label); }
+      else if (typeof value === 'number') labels.push(`${label}: ${value}${key === 'storage_gb' ? ' GB' : ''}`);
+      else if (typeof value === 'string') labels.push(`${label}: ${value}`);
     }
+    return labels;
   };
 
-  const handleSwitchPlan = async (targetSlug: string) => {
-    if (!currentWorkspace) return;
-    setIsSubscribing(targetSlug);
-    try {
-      const result = await subscriptionService.switchPlan(currentWorkspace.slug, targetSlug);
-      setSubscription(result);
-      if (result.payment_status === 'pending') {
-        // Paid plan requires payment confirmation — show modal for any paid plan
-        const plan = plans.find((p) => p.slug === targetSlug);
-        if (plan) setEnterprisePlan(plan);
-        setShowPaymentModal(true);
-      } else {
-        addToast('success', t('plan_updated'), t('now_using').replace('{plan}', targetSlug));
-      }
-    } catch (err: any) {
-      addToast('error', t('switch_failed'), err?.response?.data?.detail || t('retry_later'));
-    } finally {
-      setIsSubscribing(null);
-    }
-  };
-
-  const handleEnterpriseClick = (plan: SubscriptionPlan) => {
-    setEnterprisePlan(plan);
-    setShowPaymentModal(true);
-  };
-
-  const handleConfirmPayment = async () => {
-    if (!currentWorkspace || !enterprisePlan) return;
-    setIsSubscribing(enterprisePlan.slug);
-    try {
-      let verified: Subscription;
-      // If subscription already exists with pending payment (via switchPlan), just verify
-      if (subscription && subscription.payment_status === 'pending') {
-        verified = await subscriptionService.verifyPayment(currentWorkspace.slug);
-      } else {
-        // First-time subscribe flow
-        await subscriptionService.subscribe(currentWorkspace.slug, {
-          plan_slug: enterprisePlan.slug,
-          billing_cycle: 'monthly',
-        });
-        verified = await subscriptionService.verifyPayment(currentWorkspace.slug);
-      }
-      setSubscription(verified);
-      setShowPaymentModal(false);
-      setEnterprisePlan(null);
-      addToast(
-        'success',
-        t('payment_confirmed'),
-        t('upgraded_to').replace('{name}', enterprisePlan.name)
-      );
-    } catch (err: any) {
-      addToast('error', t('activation_failed'), err?.response?.data?.detail || t('contact_support'));
-    } finally {
-      setIsSubscribing(null);
-    }
-  };
-
-  const handleCancel = async () => {
-    if (!currentWorkspace) return;
-    setIsCanceling(true);
-    try {
-      const updated = await subscriptionService.cancelSubscription(currentWorkspace.slug);
-      setSubscription(updated);
-      addToast('success', t('cancelled'), t('sub_cancelled'));
-    } catch (err: any) {
-      addToast('error', t('cancel_failed'), err?.response?.data?.detail || t('error_occurred'));
-    } finally {
-      setIsCanceling(false);
-      setShowCancelModal(false);
-    }
-  };
+  const currentSlug = status?.plan?.slug;
+  const isAdmin = status?.is_admin === true;
 
   if (isLoading) {
     return (
@@ -311,319 +180,142 @@ export const Billing: React.FC = () => {
         </div>
         <h3 className="text-lg font-semibold text-slate-900 dark:text-gray-100">{t('load_billing_failed')}</h3>
         <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">{error}</p>
-        <Button
-          variant="outline"
-          className="mt-4"
-          onClick={() => window.location.reload()}
-        >
-          {t('retry')}
-        </Button>
+        <Button variant="outline" className="mt-4" onClick={load}>{t('retry')}</Button>
       </div>
     );
   }
 
-  const getStatusLabel = (status: string) => {
-    switch (status) {
-      case 'active': return t('status_active');
-      case 'trialing': return t('status_trialing');
-      case 'past_due': return t('status_past_due');
-      case 'cancelled': return t('status_cancelled');
-      case 'incomplete': return t('status_incomplete');
-      default: return status;
-    }
-  };
-
-  // Convert features object to a presentable list of labels
-  const formatFeatures = (features: Record<string, any>): string[] => {
-    const labels: string[] = [];
-    const featureMap: Record<string, string> = {
-      api_access: t('feat_api_access'),
-      storage_gb: t('feat_storage'),
-      support: t('feat_support'),
-      custom_domain: t('feat_custom_domain'),
-      audit_logs: t('feat_audit_logs'),
-      api_keys: t('feat_api_keys'),
-      priority_support: t('feat_priority_support'),
-      sso: t('feat_sso'),
-      white_label: t('feat_white_label'),
-      dedicated_support: t('feat_dedicated_support'),
-    };
-    for (const [key, value] of Object.entries(features)) {
-      if (key === 'description') continue;
-      const label = featureMap[key] || key;
-      if (typeof value === 'boolean') {
-        if (value) labels.push(label);
-      } else if (typeof value === 'number') {
-        labels.push(`${label}: ${value}${key === 'storage_gb' ? ' GB' : t('unit_items')}`);
-      } else if (typeof value === 'string') {
-        labels.push(`${label}: ${value}`);
-      }
-    }
-    return labels;
-  };
-
-  const currentPlanSlug = subscription?.plan?.slug;
-
   return (
     <div className="space-y-6 animate-fade-in">
-      <PageHeader
-        title={t('billing_title')}
-        subtitle={t('billing_subtitle')}
-      />
+      <PageHeader title={t('billing_title')} subtitle={t('billing_subtitle')} />
 
-      {/* Current Plan */}
-      {subscription && subscription.plan && (
-        <Card
-          title={t('current_plan')}
-          subtitle={t('current_plan_subtitle').replace('{name}', subscription.plan.name)}
-        >
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-primary-50 to-purple-50 flex items-center justify-center">
-                <CreditCard size={22} className="text-primary-600" />
-              </div>
-              <div>
-                <div className="flex items-center gap-2">
-                  <h3 className="text-lg font-semibold text-slate-900 dark:text-gray-100">
-                    {subscription.plan.name}
-                  </h3>
-                  <Badge
-                    variant={
-                      subscription.status === 'active'
-                        ? 'success'
-                        : subscription.status === 'trialing'
-                        ? 'primary'
-                        : subscription.status === 'incomplete'
-                        ? 'warning'
-                        : 'danger'
-                    }
-                  >
-                    {getStatusLabel(subscription.status)}
-                  </Badge>
-                </div>
-                <div className="flex items-center gap-1 mt-1 text-sm text-gray-500 dark:text-gray-400">
-                  <Calendar size={14} />
-                  <span>
-                    {t('period_ends')}{' '}
-                    {formatDate(subscription.current_period_end)}
-                  </span>
-                </div>
-              </div>
-            </div>
-            {subscription.status === 'active' && subscription.plan.slug !== 'free' && (
-              <Button variant="outline" onClick={() => setShowCancelModal(true)}>
-                {t('cancel_plan')}
-              </Button>
-            )}
+      {/* 当前状态条 */}
+      {isAdmin ? (
+        <div className="rounded-2xl border border-amber-200 dark:border-amber-500/30 bg-gradient-to-r from-amber-50 to-orange-50 dark:from-amber-500/[0.08] dark:to-orange-500/[0.05] px-5 py-4 flex items-center gap-3">
+          <Crown size={20} className="text-amber-500 flex-shrink-0" />
+          <div>
+            <p className="text-sm font-bold text-amber-700 dark:text-amber-400">{t('admin_free')}</p>
+            <p className="text-[12.5px] text-amber-600/80 dark:text-amber-400/70">{t('admin_free_hint')}</p>
           </div>
-        </Card>
-      )}
-
-      {/* Plan Comparison */}
-      <div>
-        <h3 className="text-lg font-semibold text-slate-900 dark:text-gray-100 mb-4">
-          {t('available_plans')}
-        </h3>
-        <div className="grid md:grid-cols-3 gap-6">
-          {plans.map((plan, idx) => {
-            const isCurrentPlan = currentPlanSlug === plan.slug;
-            const isUpgrade = plan.price_monthly > (subscription?.plan?.price_monthly ?? 0);
-            return (
-              <Card
-                key={plan.id}
-                className={`transition-all duration-300 ${
-                  isCurrentPlan
-                    ? 'border-primary-300 ring-1 ring-primary-200 shadow-md'
-                    : 'hover:shadow-md hover:-translate-y-1'
-                }`}
-                style={{ animationDelay: `${idx * 0.1}s` }}
-              >
-                <div className="flex flex-col h-full">
-                  <div>
-                    <div className="flex items-center justify-between mb-2">
-                      <h4 className="text-lg font-semibold text-slate-900 dark:text-gray-100">
-                        {plan.name}
-                      </h4>
-                      {isCurrentPlan && (
-                        <Badge variant="primary">{t('current')}</Badge>
-                      )}
-                    </div>
-                    <div className="flex items-baseline mb-4">
-                      <span className="text-3xl font-bold text-slate-900 dark:text-gray-100">
-                        ${plan.price_monthly}
-                      </span>
-                      <span className="ml-1 text-sm text-gray-500 dark:text-gray-400">{t('per_month')}</span>
-                    </div>
-                    {plan.price_yearly > 0 && (
-                      <p className="text-sm text-green-700 dark:text-green-400 mb-4">
-                        {t('yearly_savings').replace('${amount}', String(plan.price_monthly * 12 - plan.price_yearly))}
-                      </p>
-                    )}
-                    <ul className="space-y-2.5 mb-6">
-                      {formatFeatures(plan.features).map((feature) => (
-                        <li key={feature} className="flex items-start gap-2.5">
-                          <Check
-                            size={16}
-                            className="text-green-500 flex-shrink-0 mt-0.5"
-                          />
-                          <span className="text-sm text-gray-600 dark:text-gray-400">{feature}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                  <div className="mt-auto">
-                    {isCurrentPlan ? (
-                      <Button variant="outline" className="w-full" disabled>
-                        {t('current_plan')}
-                      </Button>
-                    ) : (
-                      <Button
-                        variant={isUpgrade ? 'primary' : 'outline'}
-                        className="w-full transition-all duration-300"
-                        onClick={() => handleSwitchPlan(plan.slug)}
-                        isLoading={isSubscribing === plan.slug}
-                      >
-                        {(isUpgrade ? t('upgrade_to') : t('downgrade_to')).replace('{name}', plan.name)}
-                      </Button>
-                    )}
-                  </div>
-                </div>
-              </Card>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* Billing History */}
-      <BillingHistory />
-
-      {/* Enterprise Payment Modal */}
-      <PaymentModal
-        isOpen={showPaymentModal}
-        onClose={() => { if (!isSubscribing) { setShowPaymentModal(false); setEnterprisePlan(null); } }}
-        onConfirmPayment={handleConfirmPayment}
-        planName={enterprisePlan?.name || 'Enterprise'}
-        amount={enterprisePlan?.price_monthly || 0}
-        qrCodeUrl={QrCodeUrl}
-        isLoading={!!isSubscribing}
-      />
-
-      {/* Cancel Subscription Confirmation Modal */}
-      <Modal
-        isOpen={showCancelModal}
-        onClose={() => setShowCancelModal(false)}
-        title={t('cancel_subscription')}
-      >
-        <div className="space-y-4">
-          <div className="p-4 bg-red-50 dark:bg-red-900/20 rounded-lg border border-red-200 flex items-start gap-3">
-            <AlertTriangle size={20} className="text-red-500 dark:text-red-400 flex-shrink-0 mt-0.5" />
-            <div>
-              <p className="text-sm font-semibold text-red-800 dark:text-red-300">
-                {t('about_to_cancel')}
-              </p>
-              <p className="text-sm text-red-600 mt-1">
-                {t('cancel_warning')}
-              </p>
-            </div>
-          </div>
-          <p className="text-sm text-gray-600 dark:text-gray-400">
-            {t('cancel_confirm_prefix')}{' '}
-            <span className="font-semibold text-slate-900 dark:text-gray-100">
-              {subscription?.plan?.name}
-            </span>{' '}
-            {t('cancel_confirm_suffix')}
-          </p>
-        </div>
-        <ModalFooter
-          onCancel={() => setShowCancelModal(false)}
-          onConfirm={handleCancel}
-          confirmText={t('cancel_subscription')}
-          confirmVariant="danger"
-          cancelText={t('keep_plan')}
-          isLoading={isCanceling}
-        />
-      </Modal>
-    </div>
-  );
-};
-
-const BillingHistory: React.FC = () => {
-  const t = usePageT(D);
-  const { currentWorkspace } = useWorkspace();
-  const [history, setHistory] = useState<any[]>([]);
-  const [isLoadingHistory, setIsLoadingHistory] = useState(false);
-
-  useEffect(() => {
-    const fetchHistory = async () => {
-      if (!currentWorkspace) return;
-      setIsLoadingHistory(true);
-      try {
-        const response = await api.get(
-          `/subscriptions/workspace/${currentWorkspace.slug}/billing-history`
-        );
-        setHistory(response.data || []);
-      } catch {
-        setHistory([]);
-      } finally {
-        setIsLoadingHistory(false);
-      }
-    };
-    fetchHistory();
-  }, [currentWorkspace]);
-
-  const getStatusBadge = (status: string) => {
-    const map: Record<string, { label: string; variant: 'success' | 'danger' | 'warning' | 'neutral' | 'primary' }> = {
-      active: { label: t('status_active'), variant: 'success' },
-      trialing: { label: t('status_trial'), variant: 'primary' },
-      cancelled: { label: t('status_cancelled'), variant: 'neutral' },
-      incomplete: { label: t('status_incomplete'), variant: 'warning' },
-      past_due: { label: t('status_past_due'), variant: 'danger' },
-    };
-    const info = map[status] || { label: status, variant: 'neutral' as const };
-    return <Badge variant={info.variant}>{info.label}</Badge>;
-  };
-
-  return (
-    <Card title={t('billing_history')} subtitle={t('billing_history_subtitle')}>
-      {isLoadingHistory ? (
-        <div className="space-y-3">
-          {[1, 2, 3].map((i) => (
-            <div key={i} className="h-12 bg-gray-100 dark:bg-gray-700 rounded-lg shimmer" />
-          ))}
-        </div>
-      ) : history.length === 0 ? (
-        <div className="flex flex-col items-center py-8 text-center">
-          <div className="w-12 h-12 rounded-full bg-gray-100 dark:bg-gray-700 flex items-center justify-center mb-3">
-            <AlertTriangle size={20} className="text-gray-500 dark:text-gray-400" />
-          </div>
-          <p className="text-sm text-gray-500 dark:text-gray-400">{t('no_history')}</p>
         </div>
       ) : (
-        <div className="divide-y divide-gray-100 dark:divide-gray-800">
-          {history.map((item: any, idx: number) => (
-            <div
-              key={item.id || idx}
-              className="flex items-center justify-between py-3 px-2 first:pt-0 last:pb-0"
-            >
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-primary-50 to-purple-50 flex items-center justify-center">
-                  <CreditCard size={18} className="text-primary-600" />
-                </div>
-                <div>
-                  <p className="text-sm font-semibold text-slate-900 dark:text-gray-100">{item.plan_name}</p>
-                  <p className="text-xs text-gray-500 dark:text-gray-400">{formatDate(item.created_at)}</p>
-                </div>
-              </div>
-              <div className="flex items-center gap-3">
-                {getStatusBadge(item.status)}
-                <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                  ${item.amount}{t('per_month')}
-                </span>
-              </div>
+        <div className="rounded-2xl border border-gray-100 dark:border-gray-700 bg-white dark:bg-gray-800 px-5 py-4 flex items-center justify-between flex-wrap gap-3">
+          <div className="flex items-center gap-3">
+            <ShieldCheck size={18} className={status?.status === 'active' ? 'text-emerald-500' : 'text-gray-400'} />
+            <div>
+              <p className="text-sm font-bold text-slate-800 dark:text-gray-100">
+                {t('current_plan')}：
+                {status?.plan ? status.plan.name : <span className="text-gray-400">{t('status_none')}</span>}
+                {status?.status && (
+                  <span className={`ml-2 text-[11px] font-semibold px-2 py-0.5 rounded-full ${status.status === 'active' ? 'bg-emerald-50 dark:bg-emerald-500/15 text-emerald-600 dark:text-emerald-400' : 'bg-gray-100 dark:bg-gray-700 text-gray-500'}`}>
+                    {status.status === 'active' ? t('status_active') : status.status === 'expired' ? t('status_expired') : status.status}
+                  </span>
+                )}
+              </p>
+              {status?.current_period_end && (
+                <p className="text-[12.5px] text-gray-500 dark:text-gray-400 mt-0.5">
+                  {t('expires_at')}：{new Date(status.current_period_end).toLocaleString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit' })}
+                </p>
+              )}
             </div>
-          ))}
+          </div>
+          {/* 周期切换 */}
+          <div className="flex items-center gap-1 rounded-lg bg-gray-100 dark:bg-gray-700/60 p-1">
+            {(['month', 'year'] as const).map((p) => (
+              <button
+                key={p}
+                onClick={() => setPeriod(p)}
+                className={`text-[12px] font-semibold px-3 py-1.5 rounded-md transition-colors ${period === p ? 'bg-white dark:bg-gray-800 text-violet-600 dark:text-violet-400 shadow-sm' : 'text-gray-500 dark:text-gray-400'}`}
+              >
+                {p === 'month' ? t('monthly') : t('yearly')}
+              </button>
+            ))}
+          </div>
         </div>
       )}
-    </Card>
+
+      {/* 套餐三卡 */}
+      <div className="grid md:grid-cols-3 gap-6">
+        {plans.map((plan) => {
+          const price = period === 'year' ? plan.price_yearly : plan.price_monthly;
+          const isCurrent = currentSlug === plan.slug;
+          const isFree = plan.slug === 'free';
+          const proFlag = plan.slug === 'pro';
+          return (
+            <div
+              key={plan.id}
+              className={`relative rounded-2xl border p-6 flex flex-col transition-all ${
+                proFlag
+                  ? 'border-violet-300 dark:border-violet-500/40 bg-white dark:bg-gray-800 shadow-lg shadow-violet-500/10'
+                  : 'border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-sm'
+              }`}
+            >
+              {proFlag && (
+                <span className="absolute -top-3 left-1/2 -translate-x-1/2 text-[11px] font-bold px-3 py-1 rounded-full bg-violet-600 text-white">
+                  {t('most_popular')}
+                </span>
+              )}
+              <div className="flex items-center justify-between mb-3">
+                <p className="text-base font-bold text-slate-900 dark:text-gray-100">{plan.name}</p>
+                {isCurrent && (
+                  <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-500/15 text-emerald-600 dark:text-emerald-400">
+                    {t('current')}
+                  </span>
+                )}
+              </div>
+              <div className="mb-4">
+                <span className="text-3xl font-extrabold text-slate-900 dark:text-gray-100 tabular-nums">
+                  {isFree ? t('free_forever') : `¥${price}`}
+                </span>
+                {!isFree && (
+                  <span className="text-sm text-gray-400 ml-1">{period === 'year' ? t('per_year') : t('per_month')}</span>
+                )}
+              </div>
+              <ul className="space-y-2 flex-1 mb-5">
+                {formatFeatures(plan.features).map((f, i) => (
+                  <li key={i} className="text-[13px] text-gray-600 dark:text-gray-300 flex items-start gap-2">
+                    <Check size={14} className="text-emerald-500 mt-0.5 flex-shrink-0" />
+                    {f}
+                  </li>
+                ))}
+                {plan.slug === 'enterprise' && (
+                  <li className="text-[13px] font-semibold text-violet-600 dark:text-violet-400 flex items-start gap-2">
+                    <Lock size={14} className="mt-0.5 flex-shrink-0" />
+                    {t('agent_flagship')}
+                  </li>
+                )}
+              </ul>
+              {isFree ? (
+                <Button variant="outline" disabled className="w-full">{t('free_forever')}</Button>
+              ) : isCurrent ? (
+                <Button variant="outline" disabled className="w-full">{t('current')}</Button>
+              ) : isAdmin ? (
+                <Button variant="outline" disabled className="w-full">{t('admin_free')}</Button>
+              ) : (
+                <Button
+                  className={`w-full ${proFlag ? 'bg-violet-600 hover:bg-violet-700 text-white' : ''}`}
+                  onClick={() => setCheckoutPlan({ slug: plan.slug, name: plan.name })}
+                >
+                  <CreditCard size={14} className="mr-1.5" />
+                  {t('upgrade')}
+                </Button>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      {/* 微信扫码支付弹窗 */}
+      {checkoutPlan && (
+        <WechatPayModal
+          slug={slug}
+          planSlug={checkoutPlan.slug}
+          planName={checkoutPlan.name}
+          period={period}
+          onClose={() => setCheckoutPlan(null)}
+          onSuccess={() => { setCheckoutPlan(null); load(); }}
+        />
+      )}
+    </div>
   );
 };

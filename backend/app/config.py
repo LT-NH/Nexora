@@ -34,6 +34,19 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
 
+    # WeChat Pay Native v3（可选）。凭据齐备 = 真实微信通道；未配置 = sandbox 模式。
+    WXPAY_APPID: str = ""
+    WXPAY_MCHID: str = ""
+    WXPAY_MCH_SERIAL_NO: str = ""
+    WXPAY_APIV3_KEY: str = ""
+    WXPAY_PRIVATE_KEY_PATH: str = ""
+    WXPAY_NOTIFY_URL: str = ""  # 回调地址；空则用 PUBLIC_BASE_URL 拼装
+    PUBLIC_BASE_URL: str = "http://127.0.0.1:8000"  # 公网基址（回调/二维码拼装用）
+
+    # Metrics endpoint auth. When set, the Prometheus /metrics endpoint
+    # requires `Authorization: Bearer <METRICS_TOKEN>`. Empty = open (dev).
+    METRICS_TOKEN: str = ""
+
     # Field-level encryption key for sensitive database columns
     # (store api_secret, access_token, etc.).
     # When empty, a derived key is computed from SECRET_KEY — acceptable
@@ -46,6 +59,16 @@ class Settings(BaseSettings):
         "http://localhost:5173",
         "http://localhost:8000",
     ]
+
+    # Public site URL used for building absolute links in emails/reports.
+    SITE_URL: str = "http://localhost:3000"
+
+    # Email notifications (SMTP)
+    SMTP_SERVER: str = "smtp.qq.com"
+    SMTP_PORT: int = 587
+    SMTP_USER: str = ""
+    SMTP_PASSWORD: str = ""
+    FROM_EMAIL: str = ""
 
     # Logging
     LOG_LEVEL: str = "INFO"
