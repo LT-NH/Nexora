@@ -29,6 +29,45 @@ from app.models.workspace import Workspace, WorkspaceRole
 
 router = APIRouter(prefix="/workspaces/{slug}/ai", tags=["AI Decision Loop"])
 
+# ── AI 能力套餐档位门控 ────────────────────────────────────────────────
+# 能力矩阵（见 app/main.py _PLAN_FEATURES）：
+#   free       = 仅 ai_health（六维健康体检/AI 总结）
+#   pro        = + ai_advisor（决策助手/洞察/问答/周报/定价/销售分析/经验库）
+#   enterprise = + store_sentinel（自主巡店 Agent，见 store_agent.py 门控）
+# 未订阅 / 非对应档位 → 403 并提示升级（超管 is_superadmin 恒放行）。
+
+
+async def _ensure_ai_tier(db: AsyncSession, principal, workspace_id: str, need: str = "pro") -> None:
+    """校验工作空间套餐档位；不达标抛 403。need: pro | enterprise。"""
+    u = getattr(principal, "user", None)
+    if u is not None and getattr(u, "is_superadmin", False):
+        return
+    try:
+        from app.models.subscription import Subscription, SubscriptionPlan
+        sub = (
+            await db.execute(
+                select(Subscription).where(Subscription.workspace_id == workspace_id)
+                .order_by(Subscription.created_at.desc()).limit(1)
+            )
+        ).scalar_one_or_none()
+        tier = "free"
+        if sub is not None:
+            _plan = await db.get(SubscriptionPlan, sub.plan_id)
+            tier = _plan.slug if _plan else "free"
+        _ok = (need == "pro" and tier in ("pro", "enterprise")) or (need == "enterprise" and tier == "enterprise")
+        if not _ok:
+            raise HTTPException(
+                status_code=403,
+                detail=("该 AI 功能为 Pro 及以上套餐专属，请前往「计费与方案」升级解锁"
+                        if need == "pro"
+                        else "自主巡店 Agent 为 Enterprise 套餐专属，请升级后使用"),
+            )
+    except HTTPException:
+        raise
+    except Exception:
+        return  # 订阅表异常时保守放行（不因计费问题阻断核心功能）
+
+
 
 def _clamp(v: float, lo: float = 0.0, hi: float = 100.0) -> float:
     return max(lo, min(hi, v))
@@ -205,6 +244,7 @@ async def daily_summary(
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> dict:
     workspace, _ = await _require_member(slug, principal, db, WorkspaceRole.VIEWER)
+    await _ensure_ai_tier(db, principal, workspace.id, "pro")
     ind = await _compute_indicators(db, workspace.id)
 
     # ── 消费健康引擎诊断（单向流：体检 → 诊断 → 处方）────────────────────
@@ -415,6 +455,7 @@ async def list_insights(
     limit: int = 20,
 ) -> dict:
     workspace, _ = await _require_member(slug, principal, db, WorkspaceRole.VIEWER)
+    await _ensure_ai_tier(db, principal, workspace.id, "pro")
     q = select(AiInsight).where(AiInsight.workspace_id == workspace.id)
     if status:
         q = q.where(AiInsight.status == status)
@@ -562,6 +603,7 @@ async def execute_insight(
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> dict:
     workspace, _ = await _require_member(slug, principal, db, WorkspaceRole.MEMBER)
+    await _ensure_ai_tier(db, principal, workspace.id, "pro")
     ins = await db.get(AiInsight, insight_id)
     if ins is None or ins.workspace_id != workspace.id:
         raise HTTPException(status_code=404, detail="建议不存在")
@@ -586,6 +628,7 @@ async def feedback_insight(
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> dict:
     workspace, _ = await _require_member(slug, principal, db, WorkspaceRole.MEMBER)
+    await _ensure_ai_tier(db, principal, workspace.id, "pro")
     ins = await db.get(AiInsight, insight_id)
     if ins is None or ins.workspace_id != workspace.id:
         raise HTTPException(status_code=404, detail="建议不存在")
@@ -646,6 +689,7 @@ async def insight_stats(
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> dict:
     workspace, _ = await _require_member(slug, principal, db, WorkspaceRole.VIEWER)
+    await _ensure_ai_tier(db, principal, workspace.id, "pro")
     rows = (
         await db.execute(
             select(AiInsight).where(
@@ -679,6 +723,7 @@ async def list_experiences(
     limit: int = 50,
 ) -> dict:
     workspace, _ = await _require_member(slug, principal, db, WorkspaceRole.VIEWER)
+    await _ensure_ai_tier(db, principal, workspace.id, "pro")
     rows = (
         await db.execute(
             select(AgentExperience)
@@ -725,6 +770,7 @@ async def predictions(
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> dict:
     workspace, _ = await _require_member(slug, principal, db, WorkspaceRole.VIEWER)
+    await _ensure_ai_tier(db, principal, workspace.id, "pro")
     ind = await _compute_indicators(db, workspace.id)
     now = ind["now"]
 
@@ -878,6 +924,7 @@ async def ai_chat(
     from app.models.order import OrderItem
 
     workspace, _ = await _require_member(slug, principal, db, WorkspaceRole.VIEWER)
+    await _ensure_ai_tier(db, principal, workspace.id, "pro")
     question = str(body.get("question") or body.get("message") or "")
     history = body.get("history") or []
     if not question:
@@ -953,6 +1000,7 @@ async def ai_weekly_summary(
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> dict:
     workspace, _ = await _require_member(slug, principal, db, WorkspaceRole.VIEWER)
+    await _ensure_ai_tier(db, principal, workspace.id, "pro")
     snapshot = await _collect_biz_snapshot(db, workspace.id)
 
     # 千问基于真实数据生成周报摘要（趋势/亮点/风险/下周建议）
@@ -983,6 +1031,7 @@ async def ai_pricing(
     import httpx as _httpx
 
     workspace, _ = await _require_member(slug, principal, db, WorkspaceRole.VIEWER)
+    await _ensure_ai_tier(db, principal, workspace.id, "pro")
     products = (
         await db.execute(
             select(Product).where(Product.workspace_id == workspace.id).order_by(Product.stock.asc()).limit(6)
@@ -1094,6 +1143,7 @@ async def ai_chat_stream(
     from app.services.ai import _qwen_chat
 
     workspace, _ = await _require_member(slug, principal, db, WorkspaceRole.VIEWER)
+    await _ensure_ai_tier(db, principal, workspace.id, "pro")
     prompt = str(body.get("prompt") or body.get("question") or "")
     history = body.get("messages") or body.get("history") or []
     if not prompt:
@@ -1149,6 +1199,7 @@ async def ai_analyze_sales(
     from app.services.ai import AIService
 
     workspace, _ = await _require_member(slug, principal, db, WorkspaceRole.VIEWER)
+    await _ensure_ai_tier(db, principal, workspace.id, "pro")
     period = str(body.get("period") or "30d")
     days_map = {"7d": 7, "30d": 30, "90d": 90}
     days = days_map.get(period, 30)
@@ -1188,6 +1239,7 @@ async def agent_command(
     from app.services.agent_orchestrator import run_command
 
     workspace, _ = await _require_member(slug, principal, db, WorkspaceRole.MEMBER)
+    await _ensure_ai_tier(db, principal, workspace.id, "pro")
     instruction = str(body.get("instruction") or "").strip()
     if not instruction:
         raise HTTPException(status_code=400, detail="指令不能为空")
@@ -1212,6 +1264,7 @@ async def agent_tasks(
     from app.models.agent_task import AgentTask
 
     workspace, _ = await _require_member(slug, principal, db, WorkspaceRole.VIEWER)
+    await _ensure_ai_tier(db, principal, workspace.id, "pro")
     rows = (
         await db.execute(
             _select(AgentTask)
@@ -1245,6 +1298,7 @@ async def agent_confirm(
     from app.services.agent_orchestrator import confirm_pending
 
     workspace, _ = await _require_member(slug, principal, db, WorkspaceRole.MEMBER)
+    await _ensure_ai_tier(db, principal, workspace.id, "pro")
     task = await confirm_pending(db, workspace, principal.user_id, task_id)
     if task is None:
         raise HTTPException(status_code=404, detail="任务不存在")

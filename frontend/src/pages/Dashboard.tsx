@@ -3,6 +3,7 @@ import {
   Users,
   Loader2,
   Lock,
+  Sparkles,
   Key,
   CreditCard,
   Wallet,
@@ -779,10 +780,30 @@ export const Dashboard: React.FC = () => {
         }
       />
 
-      {/* AI 结论摘要条（第一屏焦点） */}
-      <div className="animate-page-in-delay-1">
-        <AiDecisionPanel slug={currentWorkspace?.slug || ''} />
-      </div>
+      {/* AI 决策助手（千问处方）：Pro 及以上专属；Free 显示升级引导 */}
+      {plan === 'free' ? (
+        <div className="animate-page-in-delay-1 rounded-2xl border border-dashed border-primary-300/70 dark:border-primary-500/30 bg-primary-50/40 dark:bg-primary-500/[0.05] px-5 py-4 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <Sparkles size={18} className="text-primary-400 flex-shrink-0" />
+            <div>
+              <p className="text-sm font-bold text-primary-700 dark:text-primary-300">AI 决策助手是 Pro 专属</p>
+              <p className="text-[12.5px] text-primary-500/80 dark:text-primary-400/70">
+                升级后解锁：千问基于真实数据开处方、一键执行、周报与定价建议、经验库沉淀
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={() => { window.location.hash = '#/billing'; }}
+            className="text-[12px] font-bold px-4 py-2 rounded-lg bg-primary-600 hover:bg-primary-700 text-white transition-colors flex-shrink-0"
+          >
+            升级解锁
+          </button>
+        </div>
+      ) : (
+        <div className="animate-page-in-delay-1">
+          <AiDecisionPanel slug={currentWorkspace?.slug || ''} />
+        </div>
+      )}
 
       {/* 巡店 Agent：Enterprise 专属（自主当班 / 待确认 / 经验库） */}
       {plan === 'enterprise' ? (
