@@ -143,6 +143,9 @@ async def checkout(
     workspace, _ = await _require_member(slug, principal, db, WorkspaceRole.OWNER)
     plan_slug = str(body.get("plan_slug") or "")
     period = str(body.get("period") or "month")
+    method = str(body.get("method") or "wechat")
+    if method not in ("wechat", "alipay"):
+        raise HTTPException(status_code=400, detail="method 仅支持 wechat/alipay")
     if period not in PERIOD_MONTHS:
         raise HTTPException(status_code=400, detail="period 仅支持 month/year")
     plan = (
@@ -157,11 +160,27 @@ async def checkout(
         raise HTTPException(status_code=400, detail="该套餐价格异常")
 
     from app.config import settings
-    notify_url = settings.WXPAY_NOTIFY_URL or f"{settings.PUBLIC_BASE_URL}/api/v1/billing/wechat/notify"
-    try:
-        wx = await create_native_order(amount, f"Nexora {plan.name} {period}", notify_url)
-    except Exception as e:  # noqa: BLE001
-        raise HTTPException(status_code=502, detail=str(e)[:180])
+    sandbox_flag = False
+    pay_content: dict = {}
+
+    if method == "alipay":
+        from app.services.alipay_pay import alipay_enabled, build_page_pay_form
+        if alipay_enabled():
+            notify_url = settings.ALIPAY_NOTIFY_URL or f"{settings.PUBLIC_BASE_URL}/api/v1/billing/alipay/notify"
+            out_trade_no = f"NEXAL{int(__import__('time').time())}{plan.slug[:2]}"
+            form_html = build_page_pay_form(out_trade_no, amount, f"Nexora {plan.name} {period}", notify_url)
+            pay_content = {"method": "alipay", "form_html": form_html, "out_trade_no": out_trade_no, "sandbox": False}
+        else:
+            sandbox_flag = True
+            pay_content = {"method": "alipay", "sandbox": True}
+    else:
+        notify_url = settings.WXPAY_NOTIFY_URL or f"{settings.PUBLIC_BASE_URL}/api/v1/billing/wechat/notify"
+        try:
+            wx = await create_native_order(amount, f"Nexora {plan.name} {period}", notify_url)
+            pay_content = {"method": "wechat", "code_url": wx["code_url"], "out_trade_no": wx["out_trade_no"], "sandbox": wx["sandbox"]}
+            sandbox_flag = wx["sandbox"]
+        except Exception as e:  # noqa: BLE001
+            raise HTTPException(status_code=502, detail=str(e)[:180])
 
     order = SubscriptionOrder(
         workspace_id=workspace.id,
@@ -170,17 +189,19 @@ async def checkout(
         plan_name=plan.name,
         period=period,
         amount=amount,
-        method="wechat_native",
+        method="alipay_webpay" if method == "alipay" else "wechat_native",
         status="pending",
-        code_url=wx["code_url"],
-        out_trade_no=wx["out_trade_no"],
-        sandbox=wx["sandbox"],
+        code_url=pay_content.get("form_html") or pay_content.get("code_url"),
+        out_trade_no=pay_content.get("out_trade_no"),
+        sandbox=bool(sandbox_flag),
     )
     db.add(order)
     await db.commit()
     return {
         "order_id": order.id,
+        "method": order.method,
         "code_url": order.code_url,
+        "form_html": order.code_url if order.method == "alipay_webpay" else None,
         "sandbox": order.sandbox,
         "amount": amount,
         "plan": {"slug": plan.slug, "name": plan.name},
@@ -227,6 +248,36 @@ async def sandbox_confirm(
     order.provider_trade_no = f"SANDBOX{order.id[:12].upper()}"
     await _activate_subscription(db, order)
     return {"paid": True, "order_id": order.id}
+
+
+
+@public_router.post("/alipay/notify", summary="支付宝异步通知（表单回传，RSA2 验签后激活订阅）")
+async def alipay_notify(request: Request, db: Annotated[AsyncSession, Depends(get_db)]) -> str:
+    from app.services.alipay_pay import alipay_enabled, verify_notify_sign
+
+    if not alipay_enabled():
+        return "fail"
+    form = await request.form()
+    params = {k: str(v) for k, v in form.items()}
+    if params.get("trade_status") not in ("TRADE_SUCCESS", "TRADE_FINISHED"):
+        return "fail"
+    if not verify_notify_sign(params):
+        logger.warning("alipay notify sign invalid: %s", params.get("out_trade_no"))
+        return "fail"
+    out_trade_no = params.get("out_trade_no")
+    order = (
+        await db.execute(
+            select(SubscriptionOrder).where(SubscriptionOrder.out_trade_no == out_trade_no).limit(1)
+        )
+    ).scalar_one_or_none()
+    if order is None:
+        return "fail"
+    if order.status != "paid":
+        order.status = "paid"
+        order.provider_trade_no = params.get("trade_no")
+        order.paid_at = datetime.utcnow()
+        await _activate_subscription(db, order)
+    return "success"
 
 
 @public_router.post("/wechat/notify", summary="微信支付异步回调（全局，无鉴权，验签解密）")

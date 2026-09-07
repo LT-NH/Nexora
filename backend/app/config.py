@@ -41,6 +41,12 @@ class Settings(BaseSettings):
     WXPAY_APIV3_KEY: str = ""
     WXPAY_PRIVATE_KEY_PATH: str = ""
     WXPAY_NOTIFY_URL: str = ""  # 回调地址；空则用 PUBLIC_BASE_URL 拼装
+    # Alipay Page Pay（电脑网站支付 / AI 网页应用收款）。凭据齐备走真实支付宝；否则 sandbox 演示。
+    ALIPAY_APP_ID: str = ""
+    ALIPAY_APP_PRIVATE_KEY: str = ""  # PKCS#1 PEM 文本或文件路径
+    ALIPAY_PUBLIC_KEY: str = ""       # 支付宝公钥 PEM 文本或文件路径
+    ALIPAY_GATEWAY: str = ""          # 空=生产网关；沙箱可指 openapi-sandbox.dl.alipaydev.com
+    ALIPAY_NOTIFY_URL: str = ""       # 异步通知；空则用 PUBLIC_BASE_URL 拼装
     PUBLIC_BASE_URL: str = "http://127.0.0.1:8000"  # 公网基址（回调/二维码拼装用）
 
     # Metrics endpoint auth. When set, the Prometheus /metrics endpoint
