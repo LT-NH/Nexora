@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useRef } from 'react';
 import {
   Users,
+  Loader2,
   Key,
   CreditCard,
   Wallet,
@@ -456,6 +457,7 @@ export const Dashboard: React.FC = () => {
   const [orderStatus, setOrderStatus] = useState<{ name: string; value: number; color?: string }[]>([]);
   const [customerInsight, setCustomerInsight] = useState<{ segment: string; count: number; avgValue: number }[]>([]);
   const [aiData, setAiData] = useState<any>(null);
+  const [aiLoading, setAiLoading] = useState(true);
   const [topProducts, setTopProducts] = useState<any[]>([]);
   const [dashAov, setDashAov] = useState<number>(0);
   const [lowStockProducts, setLowStockProducts] = useState<any[]>([]);
@@ -519,8 +521,8 @@ export const Dashboard: React.FC = () => {
 
         // AI 销售分析（千问网络请求较慢，异步后置加载，不阻塞首屏）
         api.post(`/workspaces/${slug}/ai/analyze-sales`, { period: '7d' }).then(res => {
-          if (!cancelled) setSalesAnalysisResponse(res);
-        }).catch(() => {});
+          if (!cancelled) { setSalesAnalysisResponse(res); setAiData(res.data); }
+        }).catch(() => {}).finally(() => { if (!cancelled) setAiLoading(false); });
 
         // Fetch product recommendations
         api.get(`/workspaces/${slug}/products/recommendations`).then(res => {
@@ -1054,34 +1056,78 @@ export const Dashboard: React.FC = () => {
       )}
 
       {/* Enterprise extra metric cards */}
-      {plan === 'enterprise' && (
+      {plan === 'enterprise' && (() => {
+        // 本地环比兜底：近 7 天 vs 前 7 天营收（AI 数据未就绪/失败时保证卡片不空）
+        const rev7 = salesTrend.slice(-7).reduce((s2, d) => s2 + (d.amount || 0), 0);
+        const revPrev7 = salesTrend.slice(-14, -7).reduce((s2, d) => s2 + (d.amount || 0), 0);
+        const localDelta = revPrev7 > 0 ? ((rev7 - revPrev7) / revPrev7) * 100 : null;
+        const localTrend = localDelta === null ? null : localDelta >= 5 ? 'upward' : localDelta <= -5 ? 'downward' : 'stable';
+        const trendVal = aiData?.trend ?? localTrend;
+        const deltaPct = aiData?.growth_rate ?? localDelta;
+        const forecastNext = aiData?.forecast?.next_7_days;
+        const isLoadingCards = aiLoading && !aiData;
+        return (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <Card className="glass-card" title={t('ai_coverage_title')}>
-            <div className="text-center py-10">
-              <div className="text-3xl font-bold text-primary-600 dark:text-primary-400">
-                {aiData?.total_orders_analyzed || 0}
+            {isLoadingCards ? (
+              <div className="text-center py-10 flex flex-col items-center gap-2">
+                <Loader2 size={22} className="animate-spin text-primary-500" />
+                <p className="text-sm text-gray-400">AI 分析中…</p>
               </div>
-              <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">{t('orders_analyzed')}</p>
-            </div>
+            ) : (
+              <div className="text-center py-8">
+                <div className="text-3xl font-bold text-primary-600 dark:text-primary-400 tabular-nums">
+                  {aiData?.total_orders_analyzed ?? 0}
+                </div>
+                <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">{t('orders_analyzed')}</p>
+                <p className="text-[12px] text-gray-400 dark:text-gray-500 mt-2">
+                  近 7 天订单 100% 参与 · 峰值日 {(aiData?.peak_days || []).join('、') || '—'}
+                </p>
+              </div>
+            )}
           </Card>
           <Card className="glass-card" title={t('trend_judgment_title')}>
-            <div className="text-center py-10">
-              {aiData?.trend === 'upward' ? (
-                <TrendingUp size={32} className="mx-auto mb-2 text-green-500" />
-              ) : aiData?.trend === 'downward' ? (
-                <TrendingDown size={32} className="mx-auto mb-2 text-red-500" />
-              ) : (
+            {isLoadingCards ? (
+              <div className="text-center py-10 flex flex-col items-center gap-2">
+                <Loader2 size={22} className="animate-spin text-primary-500" />
+                <p className="text-sm text-gray-400">AI 分析中…</p>
+              </div>
+            ) : trendVal ? (
+              <div className="text-center py-6">
+                {trendVal === 'upward' ? (
+                  <TrendingUp size={30} className="mx-auto mb-2 text-green-500" />
+                ) : trendVal === 'downward' ? (
+                  <TrendingDown size={30} className="mx-auto mb-2 text-red-500" />
+                ) : (
+                  <Activity size={30} className="mx-auto mb-2 text-gray-400" />
+                )}
+                <p className="text-sm font-medium text-slate-900 dark:text-gray-100">
+                  {trendVal === 'upward' ? t('trend_up') : trendVal === 'downward' ? t('trend_down') : t('trend_stable')}
+                </p>
+                {deltaPct !== null && deltaPct !== undefined && (
+                  <p className={`text-lg font-bold mt-1.5 tabular-nums ${deltaPct >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-500'}`}>
+                    {deltaPct >= 0 ? '+' : ''}{deltaPct.toFixed(1)}%
+                  </p>
+                )}
+                {forecastNext ? (
+                  <p className="text-[12px] text-gray-400 dark:text-gray-500 mt-1.5">
+                    未来 7 天预测 ¥{Number(forecastNext).toLocaleString('zh-CN', { maximumFractionDigits: 0 })}
+                    {aiData?.forecast?.confidence ? ` · 置信度${aiData.forecast.confidence === 'high' ? '高' : aiData.forecast.confidence === 'medium' ? '中' : '低'}` : ''}
+                  </p>
+                ) : !aiData && localTrend ? (
+                  <p className="text-[11px] text-gray-400 mt-1.5">基于本地订单统计 · AI 分析加载失败</p>
+                ) : null}
+              </div>
+            ) : (
+              <div className="text-center py-10">
                 <Activity size={32} className="mx-auto mb-2 text-gray-400" />
-              )}
-              <p className="text-sm font-medium text-slate-900 dark:text-gray-100">
-                {aiData?.trend === 'upward' ? t('trend_up') :
-                 aiData?.trend === 'downward' ? t('trend_down') :
-                 aiData?.trend ? t('trend_stable') : t('trend_none')}
-              </p>
-            </div>
+                <p className="text-sm font-medium text-slate-900 dark:text-gray-100">{t('trend_none')}</p>
+              </div>
+            )}
           </Card>
         </div>
-      )}
+        );
+      })()}
 
       {/* Charts Section - Free gets order status only, Pro+ gets full */}
       {plan === 'free' ? (

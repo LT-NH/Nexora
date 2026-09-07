@@ -1,4 +1,5 @@
 import { useWorkspace } from './useWorkspace';
+import api from '@/services/api';
 import { subscriptionService } from '@/services/subscription';
 import { useState, useEffect } from 'react';
 
@@ -34,15 +35,19 @@ export function usePlan(): PlanTier {
       return;
     }
 
-    subscriptionService
-      .getSubscription(currentWorkspace.slug)
-      .then((sub: any) => {
-        const slug: string =
-          sub?.plan?.slug || sub?.plan_slug || 'free';
-        const tier: PlanTier =
-          slug === 'enterprise' || slug === 'pro' || slug === 'free'
-            ? (slug as PlanTier)
-            : 'free';
+    // 走真实计费 API（/subscriptions/* 旧端点已废弃；超管 = enterprise 全功能）
+    api
+      .get(`/workspaces/${currentWorkspace.slug}/billing/status`, { timeout: 10000 })
+      .then((res: any) => {
+        const d = res.data || {};
+        let tier: PlanTier = 'free';
+        if (d.is_admin) {
+          tier = 'enterprise';
+        } else {
+          const slug: string = d.plan?.slug || 'free';
+          const expired = d.status === 'expired';
+          tier = expired ? 'free' : (['enterprise', 'pro', 'free'].includes(slug) ? (slug as PlanTier) : 'free');
+        }
         cachedPlan = tier;
         cacheTs = Date.now();
         setPlan(tier);
