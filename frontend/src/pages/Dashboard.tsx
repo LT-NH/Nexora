@@ -479,7 +479,6 @@ export const Dashboard: React.FC = () => {
   const [dashAov, setDashAov] = useState<number>(0);
   const [lowStockProducts, setLowStockProducts] = useState<any[]>([]);
   const [serverMetrics, setServerMetrics] = useState<{ memory_mb: number; cpu_percent: number; connections: number } | null>(null);
-  const [recommendations, setRecommendations] = useState<any[]>([]);
   const [isSendingReport, setIsSendingReport] = useState(false);
   const [activeTab, setActiveTab] = useState<'overview' | 'insights' | 'operations'>('overview');
 
@@ -545,11 +544,6 @@ export const Dashboard: React.FC = () => {
         api.post(`/workspaces/${slug}/ai/analyze-sales`, { period: '7d' }).then(res => {
           if (!cancelled) { setSalesAnalysisResponse(res); setAiData(res.data); }
         }).catch(() => {}).finally(() => { if (!cancelled) setAiLoading(false); });
-
-        // Fetch product recommendations
-        api.get(`/workspaces/${slug}/products/recommendations`).then(res => {
-          if (!cancelled) setRecommendations(res.data);
-        }).catch(() => {});
 
         const members: WorkspaceMember[] = membersResponse;
         const subscription: Subscription | null = subscriptionResponse;
@@ -941,30 +935,7 @@ export const Dashboard: React.FC = () => {
         </Card>
       )}
 
-      {/* Personalized Recommendations */}
-      {recommendations.length > 0 && (
-        <Card
-          title={t('rec_title')}
-          subtitle={t('rec_subtitle')}
-          className="animated-border border-amber-200 dark:border-amber-800"
-        >
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-            {recommendations.map((rec: any) => (
-              <div
-                key={rec.id}
-                className="text-center p-3 rounded-xl bg-amber-50/50 dark:bg-amber-900/10 hover:bg-amber-100/50 dark:hover:bg-amber-900/20 transition-colors cursor-pointer"
-              >
-                <div className="w-12 h-12 mx-auto mb-2 rounded-lg bg-amber-200 dark:bg-amber-800 flex items-center justify-center text-amber-700 dark:text-amber-300 font-bold text-lg">
-                  {rec.name.charAt(0)}
-                </div>
-                <p className="text-xs font-medium text-slate-800 dark:text-gray-100 truncate">{rec.name}</p>
-                <p className="text-xs text-amber-600 dark:text-amber-400 font-semibold">¥{rec.price}</p>
-                <p className="text-xs text-gray-400 mt-1">{rec.reason}</p>
-              </div>
-            ))}
-          </div>
-        </Card>
-      )}
+
 
       {/* Weekly Report Card */}
       <Card
