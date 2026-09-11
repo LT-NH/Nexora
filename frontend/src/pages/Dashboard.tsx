@@ -788,6 +788,30 @@ export const Dashboard: React.FC = () => {
         }
       />
 
+      {/* Tab Navigation */}
+      <div className="sticky top-16 z-20 flex items-center gap-1 border-b border-gray-200 dark:border-gray-700 bg-white/90 dark:bg-gray-900/90 backdrop-blur-md pt-3 -mb-px" role="tablist" aria-label={t('tabs_aria')}>
+        {[
+          { key: 'overview', label: t('tab_overview'), icon: LayoutDashboard },
+          { key: 'insights', label: t('tab_insights'), icon: PieChart },
+          { key: 'operations', label: t('tab_operations'), icon: Wrench },
+        ].map((tab) => (
+          <button
+            key={tab.key}
+            onClick={() => setActiveTab(tab.key as typeof activeTab)}
+            role="tab"
+            aria-selected={activeTab === tab.key}
+            className={`flex items-center gap-2 px-5 py-2.5 text-sm font-medium border-b-2 transition-all duration-200 ${
+              activeTab === tab.key
+                ? 'border-primary-500 text-primary-600 dark:text-primary-400'
+                : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'
+            }`}
+          >
+            <tab.icon size={16} />
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
       {/* AI 决策助手（千问处方）：Pro 及以上专属；Free 显示升级引导 */}
       {plan === 'free' ? (
         <div className="animate-page-in-delay-1 rounded-2xl border border-dashed border-primary-300/70 dark:border-primary-500/30 bg-primary-50/40 dark:bg-primary-500/[0.05] px-5 py-4 flex items-center justify-between gap-3">
@@ -872,29 +896,6 @@ export const Dashboard: React.FC = () => {
         />
       </div>
 
-      {/* Tab Navigation */}
-      <div className="flex items-center gap-1 border-b border-gray-200 dark:border-gray-700 animate-page-in-delay-2" role="tablist" aria-label={t('tabs_aria')}>
-        {[
-          { key: 'overview', label: t('tab_overview'), icon: LayoutDashboard },
-          { key: 'insights', label: t('tab_insights'), icon: PieChart },
-          { key: 'operations', label: t('tab_operations'), icon: Wrench },
-        ].map((tab) => (
-          <button
-            key={tab.key}
-            onClick={() => setActiveTab(tab.key as typeof activeTab)}
-            role="tab"
-            aria-selected={activeTab === tab.key}
-            className={`flex items-center gap-2 px-5 py-2.5 text-sm font-medium border-b-2 transition-all duration-200 ${
-              activeTab === tab.key
-                ? 'border-primary-500 text-primary-600 dark:text-primary-400'
-                : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'
-            }`}
-          >
-            <tab.icon size={16} />
-            {tab.label}
-          </button>
-        ))}
-      </div>
 
       {/* ── Overview Tab ── */}
       {activeTab === 'overview' && (
