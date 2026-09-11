@@ -31,12 +31,39 @@ def alipay_enabled() -> bool:
     )
 
 
+def _pem_or_path(value: str, kind: str) -> bytes:
+    """支持三种配置形态：① PEM 全文 ② 文件路径 ③ 裸 base64（自动补 PEM 头尾）。"""
+    v = str(value or "").strip()
+    if "-----BEGIN" in v:
+        return v.encode("utf-8")
+    if "\n" in v or " " in v:  # 带换行的裸 base64 先规整
+        v = "".join(v.split())
+    if len(v) > 200 and "-----" not in v and not any(c.isspace() for c in v):
+        tag = "RSA PRIVATE KEY" if kind == "private" else "PUBLIC KEY"
+        body = "\n".join(v[i:i + 64] for i in range(0, len(v), 64))
+        return f"-----BEGIN {tag}-----\n{body}\n-----END {tag}-----\n".encode("utf-8")
+    return Path(v).read_bytes()  # 文件路径
+
+
 def _private_key_pem() -> bytes:
-    key = str(settings.ALIPAY_APP_PRIVATE_KEY)
-    # 支持直接 PEM 文本或文件路径
-    if "-----BEGIN" in key:
-        return key.encode("utf-8")
-    return Path(key).read_bytes()
+    """私钥：自动适配 PKCS#1 / PKCS#8（支付宝 Python 推荐 PKCS#1，工具常出 PKCS#8）。"""
+    from cryptography.hazmat.primitives.serialization import load_pem_private_key
+
+    raw = str(settings.ALIPAY_APP_PRIVATE_KEY or "").strip()
+    if "-----BEGIN" in raw:
+        return raw.encode("utf-8")
+    if len(raw) > 200 and "-----" not in raw and not any(c.isspace() for c in raw):
+        body = "".join(raw.split())
+        wrapped = "\n".join(body[i:i + 64] for i in range(0, len(body), 64))
+        for tag in ("RSA PRIVATE KEY", "PRIVATE KEY"):  # PKCS#1 → PKCS#8 依次尝试
+            pem = f"-----BEGIN {tag}-----\n{wrapped}\n-----END {tag}-----\n".encode("utf-8")
+            try:
+                load_pem_private_key(pem, password=None)
+                return pem
+            except Exception:  # noqa: BLE001
+                continue
+        return f"-----BEGIN PRIVATE KEY-----\n{wrapped}\n-----END PRIVATE KEY-----\n".encode("utf-8")
+    return Path(raw).read_bytes()
 
 
 def _sign(params: dict) -> str:
@@ -59,9 +86,7 @@ def verify_notify_sign(params: dict) -> bool:
     content = "&".join(
         f"{k}={v}" for k, v in sorted(params.items()) if v not in ("", None) and k != "sign"
     )
-    pub_pem = str(settings.ALIPAY_PUBLIC_KEY)
-    if "-----BEGIN" not in pub_pem:
-        pub_pem = Path(pub_pem).read_text(encoding="utf-8")
+    pub_pem = _pem_or_path(str(settings.ALIPAY_PUBLIC_KEY), "public").decode("utf-8")
     try:
         pub = serialization.load_pem_public_key(pub_pem.encode("utf-8"))
         pub.verify(

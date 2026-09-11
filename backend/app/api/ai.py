@@ -43,17 +43,8 @@ async def _ensure_ai_tier(db: AsyncSession, principal, workspace_id: str, need: 
     if u is not None and getattr(u, "is_superadmin", False):
         return
     try:
-        from app.models.subscription import Subscription, SubscriptionPlan
-        sub = (
-            await db.execute(
-                select(Subscription).where(Subscription.workspace_id == workspace_id)
-                .order_by(Subscription.created_at.desc()).limit(1)
-            )
-        ).scalar_one_or_none()
-        tier = "free"
-        if sub is not None:
-            _plan = await db.get(SubscriptionPlan, sub.plan_id)
-            tier = _plan.slug if _plan else "free"
+        from app.api.billing import get_ws_plan_tier
+        tier = await get_ws_plan_tier(db, workspace_id)
         _ok = (need == "pro" and tier in ("pro", "enterprise")) or (need == "enterprise" and tier == "enterprise")
         if not _ok:
             raise HTTPException(
@@ -1223,6 +1214,114 @@ async def ai_analyze_sales(
     result["total_orders_analyzed"] = len(orders_for_ai)
     result["period"] = period
     return result
+
+
+# ----------------------------------------------------------------------
+# 单品毛利归因（profit-thinking 核心：谁在赚钱、谁在偷利润）
+# ----------------------------------------------------------------------
+
+@router.get("/profit-by-product", summary="单品毛利归因榜（真实成本×销量）")
+async def profit_by_product(
+    slug: str,
+    principal: Annotated[AuthContext, Depends(get_principal)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    period: str = "30d",
+    top: int = 5,
+) -> dict:
+    """按 SKU 归因真实毛利：营收 - (成本价 × 销量)，输出盈利 Top 与亏损 Bottom 榜。
+
+    数据来源全部为真实订单行（order_items）与商品成本价（products.cost_price）；
+    未录入成本的商品单独计数（不计入毛利率，避免假数据）。
+    """
+    workspace, _ = await _require_member(slug, principal, db, WorkspaceRole.VIEWER)
+    await _ensure_ai_tier(db, principal, workspace.id, "pro")
+
+    days = {"7d": 7, "30d": 30, "90d": 90}.get(str(period), 30)
+    since = datetime.utcnow() - timedelta(days=days)
+
+    rows = (
+        await db.execute(
+            select(
+                OrderItem.product_id,
+                func.coalesce(Product.name, OrderItem.product_id).label("name"),
+                Product.cost_price,
+                func.sum(OrderItem.quantity).label("qty"),
+                func.sum(OrderItem.total_price).label("revenue"),
+            )
+            .join(Order, OrderItem.order_id == Order.id)
+            .join(Product, Product.id == OrderItem.product_id, isouter=True)
+            .where(
+                Order.workspace_id == workspace.id,
+                Order.created_at >= since,
+                Order.status.notin_(["cancelled", "refunded"]),
+            )
+            .group_by(OrderItem.product_id, Product.name, Product.cost_price)
+        )
+    ).all()
+
+    items: list[dict] = []
+    total_rev = 0.0
+    total_cost = 0.0
+    with_cost = 0
+    without_cost = 0
+    for r in rows:
+        qty = float(r.qty or 0)
+        rev = float(r.revenue or 0)
+        total_rev += rev
+        if r.cost_price is None:
+            without_cost += 1
+            items.append({
+                "product_id": r.product_id, "name": (r.name or "")[:40], "qty": qty,
+                "revenue": round(rev, 2), "cost": None, "gross": None, "margin_pct": None,
+            })
+            continue
+        with_cost += 1
+        cost = float(r.cost_price) * qty
+        gross = rev - cost
+        total_cost += cost
+        items.append({
+            "product_id": r.product_id, "name": (r.name or "")[:40], "qty": qty,
+            "revenue": round(rev, 2), "cost": round(cost, 2), "gross": round(gross, 2),
+            "margin_pct": round((gross / rev * 100), 1) if rev > 0 else None,
+        })
+
+    ranked = [i for i in items if i["margin_pct"] is not None]
+    top_list = sorted(ranked, key=lambda x: (x["margin_pct"], x["gross"]), reverse=True)[:top]
+    bottom_list = sorted(ranked, key=lambda x: (x["margin_pct"], x["gross"]))[:top]
+    loss = [i for i in ranked if (i["gross"] or 0) < 0]
+
+    gross_total = total_rev - total_cost
+    advice: list[str] = []
+    for i in loss[:3]:
+        advice.append(
+            f"「{i['name']}」毛利为负（{i['margin_pct']:.1f}%，亏损 ¥{abs(i['gross']):.0f}）：建议提价或停售该 SKU。"
+        )
+    low = [i for i in bottom_list if (i["margin_pct"] or 0) >= 0 and (i["margin_pct"] or 0) < 15][:2]
+    for i in low:
+        advice.append(f"「{i['name']}」毛利率仅 {i['margin_pct']:.1f}%，低于健康线，建议优化成本或调价。")
+    if top_list:
+        best = top_list[0]
+        advice.append(f"「{best['name']}」毛利率 {best['margin_pct']:.1f}% 为最优，可加大推广与备货。")
+    if without_cost > 0:
+        advice.append(f"有 {without_cost} 个在售 SKU 未录入成本价，毛利无法归因——补齐成本后才能看到真实利润。")
+
+    return {
+        "period": period,
+        "days": days,
+        "summary": {
+            "revenue": round(total_rev, 2),
+            "cost": round(total_cost, 2),
+            "gross_profit": round(gross_total, 2),
+            "margin_pct": round(gross_total / total_rev * 100, 1) if total_rev > 0 else None,
+            "sku_with_cost": with_cost,
+            "sku_without_cost": without_cost,
+            "loss_sku_count": len(loss),
+            "loss_amount": round(sum(abs(i["gross"]) for i in loss), 2),
+        },
+        "top": top_list,
+        "bottom": bottom_list,
+        "advice": advice,
+    }
 
 
 # ----------------------------------------------------------------------

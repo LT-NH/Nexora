@@ -9,6 +9,7 @@
 """
 
 import json
+from datetime import datetime, timedelta
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -133,19 +134,10 @@ def _parse_plan(raw: str | None) -> tuple[str, list[dict]]:
 
 
 async def _ws_plan_tier(db: AsyncSession, ws_id: str) -> str:
-    """当前订阅档位（free/pro/enterprise）；无订阅=free。"""
+    """当前订阅档位（free/pro/enterprise）；取生效中最高档（见 billing.get_ws_plan_tier）。"""
     try:
-        from app.models.subscription import Subscription, SubscriptionPlan
-        sub = (
-            await db.execute(
-                select(Subscription).where(Subscription.workspace_id == ws_id)
-                .order_by(Subscription.created_at.desc()).limit(1)
-            )
-        ).scalar_one_or_none()
-        if sub is None:
-            return "free"
-        plan = await db.get(SubscriptionPlan, sub.plan_id)
-        return (plan.slug if plan else "free")
+        from app.api.billing import get_ws_plan_tier
+        return await get_ws_plan_tier(db, ws_id)
     except Exception:
         return "free"
 
@@ -182,14 +174,177 @@ async def _to_tool_args(action_type: str, params: dict) -> tuple[str, dict] | No
     return None
 
 
+# 自动回访：执行后多久可对比指标（小时）。演示时可临时调小。
+_REVIEW_AFTER_HOURS = 1
+
+# 指标语义与改善方向：所有指标均为「数值降低 = 改善」
+_METRIC_META = {
+    "refund_check": ("退款率(%)", "refund_rate"),
+    "restock": ("断货风险商品数", "stockout"),
+    "clearance": ("积压商品数", "overstock"),
+    "retention": ("流失风险客户数", "churn"),
+    "price_adjust": ("积压商品数", "overstock"),
+    "create_coupon": ("流失风险客户数", "churn"),
+}
+
+
+async def _auto_review_pending(db: AsyncSession, workspace: Workspace) -> list[dict]:
+    """自动回访闭环：把「执行过但未验证」的动作与当前经营指标对比，
+    自动判定 命中/未命中 并写入经验库（lesson），让后续 AI 决策参考真实效果。
+
+    覆盖两类来源：
+      1) AI 决策助手处方（AiInsight，人工一键执行的）
+      2) Agent 自主执行动作（AgentExperience，outcome=uncertain 的）
+    判定规则：指标相对基线下降 = 命中；上升 = 未命中；持平 = 待观察。
+    """
+    from app.api.ai import _compute_indicators, _primary_metric
+    from app.models.agent_experience import AgentExperience
+    from app.models.ai_insight import AiInsight
+
+    cutoff = datetime.utcnow() - timedelta(hours=_REVIEW_AFTER_HOURS)
+    ind = await _compute_indicators(db, workspace.id)
+    snap = {
+        "refund_rate": round(float(ind.get("refund_rate") or 0), 2),
+        "stockout": len(ind.get("stockout_risk") or []),
+        "overstock": len(ind.get("overstock") or []),
+        "churn": len(ind.get("churn_risk") or []),
+    }
+    reviews: list[dict] = []
+
+    # —— 来源 1：决策助手处方 ——
+    insights = (
+        await db.execute(
+            select(AiInsight).where(
+                AiInsight.workspace_id == workspace.id,
+                AiInsight.status == "executed",
+                AiInsight.result_before.is_not(None),
+                AiInsight.executed_at.is_not(None),
+                AiInsight.executed_at <= cutoff,
+                AiInsight.feedback.is_(None),
+            ).order_by(AiInsight.executed_at).limit(10)
+        )
+    ).scalars().all()
+    for ins in insights:
+        after = _primary_metric(ins.action_type, snap)
+        before = ins.result_before
+        if after is None or before is None:
+            continue
+        reviews.append(await _record_review(
+            db, workspace, before=float(before), after=float(after),
+            action_type=ins.action_type, title=ins.title, insight_id=ins.id,
+            insight_type=ins.insight_type, source="advisor",
+            executed_at=ins.executed_at,
+        ))
+        ins.feedback = reviews[-1]["outcome"]
+        ins.feedback_note = "auto-review"
+        ins.feedback_at = datetime.utcnow()
+        if ins.result_after is None:
+            ins.result_after = float(after)
+
+    # —— 来源 2：Agent 自主执行（经验库 pending） ——
+    pendings = (
+        await db.execute(
+            select(AgentExperience).where(
+                AgentExperience.workspace_id == workspace.id,
+                AgentExperience.outcome == "uncertain",
+                AgentExperience.result_before.is_not(None),
+                AgentExperience.feedback_at.is_(None),
+                AgentExperience.created_at <= cutoff,
+                AgentExperience.insight_type == "agent_auto",
+            ).order_by(AgentExperience.created_at).limit(10)
+        )
+    ).scalars().all()
+    for exp in pendings:
+        meta = _METRIC_META.get(exp.action_type)
+        if not meta:
+            continue
+        metric_name, key = meta
+        after = snap.get(key)
+        before = exp.result_before
+        if after is None or before is None:
+            continue
+        outcome = "improved" if after < before else ("not_improved" if after > before else "uncertain")
+        verdict = {"improved": "命中", "not_improved": "未命中", "uncertain": "持平"}[outcome]
+        exp.outcome = outcome
+        exp.result_after = float(after)
+        exp.feedback_at = datetime.utcnow()
+        exp.lesson = (
+            f"【自动回访】{exp.title[:40]} 执行后 {metric_name} {before:g} → {after:g}（{verdict}）。"
+            + ("该动作方向有效，后续同类问题优先复用此策略。"
+               if outcome == "improved"
+               else ("该动作未改善指标，下次需调整执行力度或更换策略。"
+                     if outcome == "not_improved" else "指标持平，效果待继续观察。"))
+        )
+        reviews.append({
+            "source": "agent_auto", "title": exp.title, "outcome": outcome,
+            "metric": metric_name, "before": before, "after": after, "lesson": exp.lesson,
+        })
+
+    if reviews:
+        await db.commit()
+    return reviews
+
+
+async def _record_review(
+    db: AsyncSession, workspace: Workspace, *, before: float, after: float,
+    action_type: str, title: str, insight_id: str | None, insight_type: str,
+    source: str, executed_at: datetime | None,
+) -> dict:
+    """写一条回访结论：更新/新建 AgentExperience（经验库）。"""
+    from app.models.agent_experience import AgentExperience
+
+    outcome = "improved" if after < before else ("not_improved" if after > before else "uncertain")
+    verdict = {"improved": "命中", "not_improved": "未命中", "uncertain": "持平"}[outcome]
+    metric_name = _METRIC_META.get(action_type, (action_type, ""))[0]
+    lesson = (
+        f"【自动回访】{title[:40]} 执行后 {metric_name} {before:g} → {after:g}（{verdict}）。"
+        + ("该动作方向有效，后续同类问题优先复用此策略。"
+           if outcome == "improved"
+           else ("该动作未改善指标，下次需调整执行力度或更换策略。"
+                 if outcome == "not_improved" else "指标持平，效果待继续观察。"))
+    )
+    now = datetime.utcnow()
+    delta_days = max(0, (now - executed_at).days) if executed_at else 0
+    exp = None
+    if insight_id:
+        exp = (
+            await db.execute(
+                select(AgentExperience).where(AgentExperience.insight_id == insight_id).limit(1)
+            )
+        ).scalar_one_or_none()
+    if exp is None:
+        db.add(AgentExperience(
+            workspace_id=workspace.id, insight_id=insight_id, insight_type=insight_type,
+            action_type=action_type, title=title, result_before=before, result_after=after,
+            outcome=outcome, lesson=lesson, delta_days=delta_days, feedback_at=now,
+        ))
+    else:
+        exp.result_after = after
+        exp.outcome = outcome
+        exp.lesson = lesson
+        exp.feedback_at = now
+        exp.delta_days = delta_days
+    return {
+        "source": source, "insight_id": insight_id, "title": title, "outcome": outcome,
+        "metric": metric_name, "before": before, "after": after, "lesson": lesson,
+    }
+
+
 async def run_store_check(
     db: AsyncSession, workspace: Workspace, user_id: str, auto: bool = False,
 ) -> dict:
-    """自主巡店一次：感知 → 决策 → 分级处理 → 审计落库 → 返回报告。"""
+    """自主巡店一次：回访→感知 → 决策 → 分级处理 → 审计落库 → 返回报告。"""
     from app.api.ai import _collect_biz_snapshot
     from app.models.notification import Notification
     from app.models.workspace import WorkspaceMember
     from app.services.agent_orchestrator import _tool_create_coupon, _tool_update_price
+
+    # 0) 自动回访：先把「执行过但未验证」的动作与当前指标对比，沉淀真实效果经验
+    try:
+        auto_reviews = await _auto_review_pending(db, workspace)
+    except Exception as e:  # noqa: BLE001
+        logger.warning("auto-review failed ws=%s: %s", workspace.id, str(e)[:150])
+        auto_reviews = []
 
     # 1) AI 决策（快照 + 风险商品清单含真实 id + 经验）
     snapshot = await _collect_biz_snapshot(db, workspace.id)
@@ -276,19 +431,29 @@ async def run_store_check(
         ))
     await db.commit()
 
-    # 5) 经验：auto 自主执行的动作沉淀为"待观察经验"（供后续对比）
+    # 5) 经验：auto 自主执行的动作沉淀为"待观察经验"（含执行时指标基线，供自动回访对比）
+    _baseline_snapshot: dict = {}
+    if auto and executed:
+        try:
+            from app.api.ai import _metric_snapshot as _ms
+            _baseline_snapshot = await _ms(db, workspace.id)
+        except Exception:  # noqa: BLE001
+            _baseline_snapshot = {}
     if auto and executed:
         try:
             from app.models.agent_experience import AgentExperience
             for ex in executed:
                 if not (ex.get("result") or {}).get("ok"):
                     continue
+                # 记录执行时刻的指标基线，供后续「自动回访」对比判断命中与否
+                _key = "overstock" if ex["tool"] == "update_product_price" else "churn"
                 db.add(AgentExperience(
                     workspace_id=workspace.id,
                     action_type="price_adjust" if ex["tool"] == "update_product_price" else "create_coupon",
                     insight_type="agent_auto",
                     title=f"Agent 自主执行：{ex.get('args', {}).get('product_id') or '发放优惠券'}",
                     context=json.dumps(ex["args"], ensure_ascii=False),
+                    result_before=float(_baseline_snapshot.get(_key) or 0),
                     outcome="uncertain",
                     lesson="Agent 自主执行动作，待观察后续经营指标判断效果。",
                 ))
@@ -302,6 +467,7 @@ async def run_store_check(
         "guidance": guidance,
         "executed": executed,
         "pending": pending_steps,
+        "auto_reviews": auto_reviews,
         "task_id": task.id,
         "mode": "auto" if auto else "confirm",
     }

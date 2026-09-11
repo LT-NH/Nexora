@@ -153,6 +153,10 @@ const D = {
     based_on_sales_data: '基于实际销售数据分析',
     no_data: '暂无数据',
     ai_coverage_title: 'AI分析覆盖',
+    profit_rank_title: '单品毛利归因',
+    profit_rank_subtitle: '真实成本 × 销量——谁在赚钱，谁在偷利润（近 30 天）',
+    pr_margin: '整体毛利率', pr_revenue: '营收', pr_gross: '毛利', pr_loss_sku: '亏损 SKU',
+    pr_top: '盈利 Top 5', pr_bottom: '毛利最低 5 项', pr_advice: '经营建议',
     agent_lock_title: '自主巡店 Agent 是 Enterprise 专属',
     agent_lock_hint: '升级后，你的 AI 运营员工每天 9:30 自主当班：发现问题 → 请你确认 → 沉淀经验',
     agent_lock_cta: '升级解锁',
@@ -271,6 +275,10 @@ const D = {
     based_on_sales_data: 'Based on actual sales data',
     no_data: 'No data',
     ai_coverage_title: 'AI Analysis Coverage',
+    profit_rank_title: 'Per-Product Margin Attribution',
+    profit_rank_subtitle: 'Real cost x sales - who earns, who leaks profit (30d)',
+    pr_margin: 'Overall margin', pr_revenue: 'Revenue', pr_gross: 'Gross profit', pr_loss_sku: 'Loss SKUs',
+    pr_top: 'Top 5 margin', pr_bottom: 'Lowest 5 margin', pr_advice: 'Recommendations',
     agent_lock_title: 'Store Sentinel Agent is Enterprise-only',
     agent_lock_hint: 'Upgrade so your AI operator patrols daily at 9:30: finds issues → asks you → learns',
     agent_lock_cta: 'Upgrade',
@@ -466,6 +474,7 @@ export const Dashboard: React.FC = () => {
   const [customerInsight, setCustomerInsight] = useState<{ segment: string; count: number; avgValue: number }[]>([]);
   const [aiData, setAiData] = useState<any>(null);
   const [aiLoading, setAiLoading] = useState(true);
+  const [profitRank, setProfitRank] = useState<any>(null);
   const [topProducts, setTopProducts] = useState<any[]>([]);
   const [dashAov, setDashAov] = useState<number>(0);
   const [lowStockProducts, setLowStockProducts] = useState<any[]>([]);
@@ -528,6 +537,11 @@ export const Dashboard: React.FC = () => {
         }).catch(() => {});
 
         // AI 销售分析（千问网络请求较慢，异步后置加载，不阻塞首屏）
+        // 单品毛利归因榜（Pro+ 专属；Free 会 403，静默忽略）
+        api.get(`/workspaces/${slug}/ai/profit-by-product?period=30d`).then(res => {
+          if (!cancelled) setProfitRank(res.data);
+        }).catch(() => {});
+
         api.post(`/workspaces/${slug}/ai/analyze-sales`, { period: '7d' }).then(res => {
           if (!cancelled) { setSalesAnalysisResponse(res); setAiData(res.data); }
         }).catch(() => {}).finally(() => { if (!cancelled) setAiLoading(false); });
@@ -1178,6 +1192,76 @@ export const Dashboard: React.FC = () => {
         </div>
         );
       })()}
+
+      {/* 单品毛利归因榜（profit-thinking 核心）：Pro 及以上专属 */}
+      {plan !== 'free' && profitRank && (
+        <Card
+          className="glass-card"
+          title={t('profit_rank_title')}
+          subtitle={t('profit_rank_subtitle')}
+        >
+          <div className="space-y-4">
+            {/* 汇总条 */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              {[
+                { label: t('pr_margin'), value: `${profitRank.summary.margin_pct ?? '—'}%`, tone: (profitRank.summary.margin_pct ?? 0) >= 30 ? 'text-emerald-600' : (profitRank.summary.margin_pct ?? 0) >= 15 ? 'text-amber-600' : 'text-red-500' },
+                { label: t('pr_revenue'), value: `¥${Number(profitRank.summary.revenue || 0).toLocaleString('zh-CN', { maximumFractionDigits: 0 })}`, tone: 'text-slate-900 dark:text-gray-100' },
+                { label: t('pr_gross'), value: `¥${Number(profitRank.summary.gross_profit || 0).toLocaleString('zh-CN', { maximumFractionDigits: 0 })}`, tone: 'text-slate-900 dark:text-gray-100' },
+                { label: t('pr_loss_sku'), value: String(profitRank.summary.loss_sku_count), tone: profitRank.summary.loss_sku_count > 0 ? 'text-red-500' : 'text-emerald-600' },
+              ].map((it, i) => (
+                <div key={i} className="rounded-xl bg-gray-50 dark:bg-gray-800/60 px-3 py-2.5">
+                  <p className="text-[11.5px] text-gray-500 dark:text-gray-400">{it.label}</p>
+                  <p className={`text-lg font-bold tabular-nums mt-0.5 ${it.tone}`}>{it.value}</p>
+                </div>
+              ))}
+            </div>
+            {/* 双榜 */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <p className="text-[13px] font-bold text-emerald-600 dark:text-emerald-400 mb-2 flex items-center gap-1.5">
+                  <TrendingUp size={14} />{t('pr_top')}
+                </p>
+                <div className="space-y-1.5">
+                  {profitRank.top.map((x: any, i: number) => (
+                    <div key={i} className="flex items-center justify-between gap-2 text-[12.5px]">
+                      <span className="truncate text-slate-700 dark:text-gray-200">{(i + 1)}. {x.name}</span>
+                      <span className="flex-shrink-0 tabular-nums font-semibold text-emerald-600 dark:text-emerald-400">
+                        {x.margin_pct}% · ¥{Number(x.gross || 0).toLocaleString('zh-CN', { maximumFractionDigits: 0 })}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <p className="text-[13px] font-bold text-amber-600 dark:text-amber-400 mb-2 flex items-center gap-1.5">
+                  <TrendingDown size={14} />{t('pr_bottom')}
+                </p>
+                <div className="space-y-1.5">
+                  {profitRank.bottom.map((x: any, i: number) => (
+                    <div key={i} className="flex items-center justify-between gap-2 text-[12.5px]">
+                      <span className="truncate text-slate-700 dark:text-gray-200">{(i + 1)}. {x.name}</span>
+                      <span className={`flex-shrink-0 tabular-nums font-semibold ${(x.margin_pct ?? 0) < 0 ? 'text-red-500' : 'text-amber-600 dark:text-amber-400'}`}>
+                        {x.margin_pct}% · ¥{Number(x.gross || 0).toLocaleString('zh-CN', { maximumFractionDigits: 0 })}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+            {/* 建议 */}
+            {profitRank.advice?.length > 0 && (
+              <div className="rounded-xl border border-primary-100 dark:border-primary-500/20 bg-primary-50/50 dark:bg-primary-500/[0.06] px-3.5 py-2.5">
+                <p className="text-[11.5px] font-bold text-primary-600 dark:text-primary-400 mb-1">{t('pr_advice')}</p>
+                <ul className="space-y-1">
+                  {profitRank.advice.map((a: string, i: number) => (
+                    <li key={i} className="text-[12.5px] text-slate-600 dark:text-gray-300">· {a}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+        </Card>
+      )}
 
       {/* Charts Section - Free gets order status only, Pro+ gets full */}
       {plan === 'free' ? (

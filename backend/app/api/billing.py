@@ -37,6 +37,32 @@ public_router = APIRouter(prefix="/billing", tags=["Billing - WeChat Notify"])
 PERIOD_MONTHS = {"month": 1, "year": 12}
 
 
+async def get_ws_plan_tier(db: AsyncSession, ws_id: str) -> str:
+    """工作空间有效档位（free/pro/enterprise）。
+
+    取「生效中(ACTIVE)」订阅中的**最高档**——而不是最新一条，
+    避免历史换购遗留的堆叠记录把用户档位判低（曾导致 Enterprise 用户被误拦）。
+    """
+    from sqlalchemy import select as _select
+
+    tier_rank = {"free": 0, "pro": 1, "enterprise": 2}
+    subs = (
+        await db.execute(
+            _select(Subscription).where(
+                Subscription.workspace_id == ws_id,
+                Subscription.status == SubscriptionStatus.ACTIVE,
+            )
+        )
+    ).scalars().all()
+    best = "free"
+    for sub in subs:
+        plan = await db.get(SubscriptionPlan, sub.plan_id)
+        slug = (plan.slug if plan else "free") or "free"
+        if tier_rank.get(slug, 0) > tier_rank.get(best, 0):
+            best = slug
+    return best
+
+
 def _is_admin(principal: AuthContext) -> bool:
     u = getattr(principal, "user", None)
     return bool(u is not None and getattr(u, "is_superadmin", False))
