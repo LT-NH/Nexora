@@ -812,9 +812,16 @@ export const Dashboard: React.FC = () => {
         ))}
       </div>
 
+      {/* ── Overview Tab ── */}
+      {activeTab === 'overview' && (
+        <div key="tab-overview" className="space-y-6 animate-page-in">
+
+      {/* ① 焦点：经营健康引擎（六维体检 + AI 总结） */}
+      <HealthScoreCard slug={currentWorkspace?.slug || ''} />
+
       {/* AI 决策助手（千问处方）：Pro 及以上专属；Free 显示升级引导 */}
       {plan === 'free' ? (
-        <div className="animate-page-in-delay-1 rounded-2xl border border-dashed border-primary-300/70 dark:border-primary-500/30 bg-primary-50/40 dark:bg-primary-500/[0.05] px-5 py-4 flex items-center justify-between gap-3">
+        <div className="animate-page-in-delay-1 rounded-2xl border border-dashed border-violet-300/60 dark:border-violet-500/30 bg-violet-50/40 dark:bg-violet-500/[0.04] px-5 py-4 flex items-center justify-between gap-3">
           <div className="flex items-center gap-3">
             <Sparkles size={18} className="text-primary-400 flex-shrink-0" />
             <div>
@@ -865,7 +872,7 @@ export const Dashboard: React.FC = () => {
       )}
 
       {/* 经营 KPI（真实利润数据） */}
-      <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-4 gap-4 animate-fade-in" aria-live="polite">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 animate-fade-in" aria-live="polite">
         <StatCard
           className="glass-card"
           icon={<Wallet size={22} className="text-emerald-600" />}
@@ -887,62 +894,51 @@ export const Dashboard: React.FC = () => {
           value={`${profitData?.margin ?? 0}%`}
           subtext="毛利 ÷ 营收"
         />
-        <StatCard
-          className="glass-card"
-          icon={<Calendar size={22} className="text-primary-600" />}
-          label="账户状态"
-          value={getStatusBadge(stats?.subscription_status || 'incomplete')}
-          subtext={`剩余 ${stats?.days_remaining ?? 0} 天`}
-        />
       </div>
 
 
-      {/* ── Overview Tab ── */}
-      {activeTab === 'overview' && (
-        <div key="tab-overview" className="space-y-6 animate-page-in">
-      {/* Low Stock Alert */}
-      {lowStockProducts.length > 0 && (
-        <Card padding className="border-amber-200 bg-amber-50/40">
-          <div className="flex items-center gap-2 mb-3">
-            <AlertCircle size={18} className="text-amber-600" />
-            <span className="text-sm font-semibold text-amber-800">
-              {t('low_stock_title')} ({lowStockProducts.length} {t('low_stock_count')})
-            </span>
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-            {lowStockProducts.slice(0, 6).map((p: any) => (
-              <div
-                key={p.id}
-                className="flex items-center justify-between p-3 bg-white rounded-lg border border-amber-200"
-              >
-                <div className="flex items-center gap-2 min-w-0">
-                  <Package size={16} className="text-gray-500 flex-shrink-0" />
-                  <div className="min-w-0">
-                    <p className="text-sm font-medium text-slate-900 truncate">{p.name}</p>
-                    <p className="text-xs text-gray-500">SKU: {p.sku || '-'}</p>
+      {/* 经营周会 */}
+      <WeeklyReviewCard slug={currentWorkspace?.slug || ''} />
+
+      {/* 实时事件流（概览 tab） */}
+      <Card
+        className=""
+        title={t('live_events_title')}
+        subtitle={wsConnected ? t('live_events_sub') : t('live_events_offline')}
+      >
+        {liveEvents.length === 0 ? (
+          <EmptyState title={t('live_events_empty')} description={t('live_events_empty_desc')} />
+        ) : (
+          <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
+            {liveEvents.slice(0, 12).map((e) => {
+              const sum = eventSummary(e);
+              return (
+                <div key={e.id} className="flex items-center gap-3 rounded-xl bg-gray-50 dark:bg-gray-800/60 border border-gray-100 dark:border-gray-700 px-3 py-2.5 live-event-in">
+                  <span className={`w-2 h-2 rounded-full ${sum.tone} soft-pulse flex-shrink-0`} />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-medium text-slate-700 dark:text-gray-200 truncate">{sum.desc}</p>
                   </div>
+                  <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-md bg-gray-200/70 dark:bg-gray-700 text-gray-500 dark:text-gray-400 flex-shrink-0">
+                    {sum.label}
+                  </span>
                 </div>
-                <span className="text-sm font-bold text-red-600 flex-shrink-0 ml-2">
-                  {p.stock ?? 0}
-                </span>
-              </div>
-            ))}
-            {lowStockProducts.length > 6 && (
-              <div className="flex items-center justify-center p-3 bg-white rounded-lg border border-amber-200">
-                <span className="text-sm text-gray-500">{t('low_stock_more_prefix')} {lowStockProducts.length - 6} {t('low_stock_more_suffix')}</span>
-              </div>
-            )}
+              );
+            })}
           </div>
-        </Card>
+        )}
+      </Card>
+        </div>
       )}
 
-
+      {/* ── Insights Tab ── */}
+      {activeTab === 'insights' && (
+        <div key="tab-insights" className="space-y-6 animate-page-in">
 
       {/* Weekly Report Card */}
       <Card
         title={t('weekly_report_title')}
         subtitle={t('weekly_report_subtitle')}
-        className="border-primary-200 dark:border-primary-800"
+        className=""
       >
         {(() => {
           const weekRevenue = salesTrend.slice(-7).reduce((s, d) => s + d.amount, 0);
@@ -986,49 +982,9 @@ export const Dashboard: React.FC = () => {
         </div>
       </Card>
 
-      {/* 经营健康引擎（核心卖点） */}
-      <HealthScoreCard slug={currentWorkspace?.slug || ''} />
-
-      {/* 经营周会 */}
-      <WeeklyReviewCard slug={currentWorkspace?.slug || ''} />
-
-      {/* 实时事件流（概览 tab） */}
-      <Card
-        className=""
-        title={t('live_events_title')}
-        subtitle={wsConnected ? t('live_events_sub') : t('live_events_offline')}
-      >
-        {liveEvents.length === 0 ? (
-          <EmptyState title={t('live_events_empty')} description={t('live_events_empty_desc')} />
-        ) : (
-          <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
-            {liveEvents.slice(0, 12).map((e) => {
-              const sum = eventSummary(e);
-              return (
-                <div key={e.id} className="flex items-center gap-3 rounded-xl bg-gray-50 dark:bg-gray-800/60 border border-gray-100 dark:border-gray-700 px-3 py-2.5 live-event-in">
-                  <span className={`w-2 h-2 rounded-full ${sum.tone} soft-pulse flex-shrink-0`} />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-xs font-medium text-slate-700 dark:text-gray-200 truncate">{sum.desc}</p>
-                  </div>
-                  <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-md bg-gray-200/70 dark:bg-gray-700 text-gray-500 dark:text-gray-400 flex-shrink-0">
-                    {sum.label}
-                  </span>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </Card>
-        </div>
-      )}
-
-      {/* ── Insights Tab ── */}
-      {activeTab === 'insights' && (
-        <div key="tab-insights" className="space-y-6 animate-page-in">
-
       {/* Enterprise badge */}
       {plan === 'enterprise' && (
-        <div className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-amber-50 to-yellow-50 dark:from-amber-900/30 dark:to-yellow-900/20 border border-amber-200 dark:border-amber-700 rounded-xl">
+        <div className="flex items-center gap-2 px-4 py-2 bg-amber-50/60 dark:bg-amber-500/[0.08] rounded-xl">
           <Award size={18} className="text-amber-500" />
           <span className="text-sm font-semibold text-amber-700 dark:text-amber-300">{t('ent_badge_panel')}</span>
         </div>
@@ -1037,7 +993,7 @@ export const Dashboard: React.FC = () => {
       {/* Enterprise AI recommendation cards */}
       {plan === 'enterprise' && (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-          <div className="glass-card p-4 border border-amber-200 dark:border-amber-800 bg-gradient-to-br from-amber-50/30 to-transparent">
+          <div className="glass-card p-4">
             <div className="flex items-center gap-2 mb-2">
               <TrendingUp size={16} className="text-amber-600" />
               <span className="text-xs font-medium text-amber-700">{t('ai_recommend')}</span>
@@ -1051,7 +1007,7 @@ export const Dashboard: React.FC = () => {
               <p className="text-sm font-semibold text-slate-900 dark:text-gray-100">{t('no_rec_data')}</p>
             )}
           </div>
-          <div className="glass-card p-4 border border-amber-200 dark:border-amber-800 bg-gradient-to-br from-amber-50/30 to-transparent">
+          <div className="glass-card p-4">
             <div className="flex items-center gap-2 mb-2">
               <Users size={16} className="text-amber-600" />
               <span className="text-xs font-medium text-amber-700">{t('retention_plan')}</span>
@@ -1071,7 +1027,7 @@ export const Dashboard: React.FC = () => {
               return <p className="text-sm font-semibold text-slate-900 dark:text-gray-100">{t('no_customer_data')}</p>;
             })()}
           </div>
-          <div className="glass-card p-4 border border-amber-200 dark:border-amber-800 bg-gradient-to-br from-amber-50/30 to-transparent">
+          <div className="glass-card p-4">
             <div className="flex items-center gap-2 mb-2">
               <Target size={16} className="text-amber-600" />
               <span className="text-xs font-medium text-amber-700">{t('optimization_advice')}</span>
@@ -1287,10 +1243,72 @@ export const Dashboard: React.FC = () => {
       {/* ── Operations Tab ── */}
       {activeTab === 'operations' && (
         <div key="tab-operations" className="space-y-6 animate-page-in">
+
+      {/* ① 待办：库存预警 */}
+      {/* Low Stock Alert */}
+      {lowStockProducts.length > 0 && (
+        <Card padding className="border-amber-200 bg-amber-50/40">
+          <div className="flex items-center gap-2 mb-3">
+            <AlertCircle size={18} className="text-amber-600" />
+            <span className="text-sm font-semibold text-amber-800">
+              {t('low_stock_title')} ({lowStockProducts.length} {t('low_stock_count')})
+            </span>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+            {lowStockProducts.slice(0, 6).map((p: any) => (
+              <div
+                key={p.id}
+                className="flex items-center justify-between p-3 bg-white dark:bg-gray-800/60 rounded-lg border border-gray-200 dark:border-gray-700"
+              >
+                <div className="flex items-center gap-2 min-w-0">
+                  <Package size={16} className="text-gray-500 flex-shrink-0" />
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-slate-900 truncate">{p.name}</p>
+                    <p className="text-xs text-gray-500">SKU: {p.sku || '-'}</p>
+                  </div>
+                </div>
+                <span className="text-sm font-bold text-red-600 flex-shrink-0 ml-2">
+                  {p.stock ?? 0}
+                </span>
+              </div>
+            ))}
+            {lowStockProducts.length > 6 && (
+              <div className="flex items-center justify-center p-3 bg-white dark:bg-gray-800/60 rounded-lg border border-gray-200 dark:border-gray-700">
+                <span className="text-sm text-gray-500">{t('low_stock_more_prefix')} {lowStockProducts.length - 6} {t('low_stock_more_suffix')}</span>
+              </div>
+            )}
+          </div>
+        </Card>
+      )}
+
+      {/* 账户与订阅（管理信息，归运营） */}
+      <Card className="" title="账户与订阅" subtitle="套餐权益 / 成员 / 密钥 等管理信息">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <div className="rounded-xl bg-gray-50 dark:bg-gray-800/60 px-3.5 py-3">
+            <p className="text-[11.5px] text-gray-500 dark:text-gray-400">订阅状态</p>
+            <p className="text-[15px] font-bold text-slate-900 dark:text-gray-100 mt-1">{getStatusBadge(stats?.subscription_status || 'incomplete')}</p>
+          </div>
+          <div className="rounded-xl bg-gray-50 dark:bg-gray-800/60 px-3.5 py-3">
+            <p className="text-[11.5px] text-gray-500 dark:text-gray-400">剩余天数</p>
+            <p className="text-[15px] font-bold text-slate-900 dark:text-gray-100 mt-1 tabular-nums">{stats?.days_remaining ?? 0} 天</p>
+          </div>
+          <div className="rounded-xl bg-gray-50 dark:bg-gray-800/60 px-3.5 py-3">
+            <p className="text-[11.5px] text-gray-500 dark:text-gray-400">当前套餐</p>
+            <p className="text-[15px] font-bold text-slate-900 dark:text-gray-100 mt-1 uppercase">{plan}</p>
+          </div>
+          <button
+            onClick={() => navigate('/team')}
+            className="rounded-xl bg-violet-50 dark:bg-violet-500/10 px-3.5 py-3 text-left hover:bg-violet-100 dark:hover:bg-violet-500/20 transition-colors"
+          >
+            <p className="text-[11.5px] text-violet-500">团队与密钥</p>
+            <p className="text-[13px] font-bold text-violet-700 dark:text-violet-300 mt-1">前往管理 →</p>
+          </button>
+        </div>
+      </Card>
       {/* Service Performance Card (Enterprise only) */}
       {plan === 'enterprise' && serverMetrics && (
         <Card
-          className="glass-card border-amber-200 dark:border-amber-800"
+          className="glass-card"
           title={t('svc_perf_title')}
           subtitle={t('svc_perf_subtitle')}
         >
@@ -1347,7 +1365,7 @@ export const Dashboard: React.FC = () => {
               aria-label={action.label}
               className="flex flex-col items-center gap-2 p-4 rounded-xl border border-gray-300 dark:border-gray-600 hover:border-primary-300 dark:hover:border-primary-600 hover:bg-primary-50/50 dark:hover:bg-primary-900/20 hover:shadow-md hover:-translate-y-0.5 transition-all duration-200"
             >
-              <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-primary-50 to-purple-50 dark:from-primary-900/30 dark:to-purple-900/30 flex items-center justify-center group-hover:scale-110 transition-transform duration-200">
+              <div className="w-10 h-10 rounded-lg bg-primary-50 dark:bg-primary-500/[0.12] flex items-center justify-center group-hover:scale-110 transition-transform duration-200">
                 <action.icon size={20} className="text-primary-600 dark:text-primary-400" />
               </div>
               <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
