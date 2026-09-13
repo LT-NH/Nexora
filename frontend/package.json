@@ -1,7 +1,7 @@
 {
   "name": "nexora-frontend",
   "private": true,
-  "version": "1.0.0",
+  "version": "5.4.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -10,6 +10,7 @@
     "lint": "eslint . --ext ts,tsx"
   },
   "dependencies": {
+    "@sentry/react": "^10.74.0",
     "@tiptap/extension-image": "^3.29.0",
     "@tiptap/extension-link": "^3.29.0",
     "@tiptap/extension-placeholder": "^3.29.0",

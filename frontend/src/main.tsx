@@ -1,12 +1,26 @@
 import React, { useEffect } from 'react';
 import ReactDOM from 'react-dom/client';
 import { BrowserRouter, HashRouter } from 'react-router-dom';
-import { ErrorBoundary } from '@/components/ErrorBoundary';
+import * as Sentry from '@sentry/react';
+import { ErrorBoundaryFallback } from '@/components/ErrorBoundary';
 import { AuthProvider } from '@/contexts/AuthContext';
 import { WorkspaceProvider } from '@/contexts/WorkspaceContext';
 import { ToastProvider, useToast } from '@/components/ui/Toast';
 import App from './App';
 import './index.css';
+
+// ── 错误监控（Sentry）───────────────────────────────────────────
+// 未配置 VITE_SENTRY_DSN 时静默跳过——本地开发零副作用。
+const SENTRY_DSN = import.meta.env.VITE_SENTRY_DSN as string | undefined;
+if (SENTRY_DSN) {
+  Sentry.init({
+    dsn: SENTRY_DSN,
+    environment: import.meta.env.MODE,
+    tracesSampleRate: 0.1,
+    integrations: [Sentry.browserTracingIntegration()],
+    sendDefaultPii: false,
+  });
+}
 
 // ── Router 选择 ──────────────────────────────────────────────────
 // 静态托管（花生壳 Drop 等无 SPA fallback 的纯文件服务器）必须用 HashRouter：
@@ -55,7 +69,11 @@ const AppUpdateNotifier: React.FC = () => {
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
-    <ErrorBoundary>
+    <Sentry.ErrorBoundary
+      fallback={({ error, resetError }) => (
+        <ErrorBoundaryFallback error={error as Error} resetError={resetError} />
+      )}
+    >
       <Router>
         <ToastProvider>
           <AppUpdateNotifier />
@@ -66,6 +84,6 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
           </AuthProvider>
         </ToastProvider>
       </Router>
-    </ErrorBoundary>
+    </Sentry.ErrorBoundary>
   </React.StrictMode>
 );

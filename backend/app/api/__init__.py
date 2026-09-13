@@ -40,7 +40,7 @@ async def api_root() -> dict:
     """Root endpoint for the API v1."""
     return {
         "service": "Nexora API",
-        "version": "1.0.0",
+        "version": "5.4.0",
         "docs": "/docs",
         "redoc": "/redoc",
     }

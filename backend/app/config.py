@@ -47,6 +47,14 @@ class Settings(BaseSettings):
     ALIPAY_PUBLIC_KEY: str = ""       # 支付宝公钥 PEM 文本或文件路径
     ALIPAY_GATEWAY: str = ""          # 空=生产网关；沙箱可指 openapi-sandbox.dl.alipaydev.com
     ALIPAY_NOTIFY_URL: str = ""       # 异步通知；空则用 PUBLIC_BASE_URL 拼装
+
+    # 错误监控（Sentry）：留空则不启用（本地开发零依赖无副作用）
+    SENTRY_DSN: str = ""
+    SENTRY_ENV: str = "development"
+    SENTRY_TRACES_SAMPLE_RATE: float = 0.1
+
+    # 产品版本（与 CHANGELOG.md / frontend/package.json 保持一致）
+    APP_VERSION: str = "5.4.0"
     PUBLIC_BASE_URL: str = "http://127.0.0.1:8000"  # 公网基址（回调/二维码拼装用）
 
     # Metrics endpoint auth. When set, the Prometheus /metrics endpoint

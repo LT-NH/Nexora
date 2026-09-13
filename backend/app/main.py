@@ -247,7 +247,7 @@ async def seed_default_plans() -> None:
 app = FastAPI(
     title="Nexora API",
     description="Multi-tenant e-commerce platform API. Use API keys to authenticate.",
-    version="1.0.0",
+    version="5.4.0",
     docs_url="/docs",
     redoc_url="/redoc",
     openapi_url="/openapi.json",
@@ -256,6 +256,33 @@ app = FastAPI(
 
 # Register unified exception handlers
 register_exception_handlers(app)
+
+
+def _init_sentry() -> None:
+    """错误监控（Sentry）。未配置 SENTRY_DSN 时静默跳过——本地开发零副作用。"""
+    dsn = (getattr(settings, "SENTRY_DSN", "") or "").strip()
+    if not dsn:
+        logger.info("Sentry 未启用（未配置 SENTRY_DSN）")
+        return
+    try:
+        import sentry_sdk
+        from sentry_sdk.integrations.fastapi import FastApiIntegration
+        from sentry_sdk.integrations.sqlalchemy import SqlalchemyIntegration
+        from sentry_sdk.integrations.starlette import StarletteIntegration
+
+        sentry_sdk.init(
+            dsn=dsn,
+            environment=(getattr(settings, "SENTRY_ENV", "") or "development"),
+            traces_sample_rate=float(getattr(settings, "SENTRY_TRACES_SAMPLE_RATE", 0) or 0),
+            integrations=[StarletteIntegration(), FastApiIntegration(), SqlalchemyIntegration()],
+            send_default_pii=False,  # 不采集个人身份信息
+        )
+        logger.info("Sentry 已启用 env=%s", getattr(settings, "SENTRY_ENV", "development"))
+    except Exception as e:  # noqa: BLE001
+        logger.warning("Sentry 初始化失败（已忽略，不影响服务）: %s", str(e)[:150])
+
+
+_init_sentry()
 
 # CORS Middleware
 app.add_middleware(
@@ -327,7 +354,7 @@ async def health_check(session: AsyncSession = Depends(get_db)) -> dict:
     healthy = db_ok and redis_ok
     return {
         "status": "healthy" if healthy else "degraded",
-        "version": "1.0.0",
+        "version": settings.APP_VERSION,
         "service": "nexora-api",
         "database": "connected" if db_ok else "unavailable",
         "redis": "connected" if redis_ok else "unavailable",

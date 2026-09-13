@@ -1,13 +1,28 @@
 # Nexora —— 下一代电商助手平台
 
+[![CI](https://github.com/LT-NH/Nexora/actions/workflows/ci.yml/badge.svg)](https://github.com/LT-NH/Nexora/actions/workflows/ci.yml)
+![version](https://img.shields.io/badge/version-5.4.0-534AB7)
+![python](https://img.shields.io/badge/python-3.13-3776AB)
+![react](https://img.shields.io/badge/react-18-61DAFB)
+![tests](https://img.shields.io/badge/tests-39%20passed-3B6D11)
+![license](https://img.shields.io/badge/license-Proprietary-A32D2D)
+
 多租户电商 SaaS：一个面板管理 Shopify / 抖音 / 淘宝 / 拼多多 / 京东 / Amazon 全渠道订单、库存、客户、优惠券、退款售后，经营健康引擎 + 千问 AI 深度分析 + 超级管理台（租户健康雷达 / 营收运营 / 反馈中心 / 公告广播）。
 
-> **v5.3 核心能力**：超级管理台 5 大新功能上线——租户健康雷达、工作空间管理、营收运营看板、平台反馈中心、平台公告广播，覆盖租户级运营治理全场景。
+> **v5.4 核心能力 —— 自主经营 Agent 闭环**：
+> **① 自主巡店 Agent** 每日自主当班（感知 → 大模型决策 → 分级执行 → 审计 → 通知 → 经验沉淀）；
+> **② 自动回访闭环** 对比执行基线与当前指标，自动判定命中/未命中并沉淀教训（越用越聪明，可验证）；
+> **③ 单品毛利归因** 基于真实成本×销量定位"谁在赚钱、谁在偷利润"；
+> **④ 双支付通道** 微信 Native + 支付宝电脑网站支付（真实收单，凭据齐备即启用）；
+> **⑤ 可观测性** Sentry 前后端错误监控（留空静默跳过）。
+
+📘 文档：[部署与运维手册（DEPLOY.md）](./DEPLOY.md) · [变更日志（CHANGELOG.md）](./CHANGELOG.md) · [许可证](./LICENSE)
 
 ## 技术栈
 
 - **后端**: FastAPI + SQLAlchemy 2.0 (async) + SQLite/PostgreSQL + Alembic 迁移
 - **前端**: React 18 + Vite + TailwindCSS + TipTap + ECharts
+
 - **AI**: 阿里云通义千问 (Qwen) 大模型
 - **安全**: JWT 双 Token + 2FA (TOTP) + Fernet AES-128 + 限流中间件
 
