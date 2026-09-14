@@ -41,15 +41,40 @@ export const AppLayout: React.FC = () => {
   const title = tt(pageTitleKeys[location.pathname] ?? 'dashboard');
   const breadcrumbs = getBreadcrumbs(location.pathname, tt);
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  // 桌面端图标栏悬停展开（带 150ms 收回防抖，鼠标划过不抽搐）
+  // 桌面端图标栏悬停展开。抗抖动策略（针对点击导航后"来回快速切换"）：
+  //  1) 展开立即（跟手），收起延迟 150ms
+  //  2) 在侧边栏内按下鼠标后 700ms 内「钉住」不收——点击导航会触发 View Transition，
+  //     浏览器把页面换成快照图层，鼠标下方元素瞬间不是侧边栏 → 产生假 mouseleave
+  //  3) 收起前用几何判定（elementFromPoint）确认鼠标确实不在侧边栏内
+  //  4) 转场进行中（html[data-vt]）不做收起判定，等转场结束后再判（最多重试 4 次）
   const [railOpen, setRailOpen] = useState(false);
   const railTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const openRail = () => {
+  const railPinnedUntil = useRef(0);
+  const railPointer = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
+  const sidebarRef = useRef<HTMLDivElement | null>(null);
+
+  const clearRailTimer = () => {
     if (railTimer.current) { clearTimeout(railTimer.current); railTimer.current = null; }
+  };
+
+  const openRail = () => {
+    clearRailTimer();
     setRailOpen(true);
   };
-  const closeRail = () => {
-    railTimer.current = setTimeout(() => setRailOpen(false), 150);
+
+  const closeRail = (attempt = 0) => {
+    clearRailTimer();
+    railTimer.current = setTimeout(() => {
+      if (Date.now() < railPinnedUntil.current) return;          // 点击后的钉住窗口
+      if (document.documentElement.dataset.vt) {                 // 转场中：延后重判
+        if (attempt < 4) closeRail(attempt + 1);
+        return;
+      }
+      const { x, y } = railPointer.current;
+      const under = (x || y) ? document.elementFromPoint(x, y) : null;
+      if (under && sidebarRef.current?.contains(under)) return;  // 鼠标仍在侧边栏 → 不收起
+      setRailOpen(false);
+    }, attempt === 0 ? 150 : 250);
   };
   useBranding();
 
@@ -109,8 +134,11 @@ export const AppLayout: React.FC = () => {
           w-60 ${railOpen ? 'md:w-60' : 'md:w-[72px]'}
           ${sidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}
         `}
-        onMouseEnter={openRail}
-        onMouseLeave={closeRail}
+        ref={sidebarRef}
+        onMouseEnter={(e) => { railPointer.current = { x: e.clientX, y: e.clientY }; openRail(); }}
+        onMouseMove={(e) => { railPointer.current = { x: e.clientX, y: e.clientY }; }}
+        onMouseLeave={(e) => { railPointer.current = { x: e.clientX, y: e.clientY }; closeRail(); }}
+        onMouseDown={() => { railPinnedUntil.current = Date.now() + 700; }}
       >
         <Sidebar onNavigate={() => setSidebarOpen(false)} railOpen={railOpen} />
       </div>
