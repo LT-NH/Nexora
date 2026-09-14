@@ -105,20 +105,20 @@ export const AppLayout: React.FC = () => {
         className={`
           group/sidebar fixed left-0 top-0 bottom-0 z-40 vt-sidebar overflow-hidden
           border-r border-gray-300 dark:border-gray-700
-          transform transition-[width,transform] duration-500 ease-[cubic-bezier(0.22,1,0.36,1)]
-          w-64 ${railOpen ? 'md:w-64' : 'md:w-[76px]'}
+          transform transition-[width,transform] duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] will-change-[width]
+          w-60 ${railOpen ? 'md:w-60' : 'md:w-[72px]'}
           ${sidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}
         `}
         onMouseEnter={openRail}
         onMouseLeave={closeRail}
       >
-        <Sidebar onNavigate={() => setSidebarOpen(false)} />
+        <Sidebar onNavigate={() => setSidebarOpen(false)} railOpen={railOpen} />
       </div>
 
       {/* Main content - 边距与侧边栏宽度同步过渡 */}
       <div
-        className={`bg-tech-dots transform transition-[margin] duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] ${
-          railOpen ? 'md:ml-64' : 'md:ml-[76px]'
+        className={`bg-tech-dots transform transition-[margin] duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] ${
+          railOpen ? 'md:ml-60' : 'md:ml-[72px]'
         }`}
       >
         <Topbar
