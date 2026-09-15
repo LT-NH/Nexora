@@ -1,0 +1,42 @@
+# Nexora — Prometheus scrape configuration.
+#
+# 用法（本地/生产通用）：
+#   prometheus --config.file=deploy/monitoring/prometheus.yml
+#   或通过 docker compose --profile monitoring up -d 启动整栈
+#
+# 后端已在 /metrics 暴露 Prometheus 指标（prometheus-client 生成）：
+#   nexora_requests_total{method,endpoint,status}   —— 请求计数
+#   nexora_request_duration_seconds{method,endpoint} —— 请求耗时直方图
+#   nexora_errors_total{endpoint}                    —— 5xx 错误计数
+# 若后端配置了 METRICS_TOKEN，需在此处补 Bearer 认证（见下方注释）。
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    service: nexora
+
+scrape_configs:
+  - job_name: nexora-backend
+    metrics_path: /metrics
+    scheme: http
+    static_configs:
+      - targets: ["backend:8000"]
+        labels:
+          env: production
+    # 若设置了 METRICS_TOKEN，取消下面注释：
+    # authorization:
+    #   type: Bearer
+    #   credentials_file: /etc/prometheus/metrics_token
+
+  - job_name: nexora-backend-local
+    metrics_path: /metrics
+    scheme: http
+    static_configs:
+      - targets: ["host.docker.internal:8000"]
+        labels:
+          env: local
+
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]

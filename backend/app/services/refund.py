@@ -175,14 +175,18 @@ class RefundService:
                     select(OrderItem).where(OrderItem.order_id == order.id)
                 )
                 items = items_result.scalars().all()
+                # 批量取商品（原先每行一次查询 → N+1）
+                _pids = [it.product_id for it in items if it.product_id]
+                prod_map: dict[str, Product] = {}
+                if _pids:
+                    _prods = (
+                        await db.execute(select(Product).where(Product.id.in_(_pids)))
+                    ).scalars().all()
+                    prod_map = {p.id: p for p in _prods}
                 for item in items:
-                    if item.product_id:
-                        product_result = await db.execute(
-                            select(Product).where(Product.id == item.product_id)
-                        )
-                        product = product_result.scalar_one_or_none()
-                        if product:
-                            product.stock += item.quantity
+                    product = prod_map.get(item.product_id or "")
+                    if product:
+                        product.stock += item.quantity
 
         await db.flush()
         await db.refresh(refund)
@@ -251,16 +255,17 @@ class RefundService:
         workspace: Workspace,
     ) -> dict:
         """Return refund statistics for the workspace."""
-        # Count by status
-        status_counts = {}
-        for s in RefundStatus:
-            result = await db.execute(
-                select(func.count(Refund.id)).where(
-                    Refund.workspace_id == workspace.id,
-                    Refund.status == s,
-                )
+        # Count by status —— 一次 group by 取全部状态（原先每个状态一次 count → N+1）
+        rows = (
+            await db.execute(
+                select(Refund.status, func.count(Refund.id))
+                .where(Refund.workspace_id == workspace.id)
+                .group_by(Refund.status)
             )
-            status_counts[s.value] = result.scalar_one() or 0
+        ).all()
+        status_counts: dict[str, int] = {}
+        for st, cnt in rows:
+            status_counts[st.value if hasattr(st, "value") else str(st)] = int(cnt or 0)
 
         # Total refunded amount (completed refunds)
         total_result = await db.execute(

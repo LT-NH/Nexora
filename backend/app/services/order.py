@@ -728,28 +728,34 @@ class OrderService:
         total_orders = total_orders or 0
         total_revenue = float(total_revenue or 0.0)
 
-        # 7-day trend
+        # 7-day trend —— 一次 group by 取 7 天（原先每天一次查询 → 7 次往返）
+        trend_start = today_start - timedelta(days=6)
+        day_result = await db.execute(
+            select(
+                func.date(Order.created_at).label("d"),
+                func.count(Order.id),
+                func.coalesce(func.sum(Order.total), 0.0),
+            ).where(
+                Order.workspace_id == workspace.id,
+                Order.created_at >= trend_start,
+                Order.created_at < today_start + timedelta(days=1),
+                Order.status.notin_(EXCLUDED_STATUSES),
+            ).group_by(func.date(Order.created_at))
+        )
+        day_map: dict[str, tuple[int, float]] = {}
+        for d, cnt, rev in day_result.all():
+            day_map[str(d)] = (int(cnt or 0), float(rev or 0.0))
+
         trend: List[Dict] = []
         for i in range(6, -1, -1):
             day_start = today_start - timedelta(days=i)
-            day_end = day_start + timedelta(days=1)
-            day_result = await db.execute(
-                select(
-                    func.count(Order.id),
-                    func.coalesce(func.sum(Order.total), 0.0),
-                ).where(
-                    Order.workspace_id == workspace.id,
-                    Order.created_at >= day_start,
-                    Order.created_at < day_end,
-                    Order.status.notin_(EXCLUDED_STATUSES),
-                )
-            )
-            day_count, day_revenue = day_result.one()
+            key = day_start.strftime("%Y-%m-%d")
+            day_count, day_revenue = day_map.get(key, (0, 0.0))
             trend.append(
                 {
-                    "date": day_start.strftime("%Y-%m-%d"),
-                    "orders": day_count or 0,
-                    "revenue": float(day_revenue or 0.0),
+                    "date": key,
+                    "orders": day_count,
+                    "revenue": day_revenue,
                 }
             )
 

@@ -2,10 +2,14 @@
 
 与"对话式指挥"(用户发指令→Agent 执行)不同，本模块是**自主型经营 Agent**：
 每天/随时自行"上班"——主动感知店铺实时状态 → 让千问基于真实数据自主决策 →
-低风险动作直接处理，破坏性动作(改价/建券，真实写库+Shopify 同步)默认挂起请店主确认
-(或 auto=True 自主执行) → 每次巡店沉淀 AgentTask 审计 + 结论通知 + 经验。
+按**风险策略表**(services/autonomy.py)分级处理：
+  · 低风险(refund_check/restock)  → 只读引导，直接产出
+  · 中风险(create_coupon/clearance) → 在日限额内【自主执行】并留审计
+  · 高风险(price_adjust)           → 永远挂起请店主确认
+→ 每次巡店沉淀 AgentTask 审计 + 结论通知 + 经验，执行后自动回访判定命中/未命中。
 
-工作方式不是"人指挥它"，而是"它当班巡店，把搞不定的呈给你，把每次判断记进经验库"。
+工作方式不是"人指挥它"，而是"它当班巡店，能自己办的就办了，办不了的呈给你，
+每次判断和结果都记进经验库"。权限判断以策略表为准，绝不采信模型自报的 risk 字段。
 """
 
 import json
@@ -21,6 +25,14 @@ from app.database import get_db
 from app.middleware.auth import AuthContext, get_principal
 from app.models.agent_task import AgentTask
 from app.models.workspace import Workspace, WorkspaceRole
+from app.services.autonomy import (
+    MAX_AUTO_ACTIONS_PER_RUN,
+    auto_exec_budget,
+    count_auto_executed_today,
+    describe_policy_table,
+    get_policy,
+    split_plan_by_risk,
+)
 from app.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -30,7 +42,7 @@ router = APIRouter(prefix="/workspaces/{slug}/ai/agent", tags=["AI - Store Senti
 MAX_PLAN = 3
 
 # Agent 可决策的动作集（与后端执行能力一一对应）
-VALID_ACTIONS = {"restock", "refund_check", "price_adjust", "create_coupon", "keep"}
+VALID_ACTIONS = {"restock", "refund_check", "price_adjust", "create_coupon", "clearance", "keep"}
 
 
 async def _recent_experiences_text(db: AsyncSession, ws_id: str) -> str:
@@ -90,11 +102,19 @@ async def _qwen_plan(
         "对象含两个键：\n"
         " - conclusion: 字符串，今日巡店结论（≤80 字，总结整体状态 + 最优先事项）\n"
         " - plan: 数组，0~3 条巡店动作，按优先级排序；每条动作是对象：\n"
-        "     action_type: 字符串，只能是 price_adjust | create_coupon | restock | refund_check | keep\n"
+        "     action_type: 字符串，只能是 price_adjust | create_coupon | clearance | restock | refund_check | keep\n"
         "     params: 对象（price_adjust 需 product_id+target_price；create_coupon 需 value+min_amount；"
-        "restock 需 product_id；refund_check 留空）\n"
+        "clearance 需 product_id；restock 需 product_id；refund_check 留空）\n"
         "     reason: 字符串，≤60 字，引用快照数字说明依据\n"
-        "     risk: 字符串，改价/建券填 high，其余 low\n"
+        "\n"
+        "【你可以自主执行的动作（无需店主确认，请积极使用）】\n"
+        " - refund_check：定位高退款商品，产出核查清单（只读）\n"
+        " - restock：为缺货商品生成补货建议（只读）\n"
+        " - create_coupon：面向流失风险客户发放满减券（真实生效，可撤销，每日限 2 张）\n"
+        " - clearance：对滞销积压商品降价 15% 清仓（真实改价，可调回，每日限 3 件）\n"
+        "【你必须交还给店主确认的动作】\n"
+        " - price_adjust：直接调整售价（影响营收，永远需人工确认）\n"
+        "所以：如果问题可以用 clearance / create_coupon 解决，优先用它们——你能自己办掉。\n"
         "如果店铺没有值得干预的问题，plan 给空数组 []，conclusion 如实说明整体健康。\n\n"
         "【店铺真实快照】\n" + snapshot[:2600]
         + (("\n\n【风险商品清单（真实 id）】\n" + products_text) if products_text else "")
@@ -169,9 +189,76 @@ async def _to_tool_args(action_type: str, params: dict) -> tuple[str, dict] | No
         if not target:
             return None
         return "restock_guide", {"product": str(target)}
+    if action_type == "clearance":
+        target = params.get("product_id") or params.get("product_name")
+        if not target:
+            return None
+        # 清仓 = 降价 15%（可逆，价格随时可调回）
+        args_c: dict = {"reason": params.get("reason") or "自主巡店：滞销积压清仓"}
+        if await _is_uuid(str(target)):
+            args_c["product_id"] = str(target)
+        else:
+            args_c["product_name"] = str(target)
+        return "clearance_price", args_c
     if action_type == "refund_check":
         return "refund_check_guide", {}
     return None
+
+
+async def _tool_clearance_price(db: AsyncSession, workspace, args: dict, user_id: str) -> dict:
+    """滞销清仓：对指定商品降价 15%（真实写库 + Shopify 同步），价格可随时调回。"""
+    from app.models.product import Product
+    from app.services.agent_orchestrator import _get_shopify_ctx
+
+    pid = args.get("product_id")
+    p = await db.get(Product, pid) if pid else None
+    if (p is None or p.workspace_id != workspace.id) and args.get("product_name"):
+        p = (
+            await db.execute(
+                select(Product).where(
+                    Product.workspace_id == workspace.id,
+                    Product.name.ilike(f"%{args['product_name']}%"),
+                )
+            )
+        ).scalars().first()
+    if p is None or p.workspace_id != workspace.id:
+        return {"ok": False, "error": f"商品不存在（id={pid}）"}
+
+    old_price = float(p.price or 0)
+    if old_price <= 0:
+        return {"ok": False, "error": f"商品 {p.name} 售价为 0，无法清仓"}
+    new_price = round(old_price * 0.85, 2)
+    # 保护：不清到成本价以下（避免负毛利）
+    cost = float(p.cost_price or 0)
+    if cost > 0 and new_price < cost:
+        new_price = round(cost * 1.02, 2)
+
+    p.price = new_price
+    shopify_ok = None
+    integ, cfg = await _get_shopify_ctx(db, workspace)
+    if integ and cfg and p.sku and p.sku.startswith("shopify-"):
+        try:
+            ok, errs = await integ.sync_product_to_shopify(
+                cfg, p.sku[len("shopify-"):], {"price": new_price},
+            )
+            shopify_ok = ok
+            if not ok:
+                logger.warning("clearance price sync failed: %s", errs)
+        except Exception as e:  # noqa: BLE001
+            shopify_ok = False
+            logger.warning("clearance price sync error: %s", str(e)[:150])
+    await db.commit()
+    return {
+        "ok": True,
+        "product": p.name,
+        "product_id": p.id,
+        "old_price": old_price,
+        "new_price": new_price,
+        "drop_pct": 15,
+        "shopify_synced": shopify_ok,
+        "reversible": True,
+        "reason": args.get("reason", ""),
+    }
 
 
 # 自动回访：执行后多久可对比指标（小时）。演示时可临时调小。
@@ -185,6 +272,15 @@ _METRIC_META = {
     "retention": ("流失风险客户数", "churn"),
     "price_adjust": ("积压商品数", "overstock"),
     "create_coupon": ("流失风险客户数", "churn"),
+}
+
+# 动作 → 经验库基线指标键（执行时记录，供回访对比）
+_ACTION_BASELINE_KEY = {
+    "price_adjust": "overstock",
+    "clearance": "overstock",
+    "create_coupon": "churn",
+    "refund_check": "refund_rate",
+    "restock": "stockout",
 }
 
 
@@ -362,35 +458,74 @@ async def run_store_check(
     raw = await _qwen_plan(snapshot, exp_text, last_conclusion, products_text)
     conclusion, plan = _parse_plan(raw)
 
-    # 2) 分级执行
-    guidance: list[dict] = []     # low：restock/refund_check 引导（不写库）
-    pending_steps: list[dict] = []  # high：改价/建券 → 真实执行前挂确认（或 auto 直接执行）
-    executed: list[dict] = []
-    for item in plan:
-        if item["action_type"] == "keep":
-            continue
-        mapped = await _to_tool_args(item["action_type"], item["params"])
+    # 2) 按【风险策略表】分级执行（权限判断以策略表为准，不采信模型自报的 risk）
+    auto_items, confirm_items = split_plan_by_risk(plan)
+    guidance: list[dict] = []      # 只读引导（restock/refund_check）
+    executed: list[dict] = []      # 已真实执行（中风险，自动）
+    pending_steps: list[dict] = []  # 需人工确认（高风险）
+    skipped: list[dict] = []       # 因日限额/未知动作被拒
+    auto_count = 0
+
+    for item in auto_items:
+        action = item["action_type"]
+        mapped = await _to_tool_args(action, item["params"])
         if mapped is None:
             continue
         tool, args = mapped
+        # 只读引导：不写库
         if tool in ("restock_guide", "refund_check_guide"):
-            guidance.append({"action": item["action_type"], "args": args, "reason": item["reason"]})
+            guidance.append({
+                "action": action, "args": args, "reason": item["reason"],
+                "risk": item["policy_risk"],
+            })
             continue
-        # 破坏性工具
-        step = {"tool": tool, "args": args, "reason": item["reason"], "auto": auto}
-        if not auto:
-            step["status"] = "pending"
-            pending_steps.append(step)
+        # 中风险真实动作：先检查全局与人次限额，再执行
+        if auto_count >= MAX_AUTO_ACTIONS_PER_RUN:
+            skipped.append({"action": action, "reason": f"单次巡店自主执行已达上限 {MAX_AUTO_ACTIONS_PER_RUN} 项"})
             continue
-        # auto 模式：Agent 自主执行（真实写库 + Shopify 同步）
+        try:
+            used = await count_auto_executed_today(db, workspace.id, action)
+        except Exception:  # noqa: BLE001
+            used = 0
+        allowed, why = auto_exec_budget(action, used)
+        if not allowed:
+            skipped.append({"action": action, "reason": why, "rate_limited": True})
+            logger.info("auto-exec denied ws=%s action=%s: %s", workspace.id, action, why)
+            continue
         try:
             if tool == "update_product_price":
                 result = await _tool_update_price(db, workspace, args, user_id)
+            elif tool == "clearance_price":
+                result = await _tool_clearance_price(db, workspace, args, user_id)
             else:
                 result = await _tool_create_coupon(db, workspace, args)
-            executed.append({"tool": tool, "args": args, "result": result, "reason": item["reason"]})
+            executed.append({
+                "tool": tool, "args": args, "result": result, "reason": item["reason"],
+                "action_type": action, "risk": item["policy_risk"],
+                "autonomous": True, "approved_by": "policy",
+            })
+            if result.get("ok"):
+                auto_count += 1
         except Exception as e:  # noqa: BLE001
-            executed.append({"tool": tool, "args": args, "result": {"ok": False, "error": str(e)[:200]}, "reason": item["reason"]})
+            executed.append({
+                "tool": tool, "args": args, "action_type": action,
+                "result": {"ok": False, "error": str(e)[:200]},
+                "reason": item["reason"], "autonomous": True,
+            })
+
+    # 高风险动作 → 挂起待确认
+    for item in confirm_items:
+        action = item["action_type"]
+        mapped = await _to_tool_args(action, item["params"])
+        if mapped is None:
+            continue
+        tool, args = mapped
+        pending_steps.append({
+            "tool": tool, "args": args, "reason": item["reason"],
+            "action_type": action, "status": "pending", "auto": False,
+            "risk": item["policy_risk"],
+            "why_confirm": get_policy(action).note,
+        })
 
     # 3) 审计落库：AgentTask（pending_steps 供 confirm_pending 复用执行）
     steps_json = {
@@ -398,6 +533,13 @@ async def run_store_check(
         "guidance": guidance,
         "executed": executed,
         "pending": pending_steps,
+        "skipped": skipped,
+        "autonomy": {
+            "auto_executed": len(executed),
+            "awaiting_confirm": len(pending_steps),
+            "rate_limited": sum(1 for s in skipped if s.get("rate_limited")),
+            "policy_table": describe_policy_table(),
+        },
         "generated_at": __import__("datetime").datetime.utcnow().isoformat(),
     }
     task = AgentTask(
@@ -410,81 +552,138 @@ async def run_store_check(
     )
     db.add(task)
 
-    # 4) 通知成员（巡店结论 + 待确认数）
+    # 4) 通知成员（巡店结论 + 自主执行/待确认数）
     member_ids = (
         await db.execute(select(WorkspaceMember.user_id).where(WorkspaceMember.workspace_id == workspace.id))
     ).scalars().all()
-    note_title = f"🤖 Agent 巡店：{len(pending_steps)} 项待你确认"
-    note_msg = conclusion + (
-        f"。其中 {len(guidance)} 项引导建议（补货/退款核查），{len(executed)} 项已自主执行，"
-        f"{len(pending_steps)} 项改价/建券操作需要你确认后执行。"
-        if (guidance or executed or pending_steps) else "今日无需紧急干预。"
-    )
+    if executed and pending_steps:
+        note_title = f"🤖 Agent 已自主处理 {len(executed)} 项，{len(pending_steps)} 项待你确认"
+    elif executed:
+        note_title = f"🤖 Agent 已自主处理 {len(executed)} 项"
+    elif pending_steps:
+        note_title = f"🤖 Agent 巡店：{len(pending_steps)} 项待你确认"
+    else:
+        note_title = "🤖 Agent 巡店完成"
+    if guidance or executed or pending_steps or skipped:
+        _exec_txt = ""
+        if executed:
+            names = "、".join(str((e.get("result") or {}).get("code") or (e.get("result") or {}).get("product") or e.get("action_type")) for e in executed[:3])
+            _exec_txt = f"其中 {len(executed)} 项已由 Agent 自主执行（{names}），"
+        _conf_txt = f"{len(pending_steps)} 项高风险操作需要你确认后执行。" if pending_steps else ""
+        _skip_txt = f"另有 {len(skipped)} 项因日限额未执行。" if skipped else ""
+        note_msg = (
+            conclusion
+            + f"。{len(guidance)} 项引导建议（补货/退款核查）。"
+            + _exec_txt + _conf_txt + _skip_txt
+        )
+    else:
+        note_msg = conclusion + "今日无需紧急干预。"
     for uid in member_ids:
         db.add(Notification(
             workspace_id=workspace.id,
             user_id=uid,
             notification_type="agent_report",
-            title=note_title if pending_steps else "🤖 Agent 巡店完成",
+            title=note_title,
             message=note_msg[:900],
             is_read=False,
         ))
     await db.commit()
 
-    # 5) 经验：auto 自主执行的动作沉淀为"待观察经验"（含执行时指标基线，供自动回访对比）
+    # 5) 经验：自主执行的动作沉淀为"待观察经验"（含执行时指标基线，供自动回访对比）
     _baseline_snapshot: dict = {}
-    if auto and executed:
+    if executed:
         try:
             from app.api.ai import _metric_snapshot as _ms
             _baseline_snapshot = await _ms(db, workspace.id)
         except Exception:  # noqa: BLE001
             _baseline_snapshot = {}
-    if auto and executed:
+    if executed:
         try:
             from app.models.agent_experience import AgentExperience
             for ex in executed:
                 if not (ex.get("result") or {}).get("ok"):
                     continue
+                _action = ex.get("action_type") or (
+                    "price_adjust" if ex["tool"] == "update_product_price" else "create_coupon"
+                )
                 # 记录执行时刻的指标基线，供后续「自动回访」对比判断命中与否
-                _key = "overstock" if ex["tool"] == "update_product_price" else "churn"
+                _key = _ACTION_BASELINE_KEY.get(_action, "overstock")
+                _r = ex.get("result") or {}
+                _label = _r.get("code") or _r.get("product") or ex.get("args", {}).get("product_id") or _action
                 db.add(AgentExperience(
                     workspace_id=workspace.id,
-                    action_type="price_adjust" if ex["tool"] == "update_product_price" else "create_coupon",
+                    action_type=_action,
                     insight_type="agent_auto",
-                    title=f"Agent 自主执行：{ex.get('args', {}).get('product_id') or '发放优惠券'}",
-                    context=json.dumps(ex["args"], ensure_ascii=False),
+                    title=f"Agent 自主执行：{_label}"[:255],
+                    context=json.dumps(
+                        {"args": ex["args"], "result": _r, "policy_approved": True,
+                         "risk": ex.get("risk")},
+                        ensure_ascii=False,
+                    ),
                     result_before=float(_baseline_snapshot.get(_key) or 0),
                     outcome="uncertain",
-                    lesson="Agent 自主执行动作，待观察后续经营指标判断效果。",
+                    lesson="Agent 依据自主执行策略执行该动作，待观察后续经营指标判断效果。",
                 ))
             await db.commit()
         except Exception:  # noqa: BLE001
             pass
 
-    logger.info("store agent run done ws=%s pending=%d auto_exec=%d", workspace.id, len(pending_steps), len(executed))
+    logger.info(
+        "store agent run done ws=%s auto_exec=%d pending=%d skipped=%d",
+        workspace.id, len(executed), len(pending_steps), len(skipped),
+    )
     return {
         "conclusion": conclusion,
         "guidance": guidance,
         "executed": executed,
         "pending": pending_steps,
+        "skipped": skipped,
         "auto_reviews": auto_reviews,
+        "autonomy": steps_json["autonomy"],
         "task_id": task.id,
-        "mode": "auto" if auto else "confirm",
+        "mode": "policy",
     }
 
 
-@router.post("/run-store-check", summary="让巡店 Agent 自主当班一次（auto=true 自主执行改价/建券）")
+@router.get("/policy", summary="Agent 自主执行策略表（哪些动作它自己能做）")
+async def agent_policy(
+    slug: str,
+    principal: Annotated[AuthContext, Depends(get_principal)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> dict:
+    """返回风险分级策略表 + 今日已用额度，让店主清楚 Agent 的权限边界。"""
+    workspace, _ = await _require_member(slug, principal, db, WorkspaceRole.VIEWER)
+    rows = describe_policy_table()
+    for r in rows:
+        used = 0
+        if r["auto_allowed"]:
+            try:
+                used = await count_auto_executed_today(db, workspace.id, r["action_type"])
+            except Exception:  # noqa: BLE001
+                used = 0
+        r["used_today"] = used
+        r["remaining_today"] = (
+            None if r["daily_cap"] is None else max(0, r["daily_cap"] - used)
+        )
+    return {
+        "max_auto_actions_per_run": MAX_AUTO_ACTIONS_PER_RUN,
+        "policies": rows,
+    }
+
+
+@router.post("/run-store-check", summary="让巡店 Agent 自主当班一次（按策略表分级执行）")
 async def api_run_store_check(
     slug: str,
     principal: Annotated[AuthContext, Depends(get_principal)],
     db: Annotated[AsyncSession, Depends(get_db)],
-    auto: int = 0,
+    auto: int = 1,
 ) -> dict:
     workspace, _ = await _require_member(slug, principal, db, WorkspaceRole.ADMIN)
     # 巡店 Agent 为 Enterprise 专属（超管不受限）
     _is_admin = bool(getattr(getattr(principal, "user", None), "is_superadmin", False))
     if not _is_admin and await _ws_plan_tier(db, workspace.id) != "enterprise":
         raise HTTPException(status_code=403, detail="自主巡店 Agent 为 Enterprise 套餐专属，请升级后使用")
+    # auto 参数保留兼容：策略表才是执行与否的真正闸门（高风险动作永远需确认）
     return await run_store_check(db, workspace, principal.user_id, auto=bool(auto))
 
 
@@ -519,9 +718,200 @@ async def last_report(
     }
 
 
-async def run_daily_store_agents() -> None:
-    """每日定时任务：让每个工作空间的巡店 Agent 自主当班（confirm 模式，改价/建券需店主确认）。
+# ── Agent 决策回放（Replay）────────────────────────────────────────────────
+# 把一次巡店还原成「感知 → 决策 → 执行 → 回访」四阶段时间线，
+# 让 Agent 的思考过程成为可展示、可审计的资产。
 
+_PHASE_META = [
+    {"key": "perceive", "label_zh": "感知", "label_en": "Perceive",
+     "desc_zh": "采集店铺真实经营快照", "desc_en": "Collect real business snapshot"},
+    {"key": "decide", "label_zh": "决策", "label_en": "Decide",
+     "desc_zh": "千问基于快照自主制定计划", "desc_en": "Qwen drafts the plan from data"},
+    {"key": "act", "label_zh": "执行", "label_en": "Act",
+     "desc_zh": "按风险策略分级处理", "desc_en": "Handle by risk policy"},
+    {"key": "review", "label_zh": "回访", "label_en": "Review",
+     "desc_zh": "对比指标判定命中/未命中", "desc_en": "Compare metrics, judge hit or miss"},
+]
+
+
+async def _build_replay(db: AsyncSession, workspace: Workspace, task: AgentTask) -> dict:
+    """把单次巡店任务还原为四阶段时间线（含后续回访结果）。"""
+    from app.models.agent_experience import AgentExperience
+
+    try:
+        body = json.loads(task.steps_json or "{}")
+    except Exception:  # noqa: BLE001
+        body = {}
+
+    autonomy = body.get("autonomy") or {}
+    executed = body.get("executed") or []
+    pending = body.get("pending") or []
+    guidance = body.get("guidance") or []
+    skipped = body.get("skipped") or []
+    conclusion = task.reply or body.get("conclusion") or ""
+    created = task.created_at
+
+    # 感知阶段：从 guidance/executed 的 reason 里提取 Agent 观测到的信号
+    signals = []
+    for g in guidance:
+        if g.get("reason"):
+            signals.append({"kind": "signal", "action": g.get("action"), "text": g["reason"]})
+    for e in executed:
+        if e.get("reason"):
+            signals.append({"kind": "signal", "action": e.get("action_type"), "text": e["reason"]})
+    for p in pending:
+        if p.get("reason"):
+            signals.append({"kind": "signal", "action": p.get("action_type"), "text": p["reason"]})
+    if not signals and conclusion:
+        signals.append({"kind": "summary", "action": None, "text": conclusion})
+
+    # 决策阶段
+    decision = {
+        "conclusion": conclusion,
+        "planned": len(guidance) + len(executed) + len(pending) + len(skipped),
+        "distribution": {
+            "guidance": len(guidance),
+            "auto_executed": len(executed),
+            "need_confirm": len(pending),
+            "rate_limited": len(skipped),
+        },
+        "policy_table": autonomy.get("policy_table") or describe_policy_table(),
+    }
+
+    # 执行阶段
+    actions = []
+    for e in executed:
+        r = e.get("result") or {}
+        label = r.get("code") or r.get("product") or e.get("action_type")
+        detail = ""
+        if e.get("tool") == "update_product_price":
+            detail = f"¥{r.get('old_price')} → ¥{r.get('new_price')}"
+        elif e.get("tool") == "clearance_price":
+            detail = f"¥{r.get('old_price')} → ¥{r.get('new_price')}（-{r.get('drop_pct')}%）"
+        elif e.get("tool") == "create_coupon":
+            detail = f"¥{r.get('value')} 满 ¥{r.get('min_amount')} 减"
+        actions.append({
+            "status": "auto_executed", "tool": e.get("tool"), "action_type": e.get("action_type"),
+            "label": label, "detail": detail, "risk": e.get("risk"),
+            "shopify_synced": r.get("shopify_synced"), "reason": e.get("reason"),
+        })
+    for p in pending:
+        a = p.get("args") or {}
+        actions.append({
+            "status": "awaiting_confirm", "tool": p.get("tool"), "action_type": p.get("action_type"),
+            "label": a.get("product_id") or a.get("product_name") or p.get("action_type"),
+            "detail": f"目标价 ¥{a.get('target_price') or a.get('new_price')}" if a.get("target_price") or a.get("new_price") else "",
+            "risk": p.get("risk"), "reason": p.get("reason"), "why_confirm": p.get("why_confirm"),
+        })
+    for g in guidance:
+        a = g.get("args") or {}
+        # 清洗 uuid 前缀：快照里补货目标是 "uuid: 商品名"，展示时只留可读部分
+        raw = str(a.get("product") or "")
+        import re as _re
+        label = _re.sub(
+            r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}[:：]?\s*",
+            "", raw, flags=_re.I,
+        ).strip() or g.get("action")
+        actions.append({
+            "status": "guided", "tool": None, "action_type": g.get("action"),
+            "label": label, "detail": "",
+            "risk": g.get("risk"), "reason": g.get("reason"),
+        })
+    for s in skipped:
+        actions.append({
+            "status": "blocked", "tool": None, "action_type": s.get("action"),
+            "label": s.get("action"), "detail": s.get("reason") or "",
+            "risk": None, "reason": s.get("reason"), "rate_limited": True,
+        })
+
+    # 回访阶段：找该次巡店之后落地的经验
+    reviews = []
+    try:
+        exp_rows = (
+            await db.execute(
+                select(AgentExperience).where(
+                    AgentExperience.workspace_id == workspace.id,
+                    AgentExperience.created_at >= created,
+                ).order_by(AgentExperience.created_at)
+            )
+        ).scalars().all()
+        for exp in exp_rows:
+            reviews.append({
+                "action_type": exp.action_type,
+                "title": exp.title,
+                "outcome": exp.outcome,
+                "metric_before": exp.result_before,
+                "metric_after": exp.result_after,
+                "lesson": exp.lesson,
+                "reviewed_at": exp.feedback_at.isoformat() if exp.feedback_at else None,
+            })
+    except Exception:  # noqa: BLE001
+        pass
+
+    phases = [
+        {"key": "perceive", "items": signals},
+        {"key": "decide", "detail": decision},
+        {"key": "act", "items": actions},
+        {"key": "review", "items": reviews},
+    ]
+    for meta, phase in zip(_PHASE_META, phases):
+        phase.update({
+            "label_zh": meta["label_zh"], "label_en": meta["label_en"],
+            "desc_zh": meta["desc_zh"], "desc_en": meta["desc_en"],
+        })
+
+    return {
+        "task_id": task.id,
+        "created_at": created.isoformat() if created else None,
+        "status": task.status,
+        "conclusion": conclusion,
+        "phases": phases,
+        "totals": {
+            "signals": len(signals),
+            "planned": decision["planned"],
+            "auto_executed": len(executed),
+            "awaiting_confirm": len(pending),
+            "guided": len(guidance),
+            "blocked": len(skipped),
+            "reviewed": len(reviews),
+        },
+    }
+
+
+@router.get("/replay", summary="Agent 决策回放：最近 N 次巡店的完整时间线")
+async def agent_replay(
+    slug: str,
+    principal: Annotated[AuthContext, Depends(get_principal)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    limit: int = 5,
+) -> dict:
+    """把 Agent 的历史巡店还原为「感知→决策→执行→回访」时间线，供审计与演示。"""
+    workspace, _ = await _require_member(slug, principal, db, WorkspaceRole.VIEWER)
+    _is_admin = bool(getattr(getattr(principal, "user", None), "is_superadmin", False))
+    if not _is_admin and await _ws_plan_tier(db, workspace.id) != "enterprise":
+        raise HTTPException(status_code=403, detail="Agent 决策回放为 Enterprise 套餐专属，请升级后使用")
+    tasks = (
+        await db.execute(
+            select(AgentTask).where(
+                AgentTask.workspace_id == workspace.id,
+                AgentTask.instruction.like("【自主巡店】%"),
+            ).order_by(AgentTask.created_at.desc()).limit(max(1, min(limit, 20)))
+        )
+    ).scalars().all()
+    runs = []
+    for tk in tasks:
+        try:
+            runs.append(await _build_replay(db, workspace, tk))
+        except Exception as e:  # noqa: BLE001
+            logger.warning("replay build failed task=%s: %s", tk.id, str(e)[:150])
+    return {"total": len(runs), "runs": runs}
+
+
+async def run_daily_store_agents() -> None:
+    """每日定时任务：让每个工作空间的巡店 Agent 自主当班。
+
+    执行模式由 services/autonomy.py 的策略表决定——
+    低/中风险动作 Agent 自己办掉（受日限额约束），高风险动作挂起等店主确认。
     由 main.py 的 AsyncIOScheduler 在每天 09:30 触发。独立开 session，逐空间执行，
     单空间失败不影响其它空间。
     """
@@ -556,9 +946,11 @@ async def run_daily_store_agents() -> None:
                 except Exception:
                     continue
                 try:
-                    await run_store_check(db, ws, owner_id, auto=False)
-                except Exception as e:  # noqa: BLE001
-                    logger.warning("sentinel ws %s failed: %s", ws.id, str(e)[:150])
+                    report = await run_store_check(db, ws, owner_id, auto=True)
+                    logger.info(
+                        "sentinel ws=%s auto_exec=%d pending=%d",
+                        ws.id, len(report.get("executed") or []), len(report.get("pending") or []),
+                    )
                 except Exception as e:  # noqa: BLE001
                     logger.warning("sentinel ws %s failed: %s", ws.id, str(e)[:150])
     except Exception as e:  # noqa: BLE001

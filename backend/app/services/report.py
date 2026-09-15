@@ -4,6 +4,7 @@ Generates and sends weekly business summary emails to workspace owners.
 """
 
 import asyncio
+import html
 import json
 from datetime import datetime, timedelta, timezone
 
@@ -26,11 +27,12 @@ async def generate_weekly_report(workspace_id: str, workspace_name: str) -> str:
     async with async_session_factory() as db:
         week_ago = datetime.now(timezone.utc) - timedelta(days=7)
 
-        # Total revenue and orders
+        # Total revenue and orders (exclude cancelled / refunded orders)
         rev_result = await db.execute(
             select(func.sum(Order.total), func.count(Order.id)).where(
                 Order.workspace_id == workspace_id,
                 Order.created_at >= week_ago,
+                Order.status.notin_([OrderStatus.CANCELLED, OrderStatus.REFUNDED]),
             )
         )
         total_revenue, total_orders = rev_result.one()
@@ -73,7 +75,7 @@ async def generate_weekly_report(workspace_id: str, workspace_name: str) -> str:
 
         html = f"""
         <div style="font-family:sans-serif;max-width:600px;margin:0 auto;">
-          <h2 style="color:#2560eb;">Nexora 周报 — {workspace_name}</h2>
+          <h2 style="color:#2560eb;">Nexora 周报 — {html.escape(workspace_name)}</h2>
           <p>{datetime.now(timezone.utc).strftime('%Y年%m月%d日')} | 过去7天汇总</p>
 
           <div style="background:#f8fafc;border-radius:12px;padding:16px;margin:16px 0;">
@@ -89,54 +91,19 @@ async def generate_weekly_report(workspace_id: str, workspace_name: str) -> str:
           <h3 style="color:#ef4444;">库存预警</h3>
           <ul>{low_stock_html}</ul>
 
-          <p style="margin-top:24px;"><a href="http://localhost:3000/dashboard" style="background:#2560eb;color:#fff;padding:10px 20px;border-radius:8px;text-decoration:none;">查看完整仪表盘</a></p>
+          <p style="margin-top:24px;"><a href="{settings.SITE_URL}/dashboard" style="background:#2560eb;color:#fff;padding:10px 20px;border-radius:8px;text-decoration:none;">查看完整仪表盘</a></p>
         </div>
         """
         return html
 
 
-async def send_weekly_report(workspace_id: str, workspace_name: str, owner_email: str) -> bool:
-    """Generate and send weekly report email."""
-    try:
-        html = await generate_weekly_report(workspace_id, workspace_name)
-        from app.services.email import send_email
-        send_email(owner_email, f"周报 — {workspace_name}", html)
-        logger.info("Weekly report sent to %s for workspace %s", owner_email, workspace_name)
-        return True
-    except Exception as e:
-        logger.error("Failed to send weekly report: %s", str(e))
-        return False
-
-
-async def send_all_weekly_reports() -> None:
-    """Send weekly reports to all workspace owners."""
-    async with async_session_factory() as db:
-        workspaces_result = await db.execute(select(Workspace))
-        workspaces = workspaces_result.scalars().all()
-
-        for ws in workspaces:
-            owner_result = await db.execute(
-                select(User)
-                .join(WorkspaceMember, WorkspaceMember.user_id == User.id)
-                .where(
-                    WorkspaceMember.workspace_id == ws.id,
-                    WorkspaceMember.role == WorkspaceRole.OWNER,
-                )
-                .limit(1)
-            )
-            owner = owner_result.scalar_one_or_none()
-            if owner and owner.email:
-                await send_weekly_report(ws.id, ws.name, owner.email)
-
-    logger.info("All weekly reports processed.")
-
-
 async def collect_weekly_report_data(db, workspace_id: str) -> dict:
     """Collect structured data for the AI weekly report.
 
-    Computes current-week revenue/orders, previous-week revenue for a
-    week-over-week comparison, top products by revenue, refund count/rate,
-    and low-stock products.
+    Shares the same definitions used by :func:`generate_weekly_report`
+    (current week revenue/orders, top products, low stock) and additionally
+    computes the previous week's revenue for a week-over-week comparison,
+    plus the refund count/rate for the week.
 
     Args:
         db: Async database session.
@@ -328,3 +295,52 @@ async def generate_ai_summary(db, workspace_id: str, report_data: dict) -> str:
         logger.warning("Qwen weekly summary failed, using rule-based: %s", e)
 
     return rule_text
+
+
+async def send_weekly_report(workspace_id: str, workspace_name: str, owner_email: str) -> bool:
+    """Generate and send weekly report email."""
+    try:
+        html = await generate_weekly_report(workspace_id, workspace_name)
+        from app.services.email import send_email
+        send_email(owner_email, f"周报 — {workspace_name}", html)
+        logger.info("Weekly report sent to %s for workspace %s", owner_email, workspace_name)
+        return True
+    except Exception as e:
+        logger.error("Failed to send weekly report: %s", str(e))
+        return False
+
+
+async def send_all_weekly_reports() -> None:
+    """Send weekly reports to all workspace owners."""
+    async with async_session_factory() as db:
+        workspaces_result = await db.execute(select(Workspace))
+        workspaces = workspaces_result.scalars().all()
+
+        # Collect report tasks for every workspace that has an owner email.
+        # Owner lookups use the shared session; report sending (which opens
+        # its own session) is deferred so the calls can run concurrently.
+        # 一次 join 取全部 (workspace_id, owner) 映射（原先每个 ws 一次查询 → N+1）
+        owner_rows = (
+            await db.execute(
+                select(WorkspaceMember.workspace_id, User)
+                .join(User, User.id == WorkspaceMember.user_id)
+                .where(WorkspaceMember.role == WorkspaceRole.OWNER)
+            )
+        ).all()
+        owner_map: dict[str, User] = {}
+        for ws_id, user in owner_rows:
+            owner_map.setdefault(ws_id, user)
+
+        report_tasks = []
+        for ws in workspaces:
+            owner = owner_map.get(ws.id)
+            if owner and owner.email:
+                report_tasks.append(
+                    send_weekly_report(ws.id, ws.name, owner.email)
+                )
+
+    # Send all weekly reports concurrently instead of serially
+    if report_tasks:
+        await asyncio.gather(*report_tasks)
+
+    logger.info("All weekly reports processed.")

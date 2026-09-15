@@ -65,7 +65,41 @@ services:
     volumes:
       - frontend_dist:/app/dist
 
+  # ── 可观测性（可选）：docker compose --profile monitoring up -d ──────────
+  # 指标源：backend 的 /metrics（prometheus-client）
+  # 面板：Grafana 预置「Nexora 后端可观测性」，导入 deploy/monitoring/grafana-dashboard.json
+  prometheus:
+    image: prom/prometheus:latest
+    restart: unless-stopped
+    profiles: ["monitoring"]
+    volumes:
+      - ./deploy/monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    ports:
+      - "9090:9090"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      - backend
+
+  grafana:
+    image: grafana/grafana:latest
+    restart: unless-stopped
+    profiles: ["monitoring"]
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: "${GRAFANA_PASSWORD:-nexora}"
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./deploy/monitoring/grafana-dashboard.json:/etc/grafana/provisioning/dashboards/nexora.json:ro
+    ports:
+      - "3001:3000"
+    depends_on:
+      - prometheus
+
 volumes:
   postgres_data:
   redis_data:
   frontend_dist:
+  prometheus_data:
+  grafana_data:

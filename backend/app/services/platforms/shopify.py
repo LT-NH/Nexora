@@ -171,6 +171,22 @@ class ShopifyIntegration(PlatformIntegration):
 
                 from app.models.refund import Refund, RefundReason, RefundStatus
 
+                # 批量预取「本次涉及订单」的本地记录（避免每单一次查询 → N+1）
+                _order_numbers = [
+                    f"SP-{o.get('order_number') or ''}" for o in orders
+                ]
+                _local_orders: dict[str, Order] = {}
+                if _order_numbers:
+                    _rows = (
+                        await db.execute(
+                            select(Order).where(
+                                Order.workspace_id == workspace_id,
+                                Order.order_number.in_(_order_numbers),
+                            )
+                        )
+                    ).scalars().all()
+                    _local_orders = {o.order_number: o for o in _rows}
+
                 for shopify_order in orders:
                     try:
                         is_new = await self._upsert_order(db, workspace_id, shopify_order)
@@ -180,13 +196,21 @@ class ShopifyIntegration(PlatformIntegration):
                             result.updated += 1
 
                         # 同步订单退款 → 退款售后表
-                        local_order = await db.scalar(
-                            select(Order).where(
-                                Order.workspace_id == workspace_id,
-                                Order.order_number == f"SP-{shopify_order.get('order_number') or ''}",
-                            )
+                        local_order = _local_orders.get(
+                            f"SP-{shopify_order.get('order_number') or ''}"
                         )
                         shopify_refunds = shopify_order.get("refunds") or []
+                        # 预取该订单已有退款，用 (amount, created_at) 组合去重（避免每条一次查询）
+                        _existing: set[tuple] = set()
+                        if local_order is not None and shopify_refunds:
+                            _ex = (
+                                await db.execute(
+                                    select(Refund.amount, Refund.created_at).where(
+                                        Refund.order_id == local_order.id
+                                    )
+                                )
+                            ).all()
+                            _existing = {(float(a or 0), c) for a, c in _ex}
                         for rf in shopify_refunds:
                             # Shopify refunds 无 total_refunded 字段 → 从 transactions(kind=refund) 汇总
                             txns = rf.get("transactions") or []
@@ -201,15 +225,9 @@ class ShopifyIntegration(PlatformIntegration):
                             if amount <= 0 or local_order is None:
                                 continue
                             rf_created = _parse_iso_dt(rf.get("created_at"))
-                            exists = await db.scalar(
-                                select(Refund).where(
-                                    Refund.order_id == local_order.id,
-                                    Refund.amount == amount,
-                                    Refund.created_at == rf_created,
-                                )
-                            )
-                            if exists:
+                            if (float(amount), rf_created) in _existing:
                                 continue
+                            _existing.add((float(amount), rf_created))
                             note = (rf.get("note") or "").strip()
                             reason = RefundReason.OTHER
                             nl = note.lower()
@@ -680,18 +698,26 @@ class ShopifyIntegration(PlatformIntegration):
 
         # Insert (or re-insert) line items
         line_items = so.get("line_items", [])
+        # 批量反查本地商品（原先每个 line_item 一次查询 → N+1）
+        _skus = [
+            f"shopify-{li['product_id']}" for li in line_items if li.get("product_id")
+        ]
+        _sku_map: dict[str, str] = {}
+        if _skus:
+            _rows = (
+                await db.execute(
+                    select(Product.sku, Product.id).where(
+                        Product.workspace_id == workspace_id,
+                        Product.sku.in_(_skus),
+                    )
+                )
+            ).all()
+            _sku_map = {sk: pid for sk, pid in _rows if sk}
         for li in line_items:
             # 关联本地商品（Shopify line_item.product_id → 本地 sku=shopify-{id}）
             product_id = None
             if li.get("product_id"):
-                local_p = await db.scalar(
-                    select(Product).where(
-                        Product.workspace_id == workspace_id,
-                        Product.sku == f"shopify-{li['product_id']}",
-                    )
-                )
-                if local_p is not None:
-                    product_id = local_p.id
+                product_id = _sku_map.get(f"shopify-{li['product_id']}")
             item = OrderItem(
                 id=str(uuid.uuid4()),
                 order_id=order.id,

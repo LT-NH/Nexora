@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import {
-  Bot, Sparkles, ShieldCheck, CheckCircle2, Clock, RefreshCw, ChevronDown, ChevronUp, BookOpen, AlertTriangle,
+  Bot, Sparkles, ShieldCheck, CheckCircle2, Clock, RefreshCw, ChevronDown, ChevronUp, BookOpen, AlertTriangle, Zap, Lock,
 } from 'lucide-react';
 import { useToast } from '@/components/ui/Toast';
 import api from '@/services/api';
@@ -16,10 +16,15 @@ const D = {
     never: 'Agent 还没当过班，点右上按钮让它跑一次',
     status_done: '已完成',
     status_awaiting: '待你确认',
-    pending_title: '待你确认的动作（真实改库/同步 Shopify）',
+    pending_title: '待你确认的动作（影响营收，需你拍板）',
     confirm_btn: '确认执行',
-    executed_title: '已自主执行',
+    executed_title: 'Agent 已自主处理',
+    autonomous: '自主决策',
     guidance_title: '引导建议',
+    skipped_title: '因限额未执行',
+    policy_title: 'Agent 权限边界',
+    policy_hint: 'Agent 只能在绿色动作上自主决策；红色动作永远需要你确认',
+    used: '今日已用',
     exp_title: '经验库',
     exp_hint: '每条经验 = 一次「建议 → 执行 → 回访」闭环的真实结果',
     hit: '近期命中',
@@ -38,10 +43,15 @@ const D = {
     never: 'Agent has not run yet — click the button to dispatch it',
     status_done: 'Completed',
     status_awaiting: 'Awaiting your confirm',
-    pending_title: 'Actions awaiting confirm (real writes / Shopify sync)',
+    pending_title: 'Actions awaiting confirm (revenue impact — your call)',
     confirm_btn: 'Confirm & execute',
-    executed_title: 'Auto-executed',
+    executed_title: 'Handled autonomously',
+    autonomous: 'Self-decided',
     guidance_title: 'Guidance',
+    skipped_title: 'Skipped (daily cap)',
+    policy_title: 'Agent permission boundary',
+    policy_hint: 'The Agent may self-decide only on green actions; red ones always need you',
+    used: 'Used today',
     exp_title: 'Experience Base',
     exp_hint: 'Each entry = a real closed loop of suggest → execute → follow-up',
     hit: 'Recent hits',
@@ -53,6 +63,17 @@ const D = {
   },
 };
 
+interface PolicyRow {
+  action_type: string;
+  risk: string;
+  auto_allowed: boolean;
+  side_effect: boolean;
+  daily_cap: number | null;
+  note: string;
+  used_today?: number;
+  remaining_today?: number | null;
+}
+
 interface AgentReport {
   has_report: boolean;
   task_id?: string;
@@ -60,8 +81,10 @@ interface AgentReport {
   conclusion?: string;
   summary?: {
     guidance?: { action: string; args: Record<string, unknown>; reason?: string }[];
-    executed?: { tool: string; args: Record<string, unknown>; result: Record<string, unknown>; reason?: string }[];
-    pending?: { tool: string; args: Record<string, unknown>; reason?: string }[];
+    executed?: { tool: string; action_type?: string; risk?: string; autonomous?: boolean; args: Record<string, unknown>; result: Record<string, unknown>; reason?: string }[];
+    pending?: { tool: string; action_type?: string; risk?: string; why_confirm?: string; args: Record<string, unknown>; reason?: string }[];
+    skipped?: { action: string; reason: string; rate_limited?: boolean }[];
+    autonomy?: { auto_executed: number; awaiting_confirm: number; rate_limited: number };
     generated_at?: string;
   };
   created_at?: string;
@@ -75,6 +98,15 @@ interface ExperienceItem {
   result_after: number | null;
   lesson?: string | null;
 }
+
+const ACTION_LABEL: Record<string, { zh: string; en: string }> = {
+  refund_check: { zh: '退款核查', en: 'Refund check' },
+  restock: { zh: '补货引导', en: 'Restock' },
+  create_coupon: { zh: '发放优惠券', en: 'Issue coupon' },
+  clearance: { zh: '滞销清仓', en: 'Clearance' },
+  price_adjust: { zh: '调整售价', en: 'Price adjust' },
+  keep: { zh: '不干预', en: 'No-op' },
+};
 
 const fmtTime = (iso?: string) => {
   if (!iso) return '';
@@ -95,19 +127,23 @@ export const StoreAgentPanel: React.FC<{ slug: string }> = ({ slug }) => {
   const { addToast } = useToast();
   const [report, setReport] = useState<AgentReport | null>(null);
   const [exps, setExps] = useState<{ total: number; recent_improved: number; items: ExperienceItem[] } | null>(null);
+  const [policies, setPolicies] = useState<PolicyRow[] | null>(null);
   const [loading, setLoading] = useState(true);
   const [running, setRunning] = useState(false);
   const [confirming, setConfirming] = useState<string | null>(null);
   const [showExp, setShowExp] = useState(false);
+  const [showPolicy, setShowPolicy] = useState(false);
 
   const load = async () => {
     try {
-      const [r, e] = await Promise.all([
+      const [r, e, p] = await Promise.all([
         api.get(`/workspaces/${slug}/ai/agent/report`, { timeout: 10000 }),
         api.get(`/workspaces/${slug}/ai/experiences?limit=5`, { timeout: 10000 }),
+        api.get(`/workspaces/${slug}/ai/agent/policy`, { timeout: 10000 }),
       ]);
       setReport(r.data);
       setExps(e.data);
+      setPolicies(p.data?.policies ?? null);
     } catch {
       /* 静默：Agent 面板失败不影响工作台 */
     } finally {
@@ -120,7 +156,7 @@ export const StoreAgentPanel: React.FC<{ slug: string }> = ({ slug }) => {
   const runPatrol = async () => {
     setRunning(true);
     try {
-      await api.post(`/workspaces/${slug}/ai/agent/run-store-check`, {}, { timeout: 120000 });
+      await api.post(`/workspaces/${slug}/ai/agent/run-store-check`, {}, { timeout: 180000 });
       addToast('success', t('run_ok'), '');
       await load();
     } catch {
@@ -147,7 +183,9 @@ export const StoreAgentPanel: React.FC<{ slug: string }> = ({ slug }) => {
   const pending = report?.summary?.pending || [];
   const executed = report?.summary?.executed || [];
   const guidance = report?.summary?.guidance || [];
+  const skipped = report?.summary?.skipped || [];
   const awaiting = report?.status === 'awaiting_confirm' && pending.length > 0;
+  const aLabel = (a?: string) => (a && ACTION_LABEL[a] ? ACTION_LABEL[a][lang === 'zh' ? 'zh' : 'en'] : a || '');
 
   return (
     <div className="rounded-2xl bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 shadow-sm overflow-hidden">
@@ -201,7 +239,7 @@ export const StoreAgentPanel: React.FC<{ slug: string }> = ({ slug }) => {
             </div>
           )}
 
-          {/* 待确认（破坏性动作） */}
+          {/* 待确认（高风险动作） */}
           {awaiting && (
             <div className="rounded-xl border border-amber-200 dark:border-amber-500/30 bg-amber-50/60 dark:bg-amber-500/[0.07] overflow-hidden">
               <div className="flex items-center gap-2 px-4 pt-3 pb-1">
@@ -213,12 +251,15 @@ export const StoreAgentPanel: React.FC<{ slug: string }> = ({ slug }) => {
                   <div className="min-w-0">
                     <p className="text-[13px] font-semibold text-slate-800 dark:text-gray-100 truncate">
                       {p.tool === 'update_product_price'
-                        ? `调价 → ¥${(p.args as { new_price?: number }).new_price}`
+                        ? `${aLabel(p.action_type || 'price_adjust')} → ¥${(p.args as { new_price?: number }).new_price}`
                         : p.tool === 'create_coupon'
                           ? `发券 → ¥${(p.args as { value?: number }).value} 满 ¥${(p.args as { min_amount?: number }).min_amount ?? 99} 减`
                           : p.tool}
                     </p>
                     {p.reason && <p className="text-[12px] text-gray-500 dark:text-gray-400 truncate">{p.reason}</p>}
+                    {p.why_confirm && (
+                      <p className="text-[11px] text-amber-600/80 dark:text-amber-400/70 truncate mt-0.5">{p.why_confirm}</p>
+                    )}
                   </div>
                   <button
                     onClick={confirmTask}
@@ -236,8 +277,11 @@ export const StoreAgentPanel: React.FC<{ slug: string }> = ({ slug }) => {
           {executed.length > 0 && (
             <div>
               <div className="flex items-center gap-2 mb-1.5">
-                <CheckCircle2 size={13} className="text-emerald-500" />
+                <Zap size={13} className="text-emerald-500" />
                 <p className="text-[12px] font-bold text-gray-600 dark:text-gray-300 tracking-wide">{t('executed_title')}</p>
+                <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-500/15 text-emerald-600 dark:text-emerald-400">
+                  {t('autonomous')}
+                </span>
               </div>
               <div className="space-y-1.5">
                 {executed.map((ex, i) => {
@@ -248,13 +292,32 @@ export const StoreAgentPanel: React.FC<{ slug: string }> = ({ slug }) => {
                       <span className="truncate">
                         {ex.tool === 'update_product_price'
                           ? `已调价 ${r.product}：¥${r.old_price} → ¥${r.new_price}${r.shopify_synced ? '（已同步 Shopify）' : ''}`
-                          : ex.tool === 'create_coupon'
-                            ? `已建券 ${r.code}（¥${r.value} 满 ¥${r.min_amount} 减）`
-                            : ex.tool}
+                          : ex.tool === 'clearance_price'
+                            ? `已清仓 ${r.product}：¥${r.old_price} → ¥${r.new_price}（-${r.drop_pct}%，可调回）${r.shopify_synced ? ' · 已同步 Shopify' : ''}`
+                            : ex.tool === 'create_coupon'
+                              ? `已建券 ${r.code}（¥${r.value} 满 ¥${r.min_amount} 减）`
+                              : ex.tool}
                       </span>
                     </div>
                   );
                 })}
+              </div>
+            </div>
+          )}
+
+          {/* 因限额未执行 */}
+          {skipped.length > 0 && (
+            <div>
+              <div className="flex items-center gap-2 mb-1.5">
+                <Lock size={13} className="text-gray-400" />
+                <p className="text-[12px] font-bold text-gray-500 dark:text-gray-400 tracking-wide">{t('skipped_title')}</p>
+              </div>
+              <div className="space-y-1.5">
+                {skipped.map((s, i) => (
+                  <div key={i} className="rounded-lg bg-gray-50 dark:bg-gray-800/50 px-3.5 py-2 text-[12px] text-gray-500 dark:text-gray-400 truncate">
+                    {aLabel(s.action)} · {s.reason}
+                  </div>
+                ))}
               </div>
             </div>
           )}
@@ -282,6 +345,58 @@ export const StoreAgentPanel: React.FC<{ slug: string }> = ({ slug }) => {
                   );
                 })}
               </div>
+            </div>
+          )}
+
+          {/* Agent 权限边界（可折叠） */}
+          {policies && policies.length > 0 && (
+            <div className="rounded-xl border border-gray-100 dark:border-gray-700/60 bg-gray-50/70 dark:bg-gray-800/40 overflow-hidden">
+              <button onClick={() => setShowPolicy(s => !s)} className="w-full flex items-center gap-2 px-4 py-2.5 text-left">
+                <ShieldCheck size={13} className="text-violet-500" />
+                <span className="text-[12px] font-bold text-gray-600 dark:text-gray-300 tracking-wide">{t('policy_title')}</span>
+                <span className="text-[11px] font-semibold px-1.5 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-500/15 text-emerald-600 dark:text-emerald-400">
+                  {policies.filter(p => p.auto_allowed).length} 可自主
+                </span>
+                <span className="h-px flex-1 bg-gray-100 dark:bg-gray-700/60" />
+                {showPolicy ? <ChevronUp size={14} className="text-gray-400" /> : <ChevronDown size={14} className="text-gray-400" />}
+              </button>
+              {showPolicy && (
+                <div className="px-4 pb-3 space-y-1.5">
+                  <p className="text-[11px] text-gray-400 dark:text-gray-500">{t('policy_hint')}</p>
+                  {policies.filter(p => p.action_type !== 'keep').map((p) => {
+                    const tone = p.auto_allowed
+                      ? 'bg-emerald-50 dark:bg-emerald-500/[0.08] border-emerald-100 dark:border-emerald-500/20'
+                      : 'bg-rose-50/60 dark:bg-rose-500/[0.07] border-rose-100 dark:border-rose-500/20';
+                    return (
+                      <div key={p.action_type} className={`rounded-lg border px-3 py-2 ${tone}`}>
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-1.5 min-w-0">
+                            {p.auto_allowed
+                              ? <Zap size={11} className="text-emerald-500 flex-shrink-0" />
+                              : <Lock size={11} className="text-rose-500 flex-shrink-0" />}
+                            <span className="text-[12.5px] font-medium text-slate-700 dark:text-gray-200 truncate">
+                              {aLabel(p.action_type)}
+                            </span>
+                          </div>
+                          <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full flex-shrink-0 ${
+                            p.auto_allowed
+                              ? 'bg-emerald-100 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-400'
+                              : 'bg-rose-100 dark:bg-rose-500/20 text-rose-700 dark:text-rose-400'
+                          }`}>
+                            {p.auto_allowed ? 'Agent 可自主' : '需你确认'}
+                          </span>
+                        </div>
+                        <p className="text-[11.5px] text-gray-500 dark:text-gray-400 mt-0.5 leading-relaxed">{p.note}</p>
+                        {p.auto_allowed && p.daily_cap !== null && (
+                          <p className="text-[11px] text-gray-400 dark:text-gray-500 mt-0.5 tabular-nums">
+                            {t('used')} {p.used_today ?? 0}/{p.daily_cap}
+                          </p>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           )}
 

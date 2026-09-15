@@ -88,15 +88,26 @@ async def list_permissions(
     )
     groups = group_result.scalars().all()
 
-    group_responses: list[PermissionGroupResponse] = []
-    for g in groups:
-        count_result = await db.execute(
-            select(func.count(PermissionGroupMember.id)).where(
-                PermissionGroupMember.group_id == g.id,
+    # 成员数：一次聚合查全部 group（原先每个 group 一次 count → N+1）
+    group_ids = [g.id for g in groups]
+    count_map: dict[str, int] = {}
+    if group_ids:
+        rows = (
+            await db.execute(
+                select(
+                    PermissionGroupMember.group_id,
+                    func.count(PermissionGroupMember.id),
+                ).where(
+                    PermissionGroupMember.group_id.in_(group_ids)
+                ).group_by(PermissionGroupMember.group_id)
             )
-        )
-        count = count_result.scalar_one()
-        group_responses.append(PermissionGroupResponse(id=g.id, name=g.name, member_count=count))
+        ).all()
+        count_map = {gid: cnt for gid, cnt in rows}
+
+    group_responses: list[PermissionGroupResponse] = [
+        PermissionGroupResponse(id=g.id, name=g.name, member_count=count_map.get(g.id, 0))
+        for g in groups
+    ]
 
     # Fetch per-user permission overrides
     perm_result = await db.execute(
@@ -107,21 +118,31 @@ async def list_permissions(
     )
     overrides_db = perm_result.scalars().all()
 
+    # 批量取 User 与 PermissionGroup（原先每条 override 两次查询 → N+1）
+    _uids = [ov.user_id for ov in overrides_db if ov.user_id]
+    _gids = [ov.group_id for ov in overrides_db if ov.group_id]
+    user_map: dict[str, User] = {}
+    if _uids:
+        _users = (
+            await db.execute(select(User).where(User.id.in_(_uids)))
+        ).scalars().all()
+        user_map = {u.id: u for u in _users}
+    grp_map: dict[str, PermissionGroup] = {}
+    if _gids:
+        _grps = (
+            await db.execute(select(PermissionGroup).where(PermissionGroup.id.in_(_gids)))
+        ).scalars().all()
+        grp_map = {g.id: g for g in _grps}
+
     overrides: list[PermissionOverride] = []
     for ov in overrides_db:
-        user_result = await db.execute(select(User).where(User.id == ov.user_id))
-        user = user_result.scalar_one_or_none()
-        group_name = None
-        if ov.group_id:
-            grp_result = await db.execute(select(PermissionGroup).where(PermissionGroup.id == ov.group_id))
-            grp = grp_result.scalar_one_or_none()
-            if grp:
-                group_name = grp.name
+        user = user_map.get(ov.user_id or "")
+        grp = grp_map.get(ov.group_id or "")
         overrides.append(PermissionOverride(
             user_id=ov.user_id or "",
             email=user.email if user else "",
             full_name=user.full_name if user else "",
-            group_name=group_name,
+            group_name=grp.name if grp else None,
             can_view_revenue=ov.can_view_revenue,
             can_edit_products=ov.can_edit_products,
             can_delete_products=ov.can_delete_products,

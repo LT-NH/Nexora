@@ -26,15 +26,17 @@ test.describe('核心业务页面', () => {
     await page.waitForURL(/\/products/, { timeout: 15_000 });
 
     // 页面加载成功：出现页面标题
-    await expect(page.getByRole('heading', { name: '商品管理' })).toBeVisible({
-      timeout: 15_000,
-    });
+    // 注意：顶栏面包屑与主内容区标题都是 "商品管理"，因此必须限定在 main 内，
+    // 否则 getByRole('heading') 会命中 2 个元素触发 strict mode 违规。
+    await expect(
+      page.getByRole('main').getByRole('heading', { name: '商品管理' }),
+    ).toBeVisible({ timeout: 15_000 });
 
     // 打开「添加商品」弹窗
     await page.getByRole('button', { name: '添加商品' }).click();
-    await expect(page.getByRole('heading', { name: '添加商品' })).toBeVisible({
-      timeout: 15_000,
-    });
+    await expect(
+      page.getByRole('dialog').getByRole('heading', { name: '添加商品' }),
+    ).toBeVisible({ timeout: 15_000 });
   });
 
   test('登录后仪表盘显示统计卡片', async ({ page }) => {

@@ -82,6 +82,7 @@ import { useWebSocketNotifications } from '@/hooks/useWebSocketNotifications';
 import { HealthScoreCard } from '@/components/HealthScoreCard';
 import { AiDecisionPanel } from '@/components/AiDecisionPanel';
 import { StoreAgentPanel } from '@/components/StoreAgentPanel';
+import { AgentReplayTimeline } from '@/components/AgentReplayTimeline';
 import { WeeklyReviewCard } from '@/components/WeeklyReviewCard';
 import { SalesTrendChart } from '@/components/charts/SalesTrendChart';
 import { OrderStatusChart } from '@/components/charts/OrderStatusChart';
@@ -846,8 +847,10 @@ export const Dashboard: React.FC = () => {
 
       {/* 巡店 Agent：Enterprise 专属（自主当班 / 待确认 / 经验库） */}
       {plan === 'enterprise' ? (
-        <div className="animate-page-in-delay-2">
+        <div className="animate-page-in-delay-2 space-y-4">
           <StoreAgentPanel slug={currentWorkspace?.slug || ''} />
+          {/* Agent 决策回放：把「感知→决策→执行→回访」摊开给人看 */}
+          <AgentReplayTimeline slug={currentWorkspace?.slug || ''} />
         </div>
       ) : (
         <div className="animate-page-in-delay-2 rounded-2xl border border-dashed border-violet-300/60 dark:border-violet-500/30 bg-violet-50/40 dark:bg-violet-500/[0.04] px-5 py-4 flex items-center justify-between gap-3">
