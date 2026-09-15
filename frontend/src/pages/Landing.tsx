@@ -259,6 +259,20 @@ const faqs = [
   },
 ];
 
+/**
+ * 顶栏主导航。
+ *
+ * 刻意保持 4 项：中栏是 `auto` 宽度并数学居中，链接过少会让中栏缩成一个
+ * 小点、与左右两段（品牌 / 账户）失衡；过多则在窄桌面（1024px）挤压两侧。
+ * 4 项在 1024~1920 全程都有舒适的呼吸空间。
+ */
+const NAV_LINKS = [
+  { href: '#features', label: '功能特性' },
+  { href: '#how', label: '工作原理' },
+  { href: '#pricing', label: '定价方案' },
+  { href: '#faq', label: '常见问题' },
+];
+
 const FAQItem: React.FC<{
   q: string;
   a: string;
@@ -1126,32 +1140,46 @@ export const Landing: React.FC = () => {
         scrolled ? 'bg-white/80 backdrop-blur-md border-b border-gray-100 shadow-sm' : 'bg-transparent'
       }`}>
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between h-16">
-            <div className="flex items-center gap-2.5">
-              <div className="h-9 w-9 rounded-xl bg-gradient-to-br from-violet-600 to-fuchsia-500 flex items-center justify-center shadow-lg shadow-violet-500/25">
+          {/*
+            三段对称布局：grid-cols-[1fr_auto_1fr]
+            - 用 justify-between 时，中间导航会紧贴左段右侧、右段又占满余量，
+              导致「左 Logo+导航」挤成一团、右侧大片空白（视觉重心左偏）。
+            - 改成 1fr / auto / 1fr 后，中间列数学居中且与两侧宽度无关，
+              左右各占一半剩余空间，形成对称配重。
+          */}
+          <div className="grid grid-cols-[1fr_auto_1fr] items-center h-16 gap-4">
+            {/* 左段：品牌标识 */}
+            <div className="flex items-center gap-2.5 min-w-0">
+              <div className="h-9 w-9 flex-shrink-0 rounded-xl bg-gradient-to-br from-violet-600 to-fuchsia-500 flex items-center justify-center shadow-lg shadow-violet-500/25">
                 <Sparkles size={18} className="text-white" />
               </div>
-              <span className="text-xl font-bold text-[#1d1d1f]">Nexora</span>
+              <span className="text-xl font-bold text-[#1d1d1f] truncate">Nexora</span>
             </div>
-            <div className="hidden md:flex items-center gap-8">
-              <a
-                href="#features"
-                className="nav-link text-sm font-medium text-[#6e6e73] hover:text-[#1d1d1f] transition-colors duration-200"
-              >
-                功能特性
-              </a>
-              <a
-                href="#pricing"
-                className="nav-link text-sm font-medium text-[#6e6e73] hover:text-[#1d1d1f] transition-colors duration-200"
-              >
-                定价方案
-              </a>
-            </div>
-            <div className="flex items-center gap-3">
+
+            {/* 中段：主导航（数学居中）
+                用 lg 而非 md 显示：768~1023px 下中栏 nav 占 348px，
+                留给右段（登录 + 免费注册两个按钮约需 240px）只剩 170~196px，会被压变形。
+                lg 起显示可保证三段各有 ≥290px 余量。 */}
+            <nav className="hidden lg:flex items-center gap-1" aria-label="主导航">
+              {NAV_LINKS.map(({ href, label }) => (
+                <a
+                  key={href}
+                  href={href}
+                  className="nav-link relative px-3.5 py-2 text-sm font-medium text-[#6e6e73] hover:text-[#1d1d1f] transition-colors duration-200 rounded-lg hover:bg-black/[0.04]"
+                >
+                  {label}
+                </a>
+              ))}
+            </nav>
+
+            {/* 右段：账户操作（右对齐，与左段等权） */}
+            <div className="flex items-center justify-end gap-3 min-w-0">
               <div className="hidden md:flex items-center gap-3">
                 {isAuthed ? (
                   <>
-                    <span className="text-xs text-[#8e8e93] hidden lg:inline">已登录：{authUser?.email}</span>
+                    <span className="text-xs text-[#8e8e93] hidden xl:inline truncate max-w-[180px]">
+                      已登录：{authUser?.email}
+                    </span>
                     <TransitionLink to="/dashboard">
                       <Button variant="primary" size="sm">
                         进入工作台
@@ -1173,9 +1201,9 @@ export const Landing: React.FC = () => {
                   </>
                 )}
               </div>
-              {/* Mobile hamburger menu */}
+              {/* 汉堡按钮：与 nav 的 lg 断点严格互补，避免同时出现 */}
               <button
-                className="md:hidden p-2 rounded-lg text-[#1d1d1f] hover:bg-gray-100 transition-colors"
+                className="lg:hidden p-2 rounded-lg text-[#1d1d1f] hover:bg-gray-100 transition-colors"
                 onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
                 aria-label="切换导航菜单"
                 aria-expanded={mobileMenuOpen}
@@ -1185,34 +1213,50 @@ export const Landing: React.FC = () => {
             </div>
           </div>
 
-          {/* Mobile dropdown navigation panel */}
+          {/* 折叠菜单面板（与 nav 的 lg 断点互补） */}
           {mobileMenuOpen && (
-            <div className="md:hidden py-4 border-t border-gray-100 space-y-1 animate-fade-in">
-              <a
-                href="#features"
-                onClick={() => setMobileMenuOpen(false)}
-                className="block px-3 py-2 rounded-lg text-base font-medium text-[#6e6e73] hover:text-[#1d1d1f] hover:bg-gray-50 transition-colors"
-              >
-                功能特性
-              </a>
-              <a
-                href="#pricing"
-                onClick={() => setMobileMenuOpen(false)}
-                className="block px-3 py-2 rounded-lg text-base font-medium text-[#6e6e73] hover:text-[#1d1d1f] hover:bg-gray-50 transition-colors"
-              >
-                定价方案
-              </a>
+            <div className="lg:hidden py-4 border-t border-gray-100 space-y-1 animate-fade-in">
+              {NAV_LINKS.map(({ href, label }) => (
+                <a
+                  key={href}
+                  href={href}
+                  onClick={() => setMobileMenuOpen(false)}
+                  className="block px-3 py-2 rounded-lg text-base font-medium text-[#6e6e73] hover:text-[#1d1d1f] hover:bg-gray-50 transition-colors"
+                >
+                  {label}
+                </a>
+              ))}
+              {/*
+                账户区按登录态切换。
+                原先折叠菜单里写死了「登录 / 免费注册」，已登录用户在窄屏下
+                看不到「进入工作台」入口，只能手动改地址 —— 属功能缺失。
+              */}
               <div className="pt-3 mt-3 border-t border-gray-100 flex flex-col gap-2">
-                <TransitionLink to="/login" onClick={() => setMobileMenuOpen(false)}>
-                  <Button variant="outline" size="sm" className="w-full">
-                    登录
-                  </Button>
-                </TransitionLink>
-                <TransitionLink to="/register" onClick={() => setMobileMenuOpen(false)}>
-                  <Button variant="primary" size="sm" className="w-full">
-                    免费注册
-                  </Button>
-                </TransitionLink>
+                {isAuthed ? (
+                  <>
+                    <span className="px-3 text-xs text-[#8e8e93] truncate">
+                      已登录：{authUser?.email}
+                    </span>
+                    <TransitionLink to="/dashboard" onClick={() => setMobileMenuOpen(false)}>
+                      <Button variant="primary" size="sm" className="w-full">
+                        进入工作台
+                      </Button>
+                    </TransitionLink>
+                  </>
+                ) : (
+                  <>
+                    <TransitionLink to="/login" onClick={() => setMobileMenuOpen(false)}>
+                      <Button variant="outline" size="sm" className="w-full">
+                        登录
+                      </Button>
+                    </TransitionLink>
+                    <TransitionLink to="/register" onClick={() => setMobileMenuOpen(false)}>
+                      <Button variant="primary" size="sm" className="w-full">
+                        免费注册
+                      </Button>
+                    </TransitionLink>
+                  </>
+                )}
               </div>
             </div>
           )}
