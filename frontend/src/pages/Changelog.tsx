@@ -214,7 +214,7 @@ const Changelog: React.FC = () => {
             </div>
             <div className="flex items-center gap-2.5">
               <img
-                src="/nexora-logo.png"
+                src="/favicon-192.png"
                 alt="Nexora"
                 className="h-8 w-8 object-contain"
               />

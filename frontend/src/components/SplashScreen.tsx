@@ -141,7 +141,7 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({ onFinish }) => {
 
       {/* Logo */}
       <img
-        src="/nexora-logo.png"
+        src="/favicon-512.png"
         alt=""
         className="relative z-10 mb-10"
         style={{

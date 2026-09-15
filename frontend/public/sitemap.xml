@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Nexora sitemap
+  当前站点地址为花生壳静态托管（长期版）。若后续绑定正式域名，
+  只需把下方 <loc> 的 host 整体替换即可。
+-->
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url>
+    <loc>https://uehcui.gicp.fun/</loc>
+    <changefreq>weekly</changefreq>
+    <priority>1.0</priority>
+  </url>
+  <url>
+    <loc>https://uehcui.gicp.fun/login</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://uehcui.gicp.fun/register</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://uehcui.gicp.fun/changelog</loc>
+    <changefreq>weekly</changefreq>
+    <priority>0.5</priority>
+  </url>
+  <url>
+    <loc>https://uehcui.gicp.fun/status</loc>
+    <changefreq>daily</changefreq>
+    <priority>0.4</priority>
+  </url>
+</urlset>

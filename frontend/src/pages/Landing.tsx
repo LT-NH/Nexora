@@ -1220,7 +1220,11 @@ export const Landing: React.FC = () => {
       </header>
 
       {/* ============ Hero — split screen ============ */}
-      <section className="relative pt-36 sm:pt-44 pb-24 sm:pb-36 px-4 sm:px-6 lg:px-8 overflow-hidden bg-white/80 backdrop-blur-2xl">
+      {/*
+        首屏内边距按断点收紧：pt-36 在 1024×768 会把标题+副文案+CTA 全部推到折叠线以下
+        （实测 1024x768 下 CTA bottom=944 > vh=768），因此 lg 断点用 pt-28 而非 pt-44。
+      */}
+      <section className="relative pt-28 sm:pt-32 lg:pt-28 xl:pt-36 pb-20 sm:pb-28 lg:pb-32 px-4 sm:px-6 lg:px-8 overflow-hidden bg-white/80 backdrop-blur-2xl">
         {/* Local decorative orbs */}
         <div className="absolute -top-20 left-1/4 w-[500px] h-[500px] rounded-full bg-violet-200/30 blur-3xl pointer-events-none" />
         <div className="absolute top-1/3 right-[8%] w-72 h-72 rounded-full bg-fuchsia-200/25 blur-3xl pointer-events-none" />
@@ -1239,7 +1243,12 @@ export const Landing: React.FC = () => {
                 </div>
               </Reveal>
               <Reveal delay={100}>
-                <h1 className="mt-8 text-5xl sm:text-7xl lg:text-8xl text-[#1d1d1f] leading-[1.04] tracking-tight">
+                {/*
+                  字号阶梯按「左侧列宽」定，不是按视口定。
+                  lg(1024) 时单列仅 448px，96px 会折成 4 行（高 399px）把 CTA 挤到折叠线外，
+                  因此 lg 用 72px、xl 才放到 80/96px。
+                */}
+                <h1 className="mt-8 text-4xl sm:text-6xl lg:text-[4.5rem] xl:text-[5rem] 2xl:text-[5.5rem] text-[#1d1d1f] leading-[1.08] tracking-tight">
                   <span className="animate-hero-title block font-light tracking-tight" style={{ animationDelay: '0.15s' }}>
                     一个面板，
                   </span>
@@ -1255,12 +1264,12 @@ export const Landing: React.FC = () => {
                 </h1>
               </Reveal>
               <Reveal delay={300}>
-                <p className="mt-6 text-lg sm:text-xl text-[#515154] leading-relaxed max-w-xl mx-auto lg:mx-0">
+                <p className="mt-5 lg:mt-4 text-base sm:text-lg lg:text-base xl:text-lg text-[#515154] leading-relaxed max-w-xl mx-auto lg:mx-0">
                   连接 Shopify、抖音、淘宝。订单自动汇聚、库存实时同步、千问 AI 深度分析——不是报表，是建议。
                 </p>
               </Reveal>
               <Reveal delay={450}>
-                <div className="mt-9 flex flex-wrap items-center justify-center lg:justify-start gap-4">
+                <div className="mt-7 lg:mt-6 xl:mt-9 flex flex-wrap items-center justify-center lg:justify-start gap-4">
                   <TransitionLink to="/register" className="animate-cta-breathe magnetic inline-block">
                     <Button
                       variant="primary"
@@ -1282,7 +1291,7 @@ export const Landing: React.FC = () => {
                 </div>
               </Reveal>
               <Reveal delay={600}>
-                <div className="mt-8 flex flex-wrap items-center justify-center lg:justify-start gap-x-7 gap-y-2.5">
+                <div className="mt-6 lg:mt-5 xl:mt-8 flex flex-wrap items-center justify-center lg:justify-start gap-x-7 gap-y-2.5">
                   {['无需信用卡', '14 天免费', '5 分钟接入'].map((t) => (
                     <span key={t} className="inline-flex items-center gap-2 text-sm text-[#6e6e73]">
                       <span className="w-5 h-5 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center">

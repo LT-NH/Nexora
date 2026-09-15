@@ -41,6 +41,9 @@ Thumbs.db
 .vscode/
 *.swp
 
-# Packaging leftovers
+# Packging leftovers
 nexora-frontend-optimization/
 WORK_REPORT*.html
+
+# 品牌视觉原始素材（高分辨率备份，不进版本库）
+.asset-originals/
