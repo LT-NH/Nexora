@@ -23,6 +23,10 @@ node_modules/
 frontend/dist/
 frontend/dev.log
 
+# Vite 运行时临时文件（配置变更时自动生成，属构建噪音）
+frontend/vite.config.ts.timestamp-*.mjs
+frontend/shot_out.txt
+
 # Playwright / E2E 产物
 frontend/playwright-report/
 frontend/test-results/
