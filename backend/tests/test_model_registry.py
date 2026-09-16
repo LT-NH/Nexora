@@ -399,6 +399,135 @@ def test_usage_is_isolated_per_model():
 
 
 # ----------------------------------------------------------------------
+# 3b. 免费额度记账（官方无查询 API，用「总量 − 校准基数 − 本机累计」推算）
+# ----------------------------------------------------------------------
+
+@pytest.mark.parametrize(
+    "total, base, used, exp_remaining, exp_pct",
+    [
+        (1_000_000, 0, 0, 1_000_000, 0.0),          # 全新未用
+        (1_000_000, 0, 250_000, 750_000, 25.0),     # 本机累计
+        (1_000_000, 900_000, 50_000, 50_000, 95.0), # 校准基数 + 增量
+        (1_000_000, 1_000_000, 0, 0, 100.0),        # 已耗尽
+        (1_000_000, 900_000, 200_000, 0, 100.0),    # 超额不为负 + 百分比封顶
+        (0, 0, 0, 0, 0.0),                          # 总量为 0 不炸除
+    ],
+)
+def test_quota_snapshot(total, base, used, exp_remaining, exp_pct):
+    snap = mr.quota_snapshot(total, base, used)
+    assert snap["quota_remaining"] == exp_remaining
+    assert snap["quota_used_pct"] == exp_pct
+    assert snap["quota_used"] == base + used
+
+
+async def test_flush_usage_persists_and_resets_memory(session_factory, patch_session):
+    """用量必须落库（重启不丢记账），且落库后清零内存增量避免重复计数。"""
+    from sqlalchemy import select
+
+    from app.models.ai_model import AIModel
+
+    await mr.hydrate()
+    mr.record_usage("qwen-plus", {"prompt_tokens": 100, "completion_tokens": 50,
+                                  "total_tokens": 150})
+
+    await mr.flush_usage("qwen-plus")
+    # 内存增量已清零
+    assert mr.usage_for("qwen-plus")["total_tokens"] == 0
+
+    async with session_factory() as db:
+        row = (await db.execute(
+            select(AIModel).where(AIModel.model_id == "qwen-plus")
+        )).scalars().first()
+        assert row.tokens_used == 150
+        assert row.calls_used == 1
+
+    # 再落一次不重复计数
+    await mr.flush_usage("qwen-plus")
+    async with session_factory() as db:
+        row = (await db.execute(
+            select(AIModel).where(AIModel.model_id == "qwen-plus")
+        )).scalars().first()
+        assert row.tokens_used == 150
+
+    # 新一轮用量能继续累加
+    mr.record_usage("qwen-plus", {"total_tokens": 30})
+    await mr.flush_usage("qwen-plus")
+    async with session_factory() as db:
+        row = (await db.execute(
+            select(AIModel).where(AIModel.model_id == "qwen-plus")
+        )).scalars().first()
+        assert row.tokens_used == 180
+        assert row.calls_used == 2
+
+
+async def test_calibration_by_remaining_and_by_used(session_factory, patch_session):
+    await mr.hydrate()
+
+    # 用「剩余」校准
+    async with session_factory() as db:
+        row = await mr.set_quota_calibration(db, "qwen-plus", remaining=620_000)
+        await db.commit()
+        assert row.quota_used_base == 380_000
+        assert row.tokens_used == 0, "校准后本机累计应从 0 重新开始"
+
+    snap = mr.quota_snapshot(row.quota_total, row.quota_used_base, row.tokens_used)
+    assert snap["quota_remaining"] == 620_000
+
+    # 用「已用」校准（并改总量）
+    async with session_factory() as db:
+        row = await mr.set_quota_calibration(db, "qwen-max", used=12_345)
+        await db.commit()
+        assert row.quota_used_base == 12_345
+
+    async with session_factory() as db:
+        row = await mr.set_quota_calibration(db, "qwen-max", total=2_000_000)
+        await db.commit()
+        assert row.quota_total == 2_000_000
+
+    # 非法总量
+    async with session_factory() as db:
+        with pytest.raises(ValueError):
+            await mr.set_quota_calibration(db, "qwen-max", total=0)
+
+    # 未知模型
+    async with session_factory() as db:
+        with pytest.raises(LookupError):
+            await mr.set_quota_calibration(db, "no-such-model", used=1)
+
+
+async def test_exhausted_error_auto_zeros_remaining(session_factory, patch_session):
+    """官方报「额度耗尽」时，记账直接归零 —— 这是真实校准，不是估算。"""
+    from sqlalchemy import select
+
+    from app.models.ai_model import AIModel
+
+    await mr.hydrate()
+    async with session_factory() as db:
+        await mr.set_quota_calibration(db, "qwen-plus", remaining=500_000)
+        await db.commit()
+
+    await mr.record_quota_state(
+        "qwen-plus", "exhausted",
+        'HTTP 403 {"code":"AllocationQuota.FreeTierOnly"}',
+    )
+
+    async with session_factory() as db:
+        row = (await db.execute(
+            select(AIModel).where(AIModel.model_id == "qwen-plus")
+        )).scalars().first()
+        snap = mr.quota_snapshot(row.quota_total, row.quota_used_base, row.tokens_used)
+        assert snap["quota_remaining"] == 0
+        assert row.quota_used_base == row.quota_total
+
+
+def test_free_tier_only_error_code_is_exhausted():
+    """官方「用完即停」错误码 AllocationQuota.FreeTierOnly 必须判为额度耗尽。"""
+    msg = ('{"error":{"message":"Free quota exhausted.","code":'
+           '"AllocationQuota.FreeTierOnly"}}')
+    assert mr.classify_error(403, msg) == "exhausted"
+
+
+# ----------------------------------------------------------------------
 # 4. 热切换真的改变了 AI 调用所用的模型（核心集成断言）
 # ----------------------------------------------------------------------
 
@@ -495,6 +624,7 @@ async def test_models_endpoint_payload_shape(async_client, auth_headers, session
     for field in (
         "active", "active_source", "agent_tools_ok", "tool_capable_count",
         "key_configured", "key_hint", "base_url", "usage_scope", "models",
+        "quota_note", "quota_calibrated_count",
     ):
         assert field in body, f"返回体缺少 {field}"
 
@@ -504,10 +634,15 @@ async def test_models_endpoint_payload_shape(async_client, auth_headers, session
         for field in (
             "model_id", "label", "family", "family_label", "is_active",
             "is_custom", "supports_tools", "quota_status", "quota_label", "usage",
+            # 免费额度记账字段（前端进度条依赖）
+            "quota_total", "quota_used", "quota_remaining", "quota_used_pct",
+            "is_calibrated", "tokens_used", "calls_used",
         ):
             assert field in m, f"模型条目缺少 {field}"
         for f in ("calls", "prompt_tokens", "completion_tokens", "total_tokens"):
             assert f in m["usage"]
+        # 剩余 + 已用 应等于总量（未超额时）
+        assert m["quota_remaining"] + m["quota_used"] == m["quota_total"]
 
     # 恰好一个 is_active，且与 active 字段一致
     actives = [m["model_id"] for m in body["models"] if m["is_active"]]

@@ -123,6 +123,7 @@ async def _qwen_chat(messages: list[dict], temperature: float = 0.7) -> str:
             raise RuntimeError(f"Qwen API error: {data}")
 
         model_registry.record_usage(model, data.get("usage"))
+        await model_registry.flush_usage(model)  # 免费额度记账落库（重启不丢）
         await model_registry.mark_ok(model)
         return data["choices"][0]["message"]["content"]
 

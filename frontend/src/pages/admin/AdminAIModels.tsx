@@ -5,9 +5,11 @@ import {
   ArrowRightLeft,
   Check,
   Cpu,
+  Gauge,
   Plus,
   RefreshCw,
   Trash2,
+  X,
   Zap,
 } from 'lucide-react';
 import { Card } from '@/components/ui/Card';
@@ -50,6 +52,16 @@ interface ModelRow {
   quota_label: string;
   quota_message: string | null;
   quota_checked_at: string | null;
+  /** ---- 免费额度记账（剩余 = 总量 − 校准基数 − 本机累计）---- */
+  quota_total: number;
+  quota_used: number;
+  quota_remaining: number;
+  quota_used_pct: number;
+  quota_used_base: number;
+  tokens_used: number;
+  calls_used: number;
+  is_calibrated: boolean;
+  quota_calibrated_at: string | null;
   last_used_at: string | null;
   activated_at: string | null;
   activated_by: string | null;
@@ -62,6 +74,9 @@ interface RegistryResponse {
   /** 当前模型是否支持 function calling */
   agent_tools_ok: boolean;
   tool_capable_count: number;
+  /** 额度记账口径说明（后端给，原样展示） */
+  quota_note: string;
+  quota_calibrated_count: number;
   key_configured: boolean;
   key_hint: string | null;
   base_url: string;
@@ -118,6 +133,52 @@ const fmtTime = (s: string | null): string => {
   });
 };
 
+const fmtNum = (n: number | null | undefined): string =>
+  typeof n === 'number' ? n.toLocaleString('zh-CN') : '—';
+
+/** 余量配色：用掉 <70% 绿 / 70~90% 琥珀 / ≥90% 红 */
+const quotaTone = (usedPct: number): { bar: string; text: string } => {
+  if ((usedPct ?? 0) >= 90) {
+    return { bar: 'bg-red-500', text: 'text-red-600 dark:text-red-400' };
+  }
+  if ((usedPct ?? 0) >= 70) {
+    return { bar: 'bg-amber-500', text: 'text-amber-600 dark:text-amber-400' };
+  }
+  return { bar: 'bg-emerald-500', text: 'text-emerald-600 dark:text-emerald-400' };
+};
+
+/** 免费额度余量条（剩余 / 总量） */
+const QuotaBar: React.FC<{ m: ModelRow; compact?: boolean }> = ({ m, compact }) => {
+  const tone = quotaTone(m.quota_used_pct);
+  const exhausted = m.quota_remaining <= 0;
+  return (
+    <div className="space-y-1">
+      <div className="flex items-baseline justify-between gap-2">
+        <span className={`text-xs font-semibold ${tone.text}`}>
+          {exhausted ? '免费额度已耗尽' : `剩余 ${fmtNum(m.quota_remaining)}`}
+        </span>
+        <span className="text-[11px] text-gray-400">
+          {fmtNum(m.quota_used)} / {fmtNum(m.quota_total)}
+          {!m.is_calibrated && '（上限估算）'}
+        </span>
+      </div>
+      <div className="h-1.5 w-full rounded-full bg-gray-100 dark:bg-gray-700 overflow-hidden">
+        <div
+          className={`h-full rounded-full transition-all duration-500 ${tone.bar}`}
+          style={{ width: `${Math.min(100, m.quota_used_pct)}%` }}
+        />
+      </div>
+      {!compact && (
+        <p className="text-[11px] text-gray-400">
+          {m.is_calibrated
+            ? `已校准 · ${fmtTime(m.quota_calibrated_at)}，之后按调用精确累加`
+            : '未校准：不含本工具上线前的历史消耗，去百炼控制台看一次并校准即可变精确'}
+        </p>
+      )}
+    </div>
+  );
+};
+
 export const AdminAIModels: React.FC = () => {
   const [data, setData] = useState<RegistryResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -129,6 +190,14 @@ export const AdminAIModels: React.FC = () => {
   const [showCustom, setShowCustom] = useState(false);
   const [newModel, setNewModel] = useState({ model_id: '', label: '', note: '' });
   const [saving, setSaving] = useState(false);
+  // 免费额度校准（官方无查询 API，用户从控制台读一次真实数字）
+  const [calibrating, setCalibrating] = useState<ModelRow | null>(null);
+  const [calSaving, setCalSaving] = useState(false);
+  const [calForm, setCalForm] = useState<{
+    mode: 'remaining' | 'used';
+    value: string;
+    total: string;
+  }>({ mode: 'remaining', value: '', total: '' });
   const { addToast } = useToast();
 
   const fetchModels = useCallback(async (silent = false) => {
@@ -217,6 +286,49 @@ export const AdminAIModels: React.FC = () => {
       await fetchModels(true);
     } catch (e: any) {
       addToast('error', '删除失败', e?.response?.data?.detail || '');
+    }
+  };
+
+  const openCalibrate = (m: ModelRow) => {
+    setCalibrating(m);
+    setCalForm({
+      mode: 'remaining',
+      value: '',
+      total: String(m.quota_total ?? ''),
+    });
+  };
+
+  const submitCalibration = async () => {
+    if (!calibrating) return;
+    const num = Number(calForm.value.trim().replace(/[,\s_]/g, ''));
+    if (!calForm.value.trim() || !Number.isFinite(num) || num < 0) {
+      addToast('error', '请填写一个合法的非负整数');
+      return;
+    }
+    setCalSaving(true);
+    try {
+      const body: Record<string, number> = { [calForm.mode]: Math.round(num) };
+      const totalRaw = calForm.total.trim().replace(/[,\s_]/g, '');
+      if (totalRaw) {
+        const t = Number(totalRaw);
+        if (!Number.isFinite(t) || t <= 0) {
+          addToast('error', '配额总量必须是正整数');
+          setCalSaving(false);
+          return;
+        }
+        body.total = Math.round(t);
+      }
+      const res: any = await api.post(
+        `/admin/ai/models/${calibrating.model_id}/quota`,
+        body,
+      );
+      addToast('success', '校准完成', res.data?.message || '');
+      setCalibrating(null);
+      await fetchModels(true);
+    } catch (e: any) {
+      addToast('error', '校准失败', e?.response?.data?.detail || '');
+    } finally {
+      setCalSaving(false);
     }
   };
 
@@ -310,24 +422,38 @@ export const AdminAIModels: React.FC = () => {
               </p>
               <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-1.5 text-xs text-gray-500 dark:text-gray-400">
                 <span>
-                  本次运行已调用 <b className="text-gray-700 dark:text-gray-200">{active.usage.calls}</b> 次
+                  累计调用 <b className="text-gray-700 dark:text-gray-200">{fmtNum(active.calls_used)}</b> 次
                 </span>
                 <span>
-                  约 <b className="text-gray-700 dark:text-gray-200">{fmtTokens(active.usage.total_tokens)}</b> tokens
+                  累计消耗 <b className="text-gray-700 dark:text-gray-200">{fmtTokens(active.tokens_used)}</b> tokens
                 </span>
                 <span>切换时间 {fmtTime(active.activated_at)}</span>
                 {active.activated_by && <span>操作人 {active.activated_by}</span>}
               </div>
+              {/* 免费额度余量（实时） */}
+              <div className="mt-4 max-w-xl">
+                <QuotaBar m={active} />
+              </div>
             </div>
-            <Button
-              variant="outline"
-              size="sm"
-              leftIcon={<Activity size={14} />}
-              onClick={() => testModel(active)}
-              isLoading={testing === active.model_id}
-            >
-              自检
-            </Button>
+            <div className="flex items-center gap-2 shrink-0">
+              <Button
+                variant="outline"
+                size="sm"
+                leftIcon={<Gauge size={14} />}
+                onClick={() => openCalibrate(active)}
+              >
+                校准额度
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                leftIcon={<Activity size={14} />}
+                onClick={() => testModel(active)}
+                isLoading={testing === active.model_id}
+              >
+                自检
+              </Button>
+            </div>
           </div>
         </div>
       )}
@@ -367,7 +493,11 @@ export const AdminAIModels: React.FC = () => {
           </div>
         </div>
         <p className="mt-3 text-xs text-gray-400">
-          用量口径：{data.usage_scope}。各模型免费额度独立计算，具体以阿里百炼控制台为准。
+          <span className="font-medium text-gray-500 dark:text-gray-400">额度口径：</span>
+          {data.quota_note}
+        </p>
+        <p className="mt-1.5 text-xs text-gray-400">
+          已校准 {data.quota_calibrated_count} / {data.models.length} 个模型。
           {data.active_source === 'env-fallback' && (
             <span className="text-amber-600 dark:text-amber-400">
               {' '}
@@ -491,9 +621,14 @@ export const AdminAIModels: React.FC = () => {
                     </p>
                   )}
 
-                  <div className="mt-3 flex items-center gap-4 text-[11px] text-gray-500 dark:text-gray-400">
-                    <span>{m.usage.calls} 次调用</span>
-                    <span>{fmtTokens(m.usage.total_tokens)} tokens</span>
+                  {/* 免费额度余量（实时） */}
+                  <div className="mt-3">
+                    <QuotaBar m={m} compact />
+                  </div>
+
+                  <div className="mt-2 flex items-center gap-4 text-[11px] text-gray-500 dark:text-gray-400">
+                    <span>累计 {fmtNum(m.calls_used)} 次调用</span>
+                    <span>{fmtTokens(m.tokens_used)} tokens</span>
                     {m.quota_message && (
                       <button
                         onClick={() => setExpanded(expanded === m.id ? null : m.id)}
@@ -539,6 +674,14 @@ export const AdminAIModels: React.FC = () => {
                       onClick={() => testModel(m)}
                     >
                       自检
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      leftIcon={<Gauge size={13} />}
+                      onClick={() => openCalibrate(m)}
+                    >
+                      校准
                     </Button>
                     {m.is_custom && (
                       <button
@@ -638,6 +781,108 @@ export const AdminAIModels: React.FC = () => {
           </div>
         )}
       </Card>
+
+      {/* 免费额度校准弹窗（官方无查询 API，只能一次性对齐真实数字） */}
+      {calibrating && (
+        <div
+          className="fixed inset-0 z-[80] flex items-center justify-center bg-black/40 p-4"
+          onClick={() => setCalibrating(null)}
+        >
+          <div
+            className="w-full max-w-md rounded-2xl bg-white dark:bg-gray-800 shadow-2xl overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start justify-between px-5 py-3.5 border-b border-gray-200 dark:border-gray-700">
+              <div>
+                <h3 className="text-sm font-bold text-slate-900 dark:text-gray-100">
+                  校准免费额度
+                </h3>
+                <code className="text-[11px] font-mono text-gray-500">
+                  {calibrating.model_id}
+                </code>
+              </div>
+              <button
+                onClick={() => setCalibrating(null)}
+                aria-label="关闭"
+                className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            <div className="p-5 space-y-4">
+              <p className="text-xs text-gray-500 dark:text-gray-400 leading-relaxed">
+                百炼没有查询剩余额度的接口。去控制台「免费额度」页面看一次当前数字填进来即可 ——
+                之后本工具按每次调用的真实用量自动累加，无需再手动填。
+              </p>
+
+              <div className="flex gap-1 bg-gray-100 dark:bg-gray-700/50 rounded-lg p-1">
+                {(
+                  [
+                    ['remaining', '按「剩余」填'],
+                    ['used', '按「已用」填'],
+                  ] as const
+                ).map(([k, label]) => (
+                  <button
+                    key={k}
+                    onClick={() => setCalForm({ ...calForm, mode: k })}
+                    className={`flex-1 py-1.5 text-xs font-medium rounded-md transition-colors ${
+                      calForm.mode === k
+                        ? 'bg-white dark:bg-gray-800 shadow-sm text-primary-600 dark:text-primary-300'
+                        : 'text-gray-500 dark:text-gray-400'
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+
+              <div>
+                <label className="text-sm font-medium text-gray-600 dark:text-gray-300 mb-1.5 block">
+                  控制台显示的{calForm.mode === 'remaining' ? '剩余' : '已用'} tokens
+                </label>
+                <input
+                  value={calForm.value}
+                  onChange={(e) => setCalForm({ ...calForm, value: e.target.value })}
+                  inputMode="numeric"
+                  placeholder={calForm.mode === 'remaining' ? '例如 362917' : '例如 637083'}
+                  className="w-full px-3.5 py-2.5 text-sm rounded-xl border border-[#D6D9CD] dark:border-gray-600 bg-white dark:bg-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-[#EB9D2A]/40 font-mono"
+                />
+              </div>
+
+              <div>
+                <label className="text-sm font-medium text-gray-600 dark:text-gray-300 mb-1.5 block">
+                  该模型免费额度总量
+                </label>
+                <input
+                  value={calForm.total}
+                  onChange={(e) => setCalForm({ ...calForm, total: e.target.value })}
+                  inputMode="numeric"
+                  className="w-full px-3.5 py-2.5 text-sm rounded-xl border border-[#D6D9CD] dark:border-gray-600 bg-white dark:bg-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-[#EB9D2A]/40 font-mono"
+                />
+                <p className="mt-1 text-[11px] text-gray-400">
+                  官方默认每个模型 100 万 tokens（快照版与 latest 是各自独立的额度池）
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 px-5 py-3.5 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/40">
+              <Button variant="outline" size="sm" onClick={() => setCalibrating(null)}>
+                取消
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                className="!bg-[#EB9D2A] !border-[#EB9D2A] !text-white hover:!bg-[#d98d1f] hover:!border-[#d98d1f]"
+                isLoading={calSaving}
+                onClick={submitCalibration}
+              >
+                保存校准
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

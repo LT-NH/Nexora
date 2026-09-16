@@ -54,6 +54,18 @@ class TestPayload(BaseModel):
     model_id: str | None = Field(None, max_length=80)
 
 
+class QuotaPayload(BaseModel):
+    """免费额度校准：填控制台看到的「已用」或「剩余」即可（二选一）。
+
+    官方没有查询剩余额度的 API，所以只做一次性对齐；之后按每次调用的
+    usage 精确累加，管理台就是实时的。
+    """
+
+    total: int | None = Field(None, ge=1, le=1_000_000_000, description="免费额度总量")
+    used: int | None = Field(None, ge=0, le=1_000_000_000, description="控制台显示的已用量")
+    remaining: int | None = Field(None, ge=0, le=1_000_000_000, description="控制台显示的剩余量")
+
+
 def _iso(dt: datetime | None) -> str | None:
     """naive UTC datetime → 带 Z 的 ISO 串，前端才能正确转本地时间。"""
     if dt is None:
@@ -73,6 +85,10 @@ def _serialize(row: AIModel) -> dict:
     usage = model_registry.usage_for(row.model_id)
     quota = model_registry.quota_for(row.model_id)
     status = quota.get("status") or row.quota_status or "unknown"
+    # 免费额度核算：剩余 = 总量 - 校准基数 - 本机累计
+    snap = model_registry.quota_snapshot(
+        row.quota_total, row.quota_used_base, row.tokens_used
+    )
     return {
         "id": row.id,
         "model_id": row.model_id,
@@ -89,6 +105,14 @@ def _serialize(row: AIModel) -> dict:
         "quota_label": model_registry.QUOTA_LABELS.get(status, status),
         "quota_message": quota.get("message") or row.quota_message,
         "quota_checked_at": quota.get("at") or _iso(row.quota_checked_at),
+        # ---- 免费额度记账 ----
+        **snap,
+        "quota_used_base": row.quota_used_base,
+        "tokens_used": row.tokens_used,
+        "calls_used": row.calls_used,
+        # 未校准 → 数字是上限估算（不含本工具上线前的历史消耗），前端要标注
+        "is_calibrated": row.quota_calibrated_at is not None,
+        "quota_calibrated_at": _iso(row.quota_calibrated_at),
         "last_used_at": _iso(row.last_used_at),
         "activated_at": _iso(row.activated_at),
         "activated_by": row.activated_by,
@@ -126,6 +150,13 @@ async def list_models(
         # 管理台据此给出醒目提示（切到 qwen-vl-*/deepseek-r1 就会踩到）
         "agent_tools_ok": bool(active_row.supports_tools) if active_row else False,
         "tool_capable_count": sum(1 for r in rows if r.supports_tools),
+        # 免费额度记账口径说明（前端原样展示，避免用户误以为是官方实时值）
+        "quota_note": (
+            "百炼没有查询剩余额度的 API（控制台为分钟级更新），因此这里用"
+            "「配额总量 − 校准基数 − 本机累计消耗」推算：未校准的模型为上限估算"
+            "（不含本工具上线前的历史消耗），校准一次后即为实时值。"
+        ),
+        "quota_calibrated_count": sum(1 for r in rows if r.quota_calibrated_at),
         "key_configured": bool(settings.QWEN_API_KEY),
         "key_hint": _key_hint(),
         "base_url": settings.QWEN_BASE_URL,
@@ -199,6 +230,53 @@ async def delete_custom_model(
         )
     await db.commit()
     return {"ok": True, "message": f"已删除 {model_id}"}
+
+
+@router.post(
+    "/models/{model_id}/quota",
+    summary="校准免费额度（superadmin only）",
+)
+async def calibrate_quota(
+    model_id: str,
+    payload: QuotaPayload,
+    sa: Annotated[User, Depends(require_superadmin)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> dict:
+    """把百炼控制台看到的真实数字填一次，之后本工具按调用用量精确累加。
+
+    只传 `remaining` 或 `used` 之一即可；`total` 用于改配额总量（默认 100 万）。
+    """
+    if payload.used is None and payload.remaining is None and payload.total is None:
+        raise HTTPException(
+            status_code=400, detail="请至少提供 used / remaining / total 之一"
+        )
+    try:
+        row = await model_registry.set_quota_calibration(
+            db, model_id,
+            total=payload.total, used=payload.used, remaining=payload.remaining,
+        )
+    except LookupError:
+        raise HTTPException(status_code=404, detail=f"模型 {model_id} 不在注册表中")
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+    await db.commit()
+    snap = model_registry.quota_snapshot(
+        row.quota_total, row.quota_used_base, row.tokens_used
+    )
+    logger.info(
+        "quota calibrated by %s: %s -> remaining=%s/%s",
+        sa.email, model_id, snap["quota_remaining"], snap["quota_total"],
+    )
+    return {
+        "ok": True,
+        "model_id": row.model_id,
+        **snap,
+        "is_calibrated": True,
+        "message": (
+            f"已校准：剩余 {snap['quota_remaining']:,} / {snap['quota_total']:,} tokens"
+        ),
+    }
 
 
 @router.post(
@@ -279,7 +357,10 @@ async def test_model(
         reply = data["choices"][0]["message"]["content"]
     except (KeyError, IndexError, TypeError):
         pass
-    # 探测请求不计入业务用量（否则会污染「这个模型用了多少」的判断）
+    # 探测本身也消耗真实额度（约 14~20 tokens），因此同样计入记账 ——
+    # 免费额度核算要准，就不能漏掉自己花掉的量。
+    model_registry.record_usage(model_id, data.get("usage"))
+    await model_registry.flush_usage(model_id)
     await model_registry.mark_ok(model_id)
     return {
         "ok": True,

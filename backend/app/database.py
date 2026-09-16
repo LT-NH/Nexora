@@ -95,6 +95,12 @@ async def _ensure_light_migrations(conn) -> None:
         ("ai_insights", "snapshot_id", "VARCHAR(36)"),
         # 模型是否支持 function calling（巡店 Agent 依赖；管理台需据此提示）
         ("ai_models", "supports_tools", "BOOLEAN NOT NULL DEFAULT FALSE"),
+        # 免费额度记账（官方无查询 API，用「总量 - 校准基数 - 本机累计」推算）
+        ("ai_models", "quota_total", "INTEGER NOT NULL DEFAULT 1000000"),
+        ("ai_models", "quota_used_base", "INTEGER NOT NULL DEFAULT 0"),
+        ("ai_models", "tokens_used", "INTEGER NOT NULL DEFAULT 0"),
+        ("ai_models", "calls_used", "INTEGER NOT NULL DEFAULT 0"),
+        ("ai_models", "quota_calibrated_at", "TIMESTAMP"),
     ]
     for table, column, ddl in migrations:
         try:

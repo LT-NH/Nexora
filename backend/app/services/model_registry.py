@@ -488,6 +488,97 @@ def record_usage(model_id: str, usage: dict[str, Any] | None) -> None:
         slot["total_tokens"] = slot["prompt_tokens"] + slot["completion_tokens"]
 
 
+async def flush_usage(model_id: str) -> None:
+    """把进程内累计的用量增量写回 DB（每次成功调用后 await）。
+
+    热路径只累加内存，这里做一次轻量 UPDATE —— 这样免费额度记账不会因为
+    重启而丢失。**落库成功后才清零内存增量**，避免写失败造成重复计数。
+    任何异常都不应影响 AI 调用本身。
+    """
+    slot = _usage.get(model_id)
+    if not slot:
+        return
+    delta_t = int(slot.get("total_tokens") or 0)
+    delta_c = int(slot.get("calls") or 0)
+    if not delta_t and not delta_c:
+        return
+    try:
+        from app.database import async_session_factory
+        from app.models.ai_model import AIModel
+
+        async with async_session_factory() as db:
+            row = (
+                await db.execute(select(AIModel).where(AIModel.model_id == model_id))
+            ).scalars().first()
+            if row is None:
+                return
+            row.tokens_used = (row.tokens_used or 0) + delta_t
+            row.calls_used = (row.calls_used or 0) + delta_c
+            row.last_used_at = datetime.utcnow()
+            await db.commit()
+    except Exception as exc:  # pragma: no cover
+        logger.warning("flush usage failed for %s: %s", model_id, exc)
+        return
+
+    for k in ("total_tokens", "calls", "prompt_tokens", "completion_tokens"):
+        slot[k] = 0
+
+
+async def set_quota_calibration(
+    db,
+    model_id: str,
+    *,
+    total: int | None = None,
+    used: int | None = None,
+    remaining: int | None = None,
+) -> Any:
+    """校准免费额度记账（用户从百炼控制台读一次真实数字）。
+
+    官方没有查询剩余额度的 API，所以只能一次性对齐：用户把控制台显示的
+    「已用」或「剩余」填进来，之后本工具按每次调用的 usage 精确累加。
+    """
+    from app.models.ai_model import AIModel
+
+    row = (
+        await db.execute(select(AIModel).where(AIModel.model_id == model_id))
+    ).scalars().first()
+    if row is None:
+        raise LookupError(model_id)
+
+    if total is not None:
+        if int(total) <= 0:
+            raise ValueError("quota_total 必须大于 0")
+        row.quota_total = int(total)
+    if remaining is not None:
+        row.quota_used_base = max(0, int(row.quota_total) - int(remaining))
+    elif used is not None:
+        row.quota_used_base = max(0, int(used))
+
+    # 校准即把「之前的历史」计入基数，本机累计从 0 重新开始
+    row.tokens_used = 0
+    row.calls_used = 0
+    row.quota_calibrated_at = datetime.utcnow()
+    await db.flush()
+    return row
+
+
+def quota_snapshot(quota_total: int, used_base: int, tokens_used: int) -> dict:
+    """剩余额度核算（纯函数，便于测试）。
+
+    剩余 = 总量 - 校准基数 - 本机累计，下限 0。
+    """
+    total = max(0, int(quota_total or 0))
+    used = max(0, int(used_base or 0)) + max(0, int(tokens_used or 0))
+    remaining = max(0, total - used)
+    pct = (used / total * 100.0) if total else 0.0
+    return {
+        "quota_total": total,
+        "quota_used": used,
+        "quota_remaining": remaining,
+        "quota_used_pct": round(min(100.0, pct), 2),
+    }
+
+
 def classify_error(status_code: int | None, message: str) -> str:
     """把上游报错粗分类，仅用于管理台醒目提示（不改变真实报错内容）。
 
@@ -613,6 +704,12 @@ async def record_quota_state(
                 row.quota_status = status
                 row.quota_message = (message or "")[:1000] or None
                 row.quota_checked_at = now
+                # 官方明确「额度耗尽」（403 AllocationQuota.FreeTierOnly）时，
+                # 直接把记账归零 —— 这是**真实校准**，不是估算。
+                if status == "exhausted":
+                    row.quota_used_base = int(row.quota_total or 0)
+                    row.tokens_used = 0
+                    row.quota_calibrated_at = now
             await db.commit()
     except Exception as exc:  # pragma: no cover
         logger.warning("persist quota state failed for %s: %s", model_id, exc)

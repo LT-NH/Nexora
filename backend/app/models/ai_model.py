@@ -17,7 +17,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, String, Text
+from sqlalchemy import Boolean, DateTime, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
@@ -102,6 +102,48 @@ class AIModel(Base):
         DateTime(timezone=True),
         nullable=True,
         comment="Last successful call time",
+    )
+    # ---- 免费额度核算（官方没有查询剩余额度的 API，见下方说明）----
+    #
+    # 实测：百炼**没有**任何官方接口能查「剩余免费额度」（`/models/quota` 一律 404，
+    # 控制台页面是分钟级异步更新）。所以这里用「记账」的方式给实时数字：
+    #
+    #     剩余 = quota_total - quota_used_base - tokens_used
+    #
+    #   - quota_total      该模型免费额度总量（官方文档：每个模型独立 100 万 tokens）
+    #   - quota_used_base  校准时刻「本工具上线之前」的历史已用量（用户从控制台读入一次）
+    #   - tokens_used      自校准之后本机累计的消耗（每次调用后落库，精确）
+    #
+    # 只做一次校准，之后就是实时的。校准前 quota_used_base=0，数字是**上限估算**，
+    # 界面会明确标注，不做"假实时"。
+    quota_total: Mapped[int] = mapped_column(
+        Integer,
+        default=1_000_000,
+        nullable=False,
+        comment="该模型的免费额度总量（默认 100 万，可改）",
+    )
+    quota_used_base: Mapped[int] = mapped_column(
+        Integer,
+        default=0,
+        nullable=False,
+        comment="校准时刻的历史已用量（控制台读入），校准后本机只累加增量",
+    )
+    tokens_used: Mapped[int] = mapped_column(
+        Integer,
+        default=0,
+        nullable=False,
+        comment="自校准之后本机累计消耗的 tokens（每次调用后落库）",
+    )
+    calls_used: Mapped[int] = mapped_column(
+        Integer,
+        default=0,
+        nullable=False,
+        comment="自校准之后本机累计调用次数",
+    )
+    quota_calibrated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+        comment="上次校准时间；NULL 表示尚未校准（数字为上限估算）",
     )
     # ---- 切换留痕 ----
     activated_at: Mapped[datetime | None] = mapped_column(

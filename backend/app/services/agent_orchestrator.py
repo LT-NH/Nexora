@@ -252,6 +252,7 @@ async def _qwen_tools_call(messages: list[dict]) -> dict:
         raise RuntimeError(f"qwen bad response: {data}")
 
     model_registry.record_usage(model, data.get("usage"))
+    await model_registry.flush_usage(model)  # 免费额度记账落库（重启不丢）
     await model_registry.mark_ok(model)
     return data["choices"][0]["message"]
 
