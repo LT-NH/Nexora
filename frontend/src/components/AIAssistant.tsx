@@ -4,6 +4,7 @@ import { Sparkles, X, Send, Square, RefreshCw } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { useAIChat, type AIChatMessage } from '@/hooks/useAIChat';
+import FloatingActionButton from '@/components/ui/FloatingActionButton';
 
 interface ChatMessage {
   role: 'user' | 'assistant';
@@ -135,23 +136,25 @@ export const AIAssistant: React.FC = () => {
   };
 
   // Collapsed state: floating trigger button.
+  // 位置/尺寸/配色由 FloatingActionButton 统一约束（槽位 'ai'）
   if (!open) {
     return (
-      <button
+      <FloatingActionButton
+        slot="ai"
+        variant="primary"
+        label="AI 助手"
+        icon={<Sparkles size={22} />}
         onClick={() => setOpen(true)}
-        className="fixed bottom-44 right-6 z-50 w-14 h-14 rounded-full bg-gradient-to-br from-primary-500 to-fuchsia-500 text-white shadow-lg hover:scale-110 transition-transform flex items-center justify-center"
-        aria-label="AI 助手"
-      >
-        <Sparkles size={24} />
-      </button>
+      />
     );
   }
 
   // Expanded state: chat panel.
   // On mobile (max-width: 768px) the panel spans almost the full viewport
   // width; on desktop it is a fixed w-96 anchored to the right.
+  // z-[60] 高于浮动按钮（z-50）：否则「返回顶部」会压在面板上方。
   return (
-    <div className="fixed bottom-6 left-4 right-4 md:left-auto md:right-6 md:w-96 z-50 h-[500px] bg-white dark:bg-slate-800 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-700 flex flex-col">
+    <div className="fixed bottom-6 left-4 right-4 md:left-auto md:right-6 md:w-96 z-[60] h-[500px] bg-white dark:bg-slate-800 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-700 flex flex-col">
       {/* Header */}
       <div className="flex items-center justify-between p-4 border-b border-slate-200 dark:border-slate-700">
         <div className="flex items-center gap-2">

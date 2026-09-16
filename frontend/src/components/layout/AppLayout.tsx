@@ -157,12 +157,19 @@ export const AppLayout: React.FC = () => {
         <main className="p-6 vt-content">
           <Outlet />
         </main>
-        <FeedbackWidget />
-        <OnboardingWizard />
       </div>
 
-      {/* Floating AI assistant — rendered outside the main content area so it
-          overlays every page via fixed positioning. */}
+      {/*
+        所有 fixed 浮层必须放在上面那个带 transform 的容器「之外」。
+
+        CSS 规范：祖先元素带 transform 时，其 position: fixed 的后代会改为
+        **相对该祖先**定位，而不是相对视口。实测踩坑：FeedbackWidget 一直写在
+        `bottom-24 right-6`，但因为被这个容器裹着，实际落在视口偏上
+        （bottom 实测 670px，而 24px 才是预期），且引导层的全屏遮罩也铺不满。
+        AIAssistant 当初就是因此被移出来的 —— 这里把剩下两个补齐。
+      */}
+      <FeedbackWidget />
+      <OnboardingWizard />
       <AIAssistant />
     </div>
   );
