@@ -11,6 +11,21 @@ interface ChangelogEntry {
 
 const changelogData: ChangelogEntry[] = [
   {
+    version: 'v5.2',
+    date: '2026年9月16日',
+    changes: [
+      '品牌资产瘦身 · 图标职责分离：favicon.png 与 nexora-logo.png 曾是同一张 1402×1122 横版图（790KB），被 6 处当方形图标引用 → 拆分为方形图标组（favicon.ico 含 16/32/48 三尺寸 4.6KB、favicon-32/192/512.png）与横版品牌标识（nexora-logo.png 720×576，247KB）；浏览器实际加载的图标体积 790KB → 1.4KB（-99.8%）',
+      '社交分享图由 PNG 换为 JPEG：og.png（1200×630 PNG，475KB）→ og.jpg（1200×630 JPEG q82，58KB，-88%），并补全 og:image:width / height 声明',
+      '新增品牌规范文档 docs/brand.md（8 章）：定位 / 色彩（完整色阶 + 对比度规则 + 图表涨跌约定）/ 字体字号阶梯 / 图标资产 / 间距圆角 / 动效 / 文案 / 落地检查清单',
+      'SEO 与 PWA 资产补齐：site.webmanifest（含 maskable 图标）、robots.txt（屏蔽后台页面与 API）、sitemap.xml；index.html 图标声明升级为 ico + 32px PNG + apple-touch-icon + manifest',
+      '登录 / 注册页改为左右分栏：左栏升级为品牌叙事栏（主标题 + 4 条能力主张 + 3 项量化背书），窄屏自动降级为顶部品牌条，表单区不受影响',
+      '落地页首屏折叠线修复：1024×768 笔记本尺寸下主标题折成 4 行、把主 CTA 挤出首屏 → 字号阶梯改为按「左列宽」而非视口推导（36 / 60 / 72 / 80 / 88px），7 个断点实测 CTA 全部位于折叠线之上',
+      '落地页顶栏三段对称重构：flex justify-between → grid-cols-[1fr_auto_1fr]，主导航由两侧等宽轨道夹持实现数学居中（实测偏差 0px）；导航项由 2 项补至 4 项（功能特性 / 工作原理 / 定价方案 / 常见问题）',
+      '落地页顶栏窄屏修正：主导航与汉堡菜单的显示门槛统一提到 lg，避免 768～820px 区间右段按钮被挤压变形；折叠菜单补齐已登录用户的「进入工作台」入口（此前窄屏下看不到）',
+      '测试：新增顶栏对称性回归用例，锁死「居中偏差 ≤1px + 左右段配重差 ≤40px + 三段无重叠 + 无横向溢出」；另增登录页品牌叙事栏与窄屏降级断言、首屏版本徽章与更新日志最新版本的一致性校验，浏览器端用例增至 18 项',
+    ],
+  },
+  {
     version: 'v5.1',
     date: '2026年9月6日',
     changes: [

@@ -120,3 +120,40 @@ test.describe('Landing 顶栏三段对称', () => {
     });
   }
 });
+
+/**
+ * 发布信息一致性
+ *
+ * 背景：首屏版本徽章曾长期停在 v2.0，而更新日志已到 v5.1 —— 发版时只改一处、
+ * 另一处漏改，导致落地页对外宣称的版本号严重过时。
+ *
+ * 这里断言「首屏徽章版本 == 更新日志最新版本」，不硬编码具体版本号，
+ * 因此每次发版只需保证两处同步，不会给后续维护带来额外的改动成本。
+ */
+test.describe('发布信息一致性', () => {
+  test('首屏版本徽章与更新日志最新版本保持一致', async ({ page }) => {
+    // 1. 取更新日志最新版本（数组首项渲染在最上方）
+    await page.goto('/changelog');
+    const versionEl = page
+      .locator('span')
+      .filter({ hasText: /^v\d+\.\d+$/ })
+      .first();
+    await expect(versionEl).toBeVisible({ timeout: 15_000 });
+    const latest = ((await versionEl.textContent()) ?? '').trim();
+    expect(latest, '更新日志应能解析出版本号').toMatch(/^v\d+\.\d+$/);
+
+    // 2. 取首屏徽章里的版本号
+    await page.goto('/');
+    const badge = page.getByText(/现已发布/).first();
+    await expect(badge).toBeVisible({ timeout: 15_000 });
+    const badgeText = (await badge.textContent()) ?? '';
+    const matched = badgeText.match(/(v\d+\.\d+)\s*现已发布/);
+    expect(matched, `首屏徽章文案异常：「${badgeText.trim()}」`).not.toBeNull();
+
+    // 3. 两者必须一致
+    expect(
+      matched![1],
+      `首屏徽章版本 ${matched![1]} 与更新日志最新版本 ${latest} 不一致——发版时请同步修改 Landing 首屏徽章`,
+    ).toBe(latest);
+  });
+});
