@@ -89,6 +89,9 @@ const AdminFeedback = React.lazy(() =>
 const AdminAnnouncements = React.lazy(() =>
   import('@/pages/admin/AdminAnnouncements').then((m) => ({ default: m.AdminAnnouncements }))
 );
+const AdminAIModels = React.lazy(() =>
+  import('@/pages/admin/AdminAIModels').then((m) => ({ default: m.AdminAIModels }))
+);
 const Products = React.lazy(() =>
   import('@/pages/Products').then((m) => ({ default: m.Products }))
 );
@@ -257,24 +260,31 @@ const App: React.FC = () => {
           <Route path="/refunds" element={<RouteErrorBoundary><Refunds /></RouteErrorBoundary>} />
           <Route path="/ai-chat" element={<RouteErrorBoundary><AIChat /></RouteErrorBoundary>} />
           <Route path="/payments" element={<RouteErrorBoundary><Payments /></RouteErrorBoundary>} />
-          <Route
-            path="/admin"
-            element={
-              <ProtectedRoute requireAdmin>
-                <RouteErrorBoundary><AdminLayout /></RouteErrorBoundary>
-              </ProtectedRoute>
-            }
-          >
-            <Route index element={<AdminDashboard />} />
-            <Route path="health" element={<AdminHealth />} />
-            <Route path="workspaces" element={<AdminWorkspaces />} />
-            <Route path="revenue" element={<AdminRevenue />} />
-            <Route path="feedback" element={<AdminFeedback />} />
-            <Route path="announcements" element={<AdminAnnouncements />} />
-            <Route path="users" element={<AdminUsers />} />
-            <Route path="subscriptions" element={<AdminSubscriptions />} />
-            <Route path="audit" element={<AdminAudit />} />
-          </Route>
+        </Route>
+
+        {/*
+          管理台是**独立全屏壳**：AdminLayout 自带侧栏 / 顶栏 / min-h-screen，
+          因此必须放在 AppLayout 之外。曾经它嵌在 AppLayout 里，导致所有超管页
+          出现双层外壳（业务侧栏 + 管理侧栏、业务顶栏 + 管理顶栏）。
+        */}
+        <Route
+          path="/admin"
+          element={
+            <ProtectedRoute requireAdmin>
+              <RouteErrorBoundary><AdminLayout /></RouteErrorBoundary>
+            </ProtectedRoute>
+          }
+        >
+          <Route index element={<AdminDashboard />} />
+          <Route path="ai-models" element={<AdminAIModels />} />
+          <Route path="health" element={<AdminHealth />} />
+          <Route path="workspaces" element={<AdminWorkspaces />} />
+          <Route path="revenue" element={<AdminRevenue />} />
+          <Route path="feedback" element={<AdminFeedback />} />
+          <Route path="announcements" element={<AdminAnnouncements />} />
+          <Route path="users" element={<AdminUsers />} />
+          <Route path="subscriptions" element={<AdminSubscriptions />} />
+          <Route path="audit" element={<AdminAudit />} />
         </Route>
 
         {/* 404 */}

@@ -23,6 +23,7 @@ from app.models.agent_task import AgentTask
 from app.models.agent_experience import AgentExperience
 from app.models.subscription_order import SubscriptionOrder
 from app.models.health_snapshot import HealthSnapshot
+from app.models.ai_model import AIModel
 
 __all__ = [
     "User",
@@ -55,4 +56,5 @@ __all__ = [
     "AgentExperience",
     "SubscriptionOrder",
     "HealthSnapshot",
+    "AIModel",
 ]

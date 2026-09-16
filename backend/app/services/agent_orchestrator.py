@@ -219,7 +219,13 @@ async def _tool_snapshot(db: AsyncSession, workspace) -> dict:
 # ----------------------------------------------------------------------
 
 async def _qwen_tools_call(messages: list[dict]) -> dict:
-    """调用千问（带 tools），返回完整 message dict。失败抛异常。"""
+    """调用当前激活模型（带 tools），返回完整 message dict。失败抛异常。
+
+    Agent 是 token 消耗最大的路径，因此这里同样记录用量与额度状态，
+    保证管理台看到的「哪个模型额度快没了」包含 Agent 的消耗。
+    """
+    from app.services import model_registry
+
     key, model, base_url = _get_qwen_config()
     if not key:
         raise RuntimeError("no qwen key")
@@ -230,8 +236,24 @@ async def _qwen_tools_call(messages: list[dict]) -> dict:
             json={"model": model, "messages": messages, "tools": TOOLS_SPEC, "temperature": 0.3},
         )
     if resp.status_code != 200:
-        raise RuntimeError(f"qwen http {resp.status_code}: {resp.text[:200]}")
-    return resp.json()["choices"][0]["message"]
+        raw = (resp.text or "")[:500]
+        await model_registry.record_quota_state(
+            model,
+            model_registry.classify_error(resp.status_code, raw),
+            f"HTTP {resp.status_code} · {raw}",
+        )
+        raise RuntimeError(f"qwen http {resp.status_code}: {raw[:200]}")
+
+    data = resp.json()
+    if not data.get("choices"):
+        await model_registry.record_quota_state(
+            model, "error", f"HTTP 200 但缺少 choices：{str(data)[:300]}"
+        )
+        raise RuntimeError(f"qwen bad response: {data}")
+
+    model_registry.record_usage(model, data.get("usage"))
+    await model_registry.mark_ok(model)
+    return data["choices"][0]["message"]
 
 
 async def run_command(

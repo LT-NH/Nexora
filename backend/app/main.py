@@ -54,6 +54,13 @@ async def lifespan(app: FastAPI):
     await init_db()
     logger.info("Database tables initialized.")
 
+    # 装载 AI 模型注册表：补齐内置目录、校准唯一 active、预热进程内缓存。
+    # 这样 _get_qwen_config() 在热路径上无需查库即可拿到当前模型。
+    from app.services import model_registry
+
+    active_model = await model_registry.hydrate()
+    logger.info("Active AI model: %s", active_model)
+
     # Validate critical secrets (SECRET_KEY strength, etc.)
     for warning in settings.validate_critical_secrets():
         logger.warning(warning)

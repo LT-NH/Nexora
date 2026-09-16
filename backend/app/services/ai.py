@@ -23,9 +23,20 @@ logger = get_logger(__name__)
 
 
 def _get_qwen_config():
-    """Lazy-load Qwen config from pydantic settings (reads .env at runtime)."""
+    """Lazy-load Qwen config.
+
+    `model` 来自**运行时注册表**（管理台可一键热切换，全进程立即生效），
+    `key` / `base_url` 仍读 .env。这里是所有 AI 调用的唯一收口，
+    因此切换模型不需要改动任何调用点。
+    """
     from app.config import settings
-    return settings.QWEN_API_KEY, settings.QWEN_MODEL, settings.QWEN_BASE_URL
+    from app.services import model_registry
+
+    return (
+        settings.QWEN_API_KEY,
+        model_registry.get_active_model(),
+        settings.QWEN_BASE_URL,
+    )
 
 
 def _extract_json(text: str) -> dict | list | None:
@@ -69,7 +80,14 @@ def _extract_json(text: str) -> dict | list | None:
 
 
 async def _qwen_chat(messages: list[dict], temperature: float = 0.7) -> str:
-    """Call Qwen API. Returns response text or raises on error."""
+    """Call the currently active model. Returns response text or raises on error.
+
+    顺带做两件不影响返回值的事：
+      - 累计该模型的 token 用量（管理台据此判断「这个模型快用完了」）
+      - 调用失败时把额度/错误状态写回注册表（记录真实报错，不臆测）
+    """
+    from app.services import model_registry
+
     key, model, base_url = _get_qwen_config()
     if not key:
         raise RuntimeError("No QWEN_API_KEY configured")
@@ -88,9 +106,24 @@ async def _qwen_chat(messages: list[dict], temperature: float = 0.7) -> str:
                 "max_tokens": 2000,
             },
         )
-        data = resp.json()
         if resp.status_code != 200:
+            raw = (resp.text or "")[:500]
+            await model_registry.record_quota_state(
+                model,
+                model_registry.classify_error(resp.status_code, raw),
+                f"HTTP {resp.status_code} · {raw}",
+            )
+            raise RuntimeError(f"Qwen API error: HTTP {resp.status_code} {raw}")
+
+        data = resp.json()
+        if not data.get("choices"):
+            await model_registry.record_quota_state(
+                model, "error", f"HTTP 200 但缺少 choices：{str(data)[:300]}"
+            )
             raise RuntimeError(f"Qwen API error: {data}")
+
+        model_registry.record_usage(model, data.get("usage"))
+        await model_registry.mark_ok(model)
         return data["choices"][0]["message"]["content"]
 
 
