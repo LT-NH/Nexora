@@ -584,17 +584,40 @@ def quota_snapshot(quota_total: int, used_base: int, tokens_used: int) -> dict:
     """剩余额度核算（纯函数，便于测试）。
 
     剩余 = 总量 - 校准基数 - 本机累计，下限 0。
+
+    ## 为什么默认就能给出数字（零手动）
+
+    百炼的免费额度是**平台固定常量**（官方：每个模型独立 100 万 tokens，开通后 90 天），
+    不是账号变量。所以算剩余只缺「消耗量」——而那个**每次调用的响应里就有精确值**。
+    因此 `quota_used_base` 默认为 0 时得到的就已是一个可用估计；
+    只有当你在这个工具上线前就用过某模型时，才需要校准一次把它扣掉。
     """
     total = max(0, int(quota_total or 0))
     used = max(0, int(used_base or 0)) + max(0, int(tokens_used or 0))
     remaining = max(0, total - used)
     pct = (used / total * 100.0) if total else 0.0
+    pct = round(min(100.0, pct), 2)
+
+    if total and remaining <= 0:
+        level = "exhausted"
+    elif pct >= 90:
+        level = "critical"
+    elif pct >= 70:
+        level = "low"
+    else:
+        level = "ok"
+
     return {
         "quota_total": total,
         "quota_used": used,
         "quota_remaining": remaining,
-        "quota_used_pct": round(min(100.0, pct), 2),
+        "quota_used_pct": pct,
+        "quota_level": level,
     }
+
+
+# 需要提醒的额度档位（管理台据此给醒目告警）
+QUOTA_ALERT_LEVELS = ("low", "critical", "exhausted")
 
 
 def classify_error(status_code: int | None, message: str) -> str:

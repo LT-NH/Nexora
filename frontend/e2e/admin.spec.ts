@@ -130,8 +130,8 @@ test.describe('超管管理台', () => {
 
     const activeCard = page.locator('div.border-violet-200').first();
     await expect(activeCard).toBeVisible({ timeout: 30_000 });
-    // 未校准时应带「≤」前缀（上界估算）
-    await expect(activeCard.getByText(/剩余 ≤ /)).toBeVisible();
+    // 未校准时带「≈」前缀（按本机记录推算，零手动就有数字）
+    await expect(activeCard.getByText(/≈ 剩余 /)).toBeVisible();
 
     await page.getByRole('button', { name: '校准额度' }).click();
     await expect(page.getByText('校准免费额度')).toBeVisible();
@@ -140,15 +140,15 @@ test.describe('超管管理台', () => {
     await page.getByPlaceholder('362,917/1,000,000').fill('600,000/1,000,000');
     await page.getByRole('button', { name: '保存校准' }).click();
 
-    // 变成精确值（不再有「≤」）
+    // 变成精确值（不再有「≈」）
     await expect(activeCard.getByText('剩余 600,000')).toBeVisible({ timeout: 30_000 });
-    await expect(activeCard.getByText(/剩余 ≤ /)).toHaveCount(0);
+    await expect(activeCard.getByText(/≈ 剩余 /)).toHaveCount(0);
     await expect(activeCard.getByText(/已用 400,000/)).toBeVisible();
 
-    // 清除校准 → 回到上限估算（填错能回退，测试也据此不留脏数据）
+    // 清除校准 → 回到推算态（填错能回退，测试也据此不留脏数据）
     await page.getByRole('button', { name: '校准额度' }).click();
     await page.getByRole('button', { name: '清除校准' }).click();
-    await expect(activeCard.getByText(/剩余 ≤ /)).toBeVisible({ timeout: 30_000 });
+    await expect(activeCard.getByText(/≈ 剩余 /)).toBeVisible({ timeout: 30_000 });
   });
 
   test('未登录访问管理台会跳转登录页', async ({ page }) => {

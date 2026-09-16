@@ -57,6 +57,8 @@ interface ModelRow {
   quota_used: number;
   quota_remaining: number;
   quota_used_pct: number;
+  /** ok | low（≥70% 已用）| critical（≥90%）| exhausted */
+  quota_level: 'ok' | 'low' | 'critical' | 'exhausted';
   quota_used_base: number;
   tokens_used: number;
   calls_used: number;
@@ -77,6 +79,9 @@ interface RegistryResponse {
   /** 额度记账口径说明（后端给，原样展示） */
   quota_note: string;
   quota_calibrated_count: number;
+  /** 额度告警统计（零手动，完全由真实消耗推算） */
+  quota_alert_count: number;
+  quota_exhausted_count: number;
   key_configured: boolean;
   key_hint: string | null;
   base_url: string;
@@ -137,11 +142,11 @@ const fmtNum = (n: number | null | undefined): string =>
   typeof n === 'number' ? n.toLocaleString('zh-CN') : '—';
 
 /** 余量配色：用掉 <70% 绿 / 70~90% 琥珀 / ≥90% 红 */
-const quotaTone = (usedPct: number): { bar: string; text: string } => {
-  if ((usedPct ?? 0) >= 90) {
+const quotaTone = (level: string, usedPct: number): { bar: string; text: string } => {
+  if (level === 'exhausted' || level === 'critical' || (usedPct ?? 0) >= 90) {
     return { bar: 'bg-red-500', text: 'text-red-600 dark:text-red-400' };
   }
-  if ((usedPct ?? 0) >= 70) {
+  if (level === 'low' || (usedPct ?? 0) >= 70) {
     return { bar: 'bg-amber-500', text: 'text-amber-600 dark:text-amber-400' };
   }
   return { bar: 'bg-emerald-500', text: 'text-emerald-600 dark:text-emerald-400' };
@@ -180,10 +185,10 @@ export const parseQuotaInput = (
   return Number.isFinite(v) ? { value: v } : null;
 };
 
-/** 免费额度余量条（剩余 / 总量） */
+/** 免费额度余量条（剩余 / 总量）—— 数字零手动，由每次调用的真实 usage 推算 */
 const QuotaBar: React.FC<{ m: ModelRow; compact?: boolean }> = ({ m, compact }) => {
-  const tone = quotaTone(m.quota_used_pct);
-  const exhausted = m.quota_remaining <= 0;
+  const tone = quotaTone(m.quota_level, m.quota_used_pct);
+  const exhausted = m.quota_level === 'exhausted' || m.quota_remaining <= 0;
   const approx = !m.is_calibrated;
   return (
     <div className="space-y-1">
@@ -191,9 +196,7 @@ const QuotaBar: React.FC<{ m: ModelRow; compact?: boolean }> = ({ m, compact }) 
         <span className={`text-xs font-semibold ${tone.text}`}>
           {exhausted
             ? '免费额度已耗尽'
-            : approx
-              ? `剩余 ≤ ${fmtNum(m.quota_remaining)}`
-              : `剩余 ${fmtNum(m.quota_remaining)}`}
+            : `${approx ? '≈ ' : ''}剩余 ${fmtNum(m.quota_remaining)}`}
         </span>
         <span className="text-[11px] text-gray-400">
           {approx ? '本机已用' : '已用'} {fmtNum(m.quota_used)} / {fmtNum(m.quota_total)}
@@ -209,7 +212,8 @@ const QuotaBar: React.FC<{ m: ModelRow; compact?: boolean }> = ({ m, compact }) 
         <p className="text-[11px] text-gray-400">
           {m.is_calibrated
             ? `已校准 · ${fmtTime(m.quota_calibrated_at)}；之后按每次调用的真实 usage 精确累加（实时）`
-            : '未校准：上面的「≤」是不含本工具上线前历史消耗的上界。粘贴一次控制台数字（如 362,917/1,000,000）即为精确实时值'}
+            : '实时累加自每次调用的真实 usage；免费额度池为平台固定的 100 万（每模型独立）。'
+              + '若你在本工具上线前已用过该模型，点「校准额度」粘贴一次控制台数字即可扣掉那段历史'}
         </p>
       )}
     </div>
@@ -532,6 +536,49 @@ export const AdminAIModels: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* 额度告警 —— 零手动：完全由每次调用的真实 usage 推算，无需任何人工输入 */}
+      {data.quota_alert_count > 0 &&
+        (() => {
+          const atRisk = data.models.filter((m) =>
+            ['low', 'critical', 'exhausted'].includes(m.quota_level),
+          );
+          const dead = data.quota_exhausted_count;
+          return (
+            <div className="rounded-xl border border-red-300 bg-red-50 dark:border-red-800 dark:bg-red-900/20 p-4">
+              <div className="flex items-start gap-3">
+                <AlertTriangle
+                  size={18}
+                  className="text-red-600 dark:text-red-400 shrink-0 mt-0.5"
+                />
+                <div className="text-sm min-w-0">
+                  <p className="font-semibold text-red-800 dark:text-red-200">
+                    免费额度预警：{data.quota_alert_count} 个模型已用超 70%
+                    {dead > 0 && `（其中 ${dead} 个已耗尽）`}
+                  </p>
+                  <ul className="mt-1.5 space-y-0.5 text-red-700 dark:text-red-300">
+                    {atRisk.slice(0, 6).map((m) => (
+                      <li key={m.id} className="flex items-center gap-2">
+                        <code className="font-mono text-xs">{m.model_id}</code>
+                        <span className="text-xs">
+                          {m.quota_level === 'exhausted'
+                            ? '已耗尽'
+                            : `已用 ${m.quota_used_pct}% · 约剩 ${fmtNum(m.quota_remaining)}`}
+                        </span>
+                      </li>
+                    ))}
+                    {atRisk.length > 6 && (
+                      <li className="text-xs">…还有 {atRisk.length - 6} 个</li>
+                    )}
+                  </ul>
+                  <p className="mt-1.5 text-xs text-red-600/90 dark:text-red-400/90">
+                    及时切到还有额度的模型（见下方「主力」分组）
+                  </p>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
 
       {/* 凭证与端点信息 */}
       <Card title="凭证与端点" subtitle="平台级共享，租户不可见">

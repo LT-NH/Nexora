@@ -152,11 +152,30 @@ async def list_models(
         "tool_capable_count": sum(1 for r in rows if r.supports_tools),
         # 免费额度记账口径说明（前端原样展示，避免用户误以为是官方实时值）
         "quota_note": (
-            "百炼没有查询剩余额度的 API（控制台为分钟级更新），因此这里用"
-            "「配额总量 − 校准基数 − 本机累计消耗」推算：未校准的模型为上限估算"
-            "（不含本工具上线前的历史消耗），校准一次后即为实时值。"
+            "免费额度池是平台固定值（官方：每模型独立 100 万 tokens，开通后 90 天），"
+            "不是账号变量；因此剩余 = 配额 − 本机累计消耗，而消耗量来自每次调用的真实 "
+            "usage —— 数字自动累加，无需任何手工输入。若你在本工具上线前已用过某模型，"
+            "那段历史无法从 API 获知（百炼没有查询剩余额度的接口），把控制台数字校准一次即可扣掉。"
         ),
         "quota_calibrated_count": sum(1 for r in rows if r.quota_calibrated_at),
+        # 额度告警：低于 30% / 濒临耗尽 / 已耗尽的模型数（**零手动**——
+        # 完全由真实消耗推算，不需要任何人工输入）
+        "quota_alert_count": sum(
+            1
+            for r in rows
+            if model_registry.quota_snapshot(
+                r.quota_total, r.quota_used_base, r.tokens_used
+            )["quota_level"]
+            in model_registry.QUOTA_ALERT_LEVELS
+        ),
+        "quota_exhausted_count": sum(
+            1
+            for r in rows
+            if model_registry.quota_snapshot(
+                r.quota_total, r.quota_used_base, r.tokens_used
+            )["quota_level"]
+            == "exhausted"
+        ),
         "key_configured": bool(settings.QWEN_API_KEY),
         "key_hint": _key_hint(),
         "base_url": settings.QWEN_BASE_URL,

@@ -403,21 +403,29 @@ def test_usage_is_isolated_per_model():
 # ----------------------------------------------------------------------
 
 @pytest.mark.parametrize(
-    "total, base, used, exp_remaining, exp_pct",
+    "total, base, used, exp_remaining, exp_pct, exp_level",
     [
-        (1_000_000, 0, 0, 1_000_000, 0.0),          # 全新未用
-        (1_000_000, 0, 250_000, 750_000, 25.0),     # 本机累计
-        (1_000_000, 900_000, 50_000, 50_000, 95.0), # 校准基数 + 增量
-        (1_000_000, 1_000_000, 0, 0, 100.0),        # 已耗尽
-        (1_000_000, 900_000, 200_000, 0, 100.0),    # 超额不为负 + 百分比封顶
-        (0, 0, 0, 0, 0.0),                          # 总量为 0 不炸除
+        (1_000_000, 0, 0, 1_000_000, 0.0, "ok"),            # 全新未用
+        (1_000_000, 0, 250_000, 750_000, 25.0, "ok"),       # 本机累计
+        (1_000_000, 900_000, 50_000, 50_000, 95.0, "critical"),  # 校准基数 + 增量
+        (1_000_000, 750_000, 0, 250_000, 75.0, "low"),      # 已用 75% → 需提醒
+        (1_000_000, 1_000_000, 0, 0, 100.0, "exhausted"),   # 已耗尽
+        (1_000_000, 900_000, 200_000, 0, 100.0, "exhausted"),  # 超额不为负 + 封顶
+        (0, 0, 0, 0, 0.0, "ok"),                            # 总量为 0 不炸除
     ],
 )
-def test_quota_snapshot(total, base, used, exp_remaining, exp_pct):
+def test_quota_snapshot(total, base, used, exp_remaining, exp_pct, exp_level):
     snap = mr.quota_snapshot(total, base, used)
     assert snap["quota_remaining"] == exp_remaining
     assert snap["quota_used_pct"] == exp_pct
     assert snap["quota_used"] == base + used
+    assert snap["quota_level"] == exp_level
+
+
+def test_quota_alert_levels_cover_low_and_worse():
+    """告警档位必须包含 low/critical/exhausted —— 管理台的预警横幅依赖它。"""
+    assert set(mr.QUOTA_ALERT_LEVELS) == {"low", "critical", "exhausted"}
+    assert "ok" not in mr.QUOTA_ALERT_LEVELS
 
 
 async def test_flush_usage_persists_and_resets_memory(session_factory, patch_session):
@@ -658,6 +666,7 @@ async def test_models_endpoint_payload_shape(async_client, auth_headers, session
         "active", "active_source", "agent_tools_ok", "tool_capable_count",
         "key_configured", "key_hint", "base_url", "usage_scope", "models",
         "quota_note", "quota_calibrated_count",
+        "quota_alert_count", "quota_exhausted_count",
     ):
         assert field in body, f"返回体缺少 {field}"
 
@@ -667,15 +676,23 @@ async def test_models_endpoint_payload_shape(async_client, auth_headers, session
         for field in (
             "model_id", "label", "family", "family_label", "is_active",
             "is_custom", "supports_tools", "quota_status", "quota_label", "usage",
-            # 免费额度记账字段（前端进度条依赖）
+            # 免费额度记账字段（前端进度条与预警依赖）
             "quota_total", "quota_used", "quota_remaining", "quota_used_pct",
-            "is_calibrated", "tokens_used", "calls_used",
+            "quota_level", "is_calibrated", "tokens_used", "calls_used",
         ):
             assert field in m, f"模型条目缺少 {field}"
         for f in ("calls", "prompt_tokens", "completion_tokens", "total_tokens"):
             assert f in m["usage"]
         # 剩余 + 已用 应等于总量（未超额时）
         assert m["quota_remaining"] + m["quota_used"] == m["quota_total"]
+        assert m["quota_level"] in ("ok", "low", "critical", "exhausted")
+
+    # 告警统计应与逐条 level 一致（零手动预警的地基）
+    alert = [m for m in body["models"] if m["quota_level"] in mr.QUOTA_ALERT_LEVELS]
+    assert body["quota_alert_count"] == len(alert)
+    assert body["quota_exhausted_count"] == sum(
+        1 for m in body["models"] if m["quota_level"] == "exhausted"
+    )
 
     # 恰好一个 is_active，且与 active 字段一致
     actives = [m["model_id"] for m in body["models"] if m["is_active"]]
