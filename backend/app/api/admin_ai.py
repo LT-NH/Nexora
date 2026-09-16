@@ -33,8 +33,8 @@ logger = get_logger(__name__)
 
 router = APIRouter(prefix="/admin/ai", tags=["Admin · AI Models"])
 
-# 目录展示顺序
-_FAMILY_ORDER = ["commercial", "opensource", "reasoning", "vision", "long", "custom"]
+# 目录展示顺序：主力优先，其次按用途分组
+_FAMILY_ORDER = ["core", "reasoning", "vision", "omni", "code", "math", "custom"]
 
 # 探测用最小请求：只花极少 token，验证模型可用性与真实延迟
 _PROBE_MESSAGES = [{"role": "user", "content": "回复两个字：可用"}]
@@ -82,6 +82,8 @@ def _serialize(row: AIModel) -> dict:
         "family_label": model_registry.FAMILY_LABELS.get(row.family, row.family),
         "is_custom": row.is_custom,
         "is_active": row.is_active,
+        # 巡店 Agent 依赖 function calling —— 切换前必须能看到这个标志
+        "supports_tools": row.supports_tools,
         # 额度状态：内存值优先（最新），否则用库里的持久化值
         "quota_status": status,
         "quota_label": model_registry.QUOTA_LABELS.get(status, status),
@@ -114,11 +116,16 @@ async def list_models(
 
     models = [_serialize(r) for r in sorted(rows, key=sort_key)]
     cached = model_registry.get_active_model_cached()
+    active_row = next((r for r in rows if r.is_active), None)
 
     return {
         "active": model_registry.get_active_model(),
         # 缓存未装载说明当前值来自 .env 回落，便于排查「切换没生效」
         "active_source": "runtime" if cached else "env-fallback",
+        # 当前模型是否支持 function calling：false 时巡店 Agent 不可用，
+        # 管理台据此给出醒目提示（切到 qwen-vl-*/deepseek-r1 就会踩到）
+        "agent_tools_ok": bool(active_row.supports_tools) if active_row else False,
+        "tool_capable_count": sum(1 for r in rows if r.supports_tools),
         "key_configured": bool(settings.QWEN_API_KEY),
         "key_hint": _key_hint(),
         "base_url": settings.QWEN_BASE_URL,

@@ -44,6 +44,8 @@ interface ModelRow {
   family_label: string;
   is_custom: boolean;
   is_active: boolean;
+  /** 巡店 Agent 依赖 function calling；false 的模型切过去会让 Agent 不可用 */
+  supports_tools: boolean;
   quota_status: string;
   quota_label: string;
   quota_message: string | null;
@@ -57,6 +59,9 @@ interface ModelRow {
 interface RegistryResponse {
   active: string;
   active_source: string;
+  /** 当前模型是否支持 function calling */
+  agent_tools_ok: boolean;
+  tool_capable_count: number;
   key_configured: boolean;
   key_hint: string | null;
   base_url: string;
@@ -260,6 +265,10 @@ export const AdminAIModels: React.FC = () => {
           <p className="mt-1 text-sm text-gray-500">
             百炼免费额度按模型分别计算 —— 用完一个就地切换，改完立即生效，无需改 .env 或重启后端
           </p>
+          <p className="mt-1 text-xs text-gray-400">
+            目录为「实测可用」集合：逐个模型对当前 base_url 真实探测，能返回 200 的才收录；
+            「支持工具」= 实测可返回 tool_calls（巡店 Agent 依赖）
+          </p>
         </div>
         <Button
           variant="outline"
@@ -319,6 +328,24 @@ export const AdminAIModels: React.FC = () => {
             >
               自检
             </Button>
+          </div>
+        </div>
+      )}
+
+      {/* 当前模型不支持工具调用 → 巡店 Agent 会不可用，必须醒目提示 */}
+      {!data.agent_tools_ok && (
+        <div className="rounded-xl border border-amber-300 bg-amber-50 dark:border-amber-700 dark:bg-amber-900/20 p-4">
+          <div className="flex items-start gap-3">
+            <AlertTriangle size={18} className="text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+            <div className="text-sm">
+              <p className="font-semibold text-amber-800 dark:text-amber-200">
+                当前模型不支持 function calling，巡店 Agent 将无法工作
+              </p>
+              <p className="mt-1 text-amber-700 dark:text-amber-300">
+                共 {data.tool_capable_count} 个模型支持工具调用（卡片上有「支持工具」标记）。
+                如需使用「巡店 Agent / 一句话指令」，请切到其中之一（推荐 Qwen Plus 或 Qwen Flash）。
+              </p>
+            </div>
           </div>
         </div>
       )}
@@ -430,6 +457,20 @@ export const AdminAIModels: React.FC = () => {
                             自定义
                           </span>
                         )}
+                        <span
+                          title={
+                            m.supports_tools
+                              ? '支持 function calling，可用于巡店 Agent'
+                              : '不支持 function calling，切到它巡店 Agent 会不可用'
+                          }
+                          className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${
+                            m.supports_tools
+                              ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-300'
+                              : 'bg-amber-50 text-amber-700 dark:bg-amber-900/20 dark:text-amber-300'
+                          }`}
+                        >
+                          {m.supports_tools ? '支持工具' : '不支持工具'}
+                        </span>
                       </div>
                       <code className="mt-1 block text-xs font-mono text-gray-500 dark:text-gray-400 truncate">
                         {m.model_id}

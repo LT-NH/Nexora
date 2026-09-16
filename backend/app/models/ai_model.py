@@ -63,6 +63,15 @@ class AIModel(Base):
         nullable=False,
         comment="Added manually by a superadmin",
     )
+    supports_tools: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False,
+        nullable=False,
+        comment=(
+            "是否支持 function calling —— 巡店 Agent 依赖它。"
+            "切到不支持工具的模型会让 Agent 报错，因此管理台要显式提示"
+        ),
+    )
     is_active: Mapped[bool] = mapped_column(
         Boolean,
         default=False,

@@ -93,6 +93,8 @@ async def _ensure_light_migrations(conn) -> None:
         ("feedbacks", "status", "VARCHAR(20) NOT NULL DEFAULT 'new'"),
         # 决策助手 → 体检快照 溯源列（健康引擎诊断 → 决策助手处方 单向流）
         ("ai_insights", "snapshot_id", "VARCHAR(36)"),
+        # 模型是否支持 function calling（巡店 Agent 依赖；管理台需据此提示）
+        ("ai_models", "supports_tools", "BOOLEAN NOT NULL DEFAULT FALSE"),
     ]
     for table, column, ddl in migrations:
         try:

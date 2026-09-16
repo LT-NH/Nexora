@@ -40,87 +40,181 @@ logger = get_logger(__name__)
 # 额度会随官方活动变化，管理台统一提示「以百炼控制台为准」。
 # 用户可自行在管理台补充目录里没有的模型（is_custom=True）。
 # ----------------------------------------------------------------------
-MODEL_CATALOG: list[dict[str, str]] = [
-    {
-        "model_id": "qwen-turbo",
-        "label": "Qwen Turbo",
-        "family": "commercial",
-        "note": "速度最快、单价最低。适合高频轻量调用：分类、摘要、短文案。",
-    },
+MODEL_CATALOG: list[dict[str, str | bool]] = [
+    # ── 主力档：本项目 11 个 AI 面板 + 巡店 Agent 的默认选择 ──────────────
     {
         "model_id": "qwen-plus",
         "label": "Qwen Plus",
-        "family": "commercial",
-        "note": "能力与成本均衡，多数经营分析场景的稳妥默认档。",
+        "family": "core",
+        "supports_tools": True,
+        "note": "本项目默认档。能力与成本均衡，实测 446ms，单轮约 14 tokens。支持 Agent 工具调用。",
+    },
+    {
+        "model_id": "qwen-plus-latest",
+        "label": "Qwen Plus (latest)",
+        "family": "core",
+        "supports_tools": True,
+        "note": "qwen-plus 的最新快照，行为接近（实测 406ms）。plus 出现异常时可切它对比。",
+    },
+    {
+        "model_id": "qwen-flash",
+        "label": "Qwen Flash",
+        "family": "core",
+        "supports_tools": True,
+        "note": "速度最快、单价最低（实测 348ms / 14 tokens）。适合高频轻量调用：分类、摘要、短文案。",
     },
     {
         "model_id": "qwen-max",
         "label": "Qwen Max",
-        "family": "commercial",
-        "note": "千问旗舰，推理与长文写作最强，单价最高。适合关键结论生成。",
+        "family": "core",
+        "supports_tools": True,
+        "note": "千问旗舰，推理与长文写作最强，单价最高（实测 536ms）。适合关键结论生成。",
     },
     {
         "model_id": "qwen-long",
         "label": "Qwen Long",
-        "family": "long",
-        "note": "超长上下文，适合大批量数据/整本资料一次性投喂分析。",
+        "family": "core",
+        "supports_tools": True,
+        "note": "⭐ 最省额度：同样问题只花 6~32 tokens（普通模型 14~188）。超长上下文，适合整批数据分析，支持工具调用。",
     },
     {
-        "model_id": "qwen2.5-72b-instruct",
-        "label": "Qwen2.5 72B",
-        "family": "opensource",
-        "note": "开源旗舰，多数任务接近商业版；免费额度独立计算。",
+        "model_id": "qwen-long-latest",
+        "label": "Qwen Long (latest)",
+        "family": "core",
+        "supports_tools": True,
+        "note": "qwen-long 最新快照，同样极省额度（实测 850ms / 32 tokens）。",
     },
+    # ── 强推理档：复杂分析／多步推演，⚠️ 默认开思维链，非常费额度 ──────────
     {
-        "model_id": "qwen2.5-32b-instruct",
-        "label": "Qwen2.5 32B",
-        "family": "opensource",
-        "note": "开源中大杯，均衡型，适合日常经营问答与文案。",
-    },
-    {
-        "model_id": "qwen2.5-14b-instruct",
-        "label": "Qwen2.5 14B",
-        "family": "opensource",
-        "note": "开源中杯，成本低、响应快，适合高频小任务。",
-    },
-    {
-        "model_id": "qwen2.5-7b-instruct",
-        "label": "Qwen2.5 7B",
-        "family": "opensource",
-        "note": "开源小杯，最省额度，适合简单改写与结构化抽取。",
-    },
-    {
-        "model_id": "qwen2.5-1.5b-instruct",
-        "label": "Qwen2.5 1.5B",
-        "family": "opensource",
-        "note": "极小杯，只适合极简任务（打标签、判意图），额度最耐用。",
-    },
-    {
-        "model_id": "qwq-plus",
-        "label": "QwQ Plus",
+        "model_id": "qwen3-max",
+        "label": "Qwen3 Max",
         "family": "reasoning",
-        "note": "推理增强（带思维链），适合复杂决策与多步推演。",
+        "supports_tools": True,
+        "note": "Qwen3 旗舰（实测 763ms）。⚠️ 默认开思维链，同样问题约 297 tokens，接近 plus 的 20 倍，省额度慎用。",
+    },
+    {
+        "model_id": "qwen3-235b-a22b",
+        "label": "Qwen3 235B-A22B",
+        "family": "reasoning",
+        "supports_tools": True,
+        "note": "Qwen3 开源旗舰（实测 8.6s / 约 330~429 tokens）。⚠️ 最慢也最费额度，仅留给最硬的推理任务。",
+    },
+    {
+        "model_id": "qwen3-32b",
+        "label": "Qwen3 32B",
+        "family": "reasoning",
+        "supports_tools": True,
+        "note": "Qwen3 32B（实测 4.3s / 约 226~342 tokens）。⚠️ 开思维链，费额度。",
+    },
+    {
+        "model_id": "qwen3-30b-a3b",
+        "label": "Qwen3 30B-A3B",
+        "family": "reasoning",
+        "supports_tools": True,
+        "note": "Qwen3 MoE 30B（实测 1.9s / 约 255~359 tokens）。速度与能力折中。",
+    },
+    {
+        "model_id": "qwen3-8b",
+        "label": "Qwen3 8B",
+        "family": "reasoning",
+        "supports_tools": True,
+        "note": "Qwen3 开源里最省的一档（实测 1.9s / 约 142~309 tokens）。",
+    },
+    {
+        "model_id": "deepseek-v3",
+        "label": "DeepSeek V3",
+        "family": "reasoning",
+        "supports_tools": True,
+        "note": "百炼托管的 DeepSeek V3（实测 967ms），支持工具调用，可作为千问之外的备选。",
+    },
+    {
+        "model_id": "deepseek-r1",
+        "label": "DeepSeek R1",
+        "family": "reasoning",
+        "supports_tools": False,
+        "note": "DeepSeek R1 推理模型（实测 7.6s）。❌ 不支持 function calling —— 切到它巡店 Agent 会不可用。",
+    },
+    # ── 视觉档：商品图/详情图理解（本项目可按需扩展） ──────────────────────
+    {
+        "model_id": "qwen3-vl-plus",
+        "label": "Qwen3 VL Plus",
+        "family": "vision",
+        "supports_tools": True,
+        "note": "视觉理解（Qwen3 VL，实测 765ms），支持工具调用，可用于商品图分析。",
+    },
+    {
+        "model_id": "qwen3-vl-235b-a22b-instruct",
+        "label": "Qwen3 VL 235B",
+        "family": "vision",
+        "supports_tools": True,
+        "note": "视觉理解旗舰（实测 418ms），支持工具调用，图片细节识别更强。",
     },
     {
         "model_id": "qwen-vl-plus",
         "label": "Qwen VL Plus",
         "family": "vision",
-        "note": "视觉理解（图片输入），适合商品图相关分析。",
+        "supports_tools": False,
+        "note": "视觉理解（实测 474ms）。❌ 不支持 function calling，仅适合纯图文问答。",
     },
     {
         "model_id": "qwen-vl-max",
         "label": "Qwen VL Max",
         "family": "vision",
-        "note": "视觉理解旗舰，图片细节识别更强。",
+        "supports_tools": False,
+        "note": "视觉理解旗舰（实测 494ms）。❌ 不支持 function calling。",
+    },
+    # ── 全模态 / 代码 / 数学：按特殊场景取用 ───────────────────────────────
+    {
+        "model_id": "qwen-omni-turbo",
+        "label": "Qwen Omni Turbo",
+        "family": "omni",
+        "supports_tools": True,
+        "note": "全模态（文本/音频/图像输入，实测 415ms），支持工具调用。",
+    },
+    {
+        "model_id": "qwen3-omni-flash",
+        "label": "Qwen3 Omni Flash",
+        "family": "omni",
+        "supports_tools": True,
+        "note": "全模态快速档（实测 397ms），支持工具调用。",
+    },
+    {
+        "model_id": "qwen3-coder-plus",
+        "label": "Qwen3 Coder Plus",
+        "family": "code",
+        "supports_tools": True,
+        "note": "代码专用（实测 663ms），支持工具调用。用于开发辅助，非产品功能。",
+    },
+    {
+        "model_id": "qwen3-coder-flash",
+        "label": "Qwen3 Coder Flash",
+        "family": "code",
+        "supports_tools": True,
+        "note": "代码专用快速档（实测 417ms），支持工具调用。",
+    },
+    {
+        "model_id": "qwen3-coder-30b-a3b-instruct",
+        "label": "Qwen3 Coder 30B",
+        "family": "code",
+        "supports_tools": True,
+        "note": "代码专用 MoE（实测 486ms），支持工具调用。",
+    },
+    {
+        "model_id": "qwen-math-plus",
+        "label": "Qwen Math Plus",
+        "family": "math",
+        "supports_tools": True,
+        "note": "数学/演算增强（实测 581ms），支持工具调用。可用于定价与销量预测的数值推演。",
     },
 ]
 
 FAMILY_LABELS: dict[str, str] = {
-    "commercial": "商业版",
-    "opensource": "开源版",
-    "reasoning": "推理增强",
+    "core": "主力（本项目首选）",
+    "reasoning": "强推理（费额度）",
     "vision": "视觉理解",
-    "long": "长文本",
+    "omni": "全模态",
+    "code": "代码",
+    "math": "数学",
     "custom": "自定义",
 }
 
@@ -171,14 +265,50 @@ async def _seed_and_calibrate(db) -> Any:
     """
     from app.models.ai_model import AIModel
 
-    existing = {
-        row.model_id for row in (await db.execute(select(AIModel))).scalars().all()
-    }
-    # 1) 补齐内置目录（新版本新增的模型自动出现；不覆盖用户对已有行的改动）
+    catalog_by_id = {item["model_id"]: item for item in MODEL_CATALOG}
+    rows0 = (await db.execute(select(AIModel))).scalars().all()
+
+    # 0) 清理「曾经内置、现已从目录移除」的行。
+    #    只删 is_custom=False 且非 active 的 —— 自定义条目是用户自己加的，
+    #    当前生效的模型更不能动（否则会把 AI 打断）。
+    #    这样管理台展示的就严格等于策展目录，不会残留一堆点不动的死条目。
+    pruned = []
+    for r in rows0:
+        if not r.is_custom and not r.is_active and r.model_id not in catalog_by_id:
+            pruned.append(r.model_id)
+            await db.delete(r)
+    if pruned:
+        await db.flush()
+        logger.info("AI model registry pruned %d legacy built-ins: %s", len(pruned), pruned)
+
+    # 1) 补齐新条目 + **校正已有内置条目的元数据**。
+    #
+    #    只补建是错的：目录改版后，老库里同名的行会保留旧 label/family/note，
+    #    而新增的 supports_tools 列会被建为默认 False —— 于是管理台会显示
+    #    错误的分组，甚至误报「当前模型不支持工具调用」。实测踩过这个坑。
+    #    内置行的 label/note/family/supports_tools 属于「目录说了算」；
+    #    is_active / is_custom / quota_status / 用量等用户态字段一律不动。
+    synced, added = 0, 0
+    rows_now = (await db.execute(select(AIModel))).scalars().all()
+    present: set[str] = set()
+    for r in rows_now:
+        present.add(r.model_id)
+        if r.is_custom:
+            continue
+        item = catalog_by_id.get(r.model_id)
+        if item is None:
+            continue
+        for field in ("label", "note", "family", "supports_tools"):
+            if getattr(r, field) != item[field]:
+                setattr(r, field, item[field])
+                synced += 1
     for item in MODEL_CATALOG:
-        if item["model_id"] not in existing:
+        if item["model_id"] not in present:
             db.add(AIModel(**item, is_custom=False))
+            added += 1
     await db.flush()
+    if synced or added:
+        logger.info("AI model registry: %d new, %d fields synced", added, synced)
 
     rows = (await db.execute(select(AIModel))).scalars().all()
     actives = [r for r in rows if r.is_active]
@@ -189,10 +319,16 @@ async def _seed_and_calibrate(db) -> Any:
             r.is_active = False
         actives = actives[:1]
 
-    # 3) 一个都没有 → 优先用 .env 指定的模型，否则退回首项，保证总有可用模型
+    # 3) 一个都没有 → 优先用 .env 指定的模型；否则按**目录顺序**取第一个
+    #    （MODEL_CATALOG 本身按优先级排序，主力档在最前）。
+    #    注意不要用字母序兜底：那会选中 deepseek-r1 这种**不支持 function calling**
+    #    的模型，等于新装就带着一个坏掉的巡店 Agent。
     if not actives and rows:
         want = _settings_model()
         pick = next((r for r in rows if r.model_id == want), None)
+        if pick is None and MODEL_CATALOG:
+            first = MODEL_CATALOG[0]["model_id"]
+            pick = next((r for r in rows if r.model_id == first), None)
         if pick is None:
             pick = sorted(rows, key=lambda r: r.model_id)[0]
         pick.is_active = True
@@ -378,13 +514,25 @@ def classify_error(status_code: int | None, message: str) -> str:
     ):
         return "exhausted"
 
-    # 模型未开通 / 未部署在该网关（≠ Key 无效）
+    # 模型未开通 / 未购买 / 未部署在该网关（≠ Key 无效）
+    #
+    # 实测过的几种真实措辞（都返回 403，但都不是 Key 的问题）：
+    #   "Access denied"                              → 专属网关未部署
+    #   "Access to model denied. Please make sure you
+    #    are eligible for using the model."          → type: AccessDenied.Unpurchased
+    # 「Access to model denied」不含 "access denied"，所以必须补以下模式，
+    # 否则会落到 403 兜底被判成 unauthorized，让人误以为要换 API Key。
     if (
         "access denied" in low
+        or "accessdenied" in low  # 错误体的 type 字段无空格
+        or "access to model denied" in low
+        or "unpurchased" in low
+        or "not eligible" in low
         or "permission denied" in low
         or "forbidden" in low
         or "not authorized" in low
         or "no permission" in low
+        or "denied" in low  # 兜底：各种 "... denied" 措辞
     ):
         return "denied"
 
