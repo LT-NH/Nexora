@@ -279,6 +279,24 @@ async def calibrate_quota(
     }
 
 
+@router.delete(
+    "/models/{model_id}/quota",
+    summary="清除额度校准（superadmin only）",
+)
+async def clear_quota(
+    model_id: str,
+    _sa: Annotated[User, Depends(require_superadmin)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> dict:
+    """回到「未校准」状态（填错了好回退）。"""
+    try:
+        await model_registry.clear_quota_calibration(db, model_id)
+    except LookupError:
+        raise HTTPException(status_code=404, detail=f"模型 {model_id} 不在注册表中")
+    await db.commit()
+    return {"ok": True, "model_id": model_id, "message": "已清除校准，回到未校准状态"}
+
+
 @router.post(
     "/models/test",
     summary="模型连通性自检（superadmin only）",

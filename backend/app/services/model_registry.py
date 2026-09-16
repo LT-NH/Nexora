@@ -562,6 +562,24 @@ async def set_quota_calibration(
     return row
 
 
+async def clear_quota_calibration(db, model_id: str) -> Any:
+    """清除校准，回到「未校准」状态（填错了好回退，也让测试能干净收尾）。"""
+    from app.models.ai_model import AIModel
+
+    row = (
+        await db.execute(select(AIModel).where(AIModel.model_id == model_id))
+    ).scalars().first()
+    if row is None:
+        raise LookupError(model_id)
+    row.quota_total = 1_000_000
+    row.quota_used_base = 0
+    row.tokens_used = 0
+    row.calls_used = 0
+    row.quota_calibrated_at = None
+    await db.flush()
+    return row
+
+
 def quota_snapshot(quota_total: int, used_base: int, tokens_used: int) -> dict:
     """剩余额度核算（纯函数，便于测试）。
 

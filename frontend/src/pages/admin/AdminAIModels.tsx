@@ -147,19 +147,56 @@ const quotaTone = (usedPct: number): { bar: string; text: string } => {
   return { bar: 'bg-emerald-500', text: 'text-emerald-600 dark:text-emerald-400' };
 };
 
+/** 控制台免费额度页（官方唯一能看到真实剩余的地方） */
+export const BAILIAN_QUOTA_PAGE = 'https://bailian.console.aliyun.com/';
+
+const toNum = (t: string): number => {
+  const m = t.match(/^(\d+(?:\.\d+)?)(万|亿)?$/);
+  if (!m) return NaN;
+  const n = parseFloat(m[1]);
+  return m[2] === '万' ? n * 1e4 : m[2] === '亿' ? n * 1e8 : n;
+};
+
+/**
+ * 解析用户从控制台粘贴的内容。支持这些写法：
+ *   `362,917/1,000,000`  → 剩余 362917，总量 1000000（控制台就是这个格式）
+ *   `362917/1000000`
+ *   `36.2万`             → 362000
+ *   纯数字
+ */
+export const parseQuotaInput = (
+  raw: string,
+): { value: number; total?: number } | null => {
+  const s = raw.trim().replace(/[,\s_]/g, '');
+  if (!s) return null;
+  const parts = s.split('/');
+  if (parts.length === 2) {
+    const a = toNum(parts[0]);
+    const b = toNum(parts[1]);
+    if (Number.isFinite(a) && Number.isFinite(b)) return { value: a, total: b };
+    return null;
+  }
+  const v = toNum(parts[0]);
+  return Number.isFinite(v) ? { value: v } : null;
+};
+
 /** 免费额度余量条（剩余 / 总量） */
 const QuotaBar: React.FC<{ m: ModelRow; compact?: boolean }> = ({ m, compact }) => {
   const tone = quotaTone(m.quota_used_pct);
   const exhausted = m.quota_remaining <= 0;
+  const approx = !m.is_calibrated;
   return (
     <div className="space-y-1">
       <div className="flex items-baseline justify-between gap-2">
         <span className={`text-xs font-semibold ${tone.text}`}>
-          {exhausted ? '免费额度已耗尽' : `剩余 ${fmtNum(m.quota_remaining)}`}
+          {exhausted
+            ? '免费额度已耗尽'
+            : approx
+              ? `剩余 ≤ ${fmtNum(m.quota_remaining)}`
+              : `剩余 ${fmtNum(m.quota_remaining)}`}
         </span>
         <span className="text-[11px] text-gray-400">
-          {fmtNum(m.quota_used)} / {fmtNum(m.quota_total)}
-          {!m.is_calibrated && '（上限估算）'}
+          {approx ? '本机已用' : '已用'} {fmtNum(m.quota_used)} / {fmtNum(m.quota_total)}
         </span>
       </div>
       <div className="h-1.5 w-full rounded-full bg-gray-100 dark:bg-gray-700 overflow-hidden">
@@ -171,8 +208,8 @@ const QuotaBar: React.FC<{ m: ModelRow; compact?: boolean }> = ({ m, compact }) 
       {!compact && (
         <p className="text-[11px] text-gray-400">
           {m.is_calibrated
-            ? `已校准 · ${fmtTime(m.quota_calibrated_at)}，之后按调用精确累加`
-            : '未校准：不含本工具上线前的历史消耗，去百炼控制台看一次并校准即可变精确'}
+            ? `已校准 · ${fmtTime(m.quota_calibrated_at)}；之后按每次调用的真实 usage 精确累加（实时）`
+            : '未校准：上面的「≤」是不含本工具上线前历史消耗的上界。粘贴一次控制台数字（如 362,917/1,000,000）即为精确实时值'}
         </p>
       )}
     </div>
@@ -300,14 +337,19 @@ export const AdminAIModels: React.FC = () => {
 
   const submitCalibration = async () => {
     if (!calibrating) return;
-    const num = Number(calForm.value.trim().replace(/[,\s_]/g, ''));
-    if (!calForm.value.trim() || !Number.isFinite(num) || num < 0) {
-      addToast('error', '请填写一个合法的非负整数');
+    const parsed = parseQuotaInput(calForm.value);
+    if (!parsed) {
+      addToast('error', '请填数字，或直接粘贴控制台的「剩余/总量」（如 362,917/1,000,000）');
       return;
     }
     setCalSaving(true);
     try {
-      const body: Record<string, number> = { [calForm.mode]: Math.round(num) };
+      // 粘贴了 `剩余/总量` 时，整体按 remaining + total 提交
+      const body: Record<string, number> =
+        parsed.total !== undefined
+          ? { remaining: parsed.value, total: parsed.total }
+          : { [calForm.mode]: parsed.value };
+
       const totalRaw = calForm.total.trim().replace(/[,\s_]/g, '');
       if (totalRaw) {
         const t = Number(totalRaw);
@@ -327,6 +369,21 @@ export const AdminAIModels: React.FC = () => {
       await fetchModels(true);
     } catch (e: any) {
       addToast('error', '校准失败', e?.response?.data?.detail || '');
+    } finally {
+      setCalSaving(false);
+    }
+  };
+
+  const clearCalibration = async () => {
+    if (!calibrating) return;
+    setCalSaving(true);
+    try {
+      await api.delete(`/admin/ai/models/${calibrating.model_id}/quota`);
+      addToast('success', '已清除校准', '回到未校准（上限估算）状态');
+      setCalibrating(null);
+      await fetchModels(true);
+    } catch (e: any) {
+      addToast('error', '清除失败', e?.response?.data?.detail || '');
     } finally {
       setCalSaving(false);
     }
@@ -812,15 +869,47 @@ export const AdminAIModels: React.FC = () => {
 
             <div className="p-5 space-y-4">
               <p className="text-xs text-gray-500 dark:text-gray-400 leading-relaxed">
-                百炼没有查询剩余额度的接口。去控制台「免费额度」页面看一次当前数字填进来即可 ——
-                之后本工具按每次调用的真实用量自动累加，无需再手动填。
+                百炼<strong className="text-gray-700 dark:text-gray-200">没有</strong>
+                查询剩余额度的接口（官方只提供控制台页面），所以需要你贴一次当前数字。
+                贴完这一下，之后本工具按每次调用的真实用量自动累加，就是实时的了。
+                <br />
+                <a
+                  href={BAILIAN_QUOTA_PAGE}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-primary-600 dark:text-primary-300 underline"
+                >
+                  打开百炼控制台 → 左侧「免费额度」
+                </a>
+                （页面上会显示形如 <code className="font-mono">362,917/1,000,000</code> 的数字）
               </p>
 
+              <div>
+                <label className="text-sm font-medium text-gray-600 dark:text-gray-300 mb-1.5 block">
+                  直接粘贴控制台那两个数字
+                </label>
+                <input
+                  value={calForm.value}
+                  onChange={(e) => setCalForm({ ...calForm, value: e.target.value })}
+                  inputMode="text"
+                  autoFocus
+                  placeholder="362,917/1,000,000"
+                  className="w-full px-3.5 py-2.5 text-sm rounded-xl border border-[#D6D9CD] dark:border-gray-600 bg-white dark:bg-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-[#EB9D2A]/40 font-mono"
+                />
+                <p className="mt-1 text-[11px] text-gray-400">
+                  支持 <code className="font-mono">剩余/总量</code>、单个数字、或
+                  <code className="font-mono">36.2万</code> 这种写法
+                </p>
+              </div>
+
               <div className="flex gap-1 bg-gray-100 dark:bg-gray-700/50 rounded-lg p-1">
+                <span className="px-2 py-1.5 text-[11px] text-gray-500 dark:text-gray-400">
+                  若只填一个数，它是
+                </span>
                 {(
                   [
-                    ['remaining', '按「剩余」填'],
-                    ['used', '按「已用」填'],
+                    ['remaining', '剩余'],
+                    ['used', '已用'],
                   ] as const
                 ).map(([k, label]) => (
                   <button
@@ -839,19 +928,6 @@ export const AdminAIModels: React.FC = () => {
 
               <div>
                 <label className="text-sm font-medium text-gray-600 dark:text-gray-300 mb-1.5 block">
-                  控制台显示的{calForm.mode === 'remaining' ? '剩余' : '已用'} tokens
-                </label>
-                <input
-                  value={calForm.value}
-                  onChange={(e) => setCalForm({ ...calForm, value: e.target.value })}
-                  inputMode="numeric"
-                  placeholder={calForm.mode === 'remaining' ? '例如 362917' : '例如 637083'}
-                  className="w-full px-3.5 py-2.5 text-sm rounded-xl border border-[#D6D9CD] dark:border-gray-600 bg-white dark:bg-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-[#EB9D2A]/40 font-mono"
-                />
-              </div>
-
-              <div>
-                <label className="text-sm font-medium text-gray-600 dark:text-gray-300 mb-1.5 block">
                   该模型免费额度总量
                 </label>
                 <input
@@ -866,19 +942,31 @@ export const AdminAIModels: React.FC = () => {
               </div>
             </div>
 
-            <div className="flex items-center justify-end gap-2 px-5 py-3.5 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/40">
-              <Button variant="outline" size="sm" onClick={() => setCalibrating(null)}>
-                取消
-              </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                className="!bg-[#EB9D2A] !border-[#EB9D2A] !text-white hover:!bg-[#d98d1f] hover:!border-[#d98d1f]"
-                isLoading={calSaving}
-                onClick={submitCalibration}
-              >
-                保存校准
-              </Button>
+            <div className="flex items-center justify-between gap-2 px-5 py-3.5 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/40">
+              {calibrating?.is_calibrated ? (
+                <button
+                  onClick={clearCalibration}
+                  className="text-xs text-gray-500 hover:text-red-600 dark:hover:text-red-400 transition-colors"
+                >
+                  清除校准
+                </button>
+              ) : (
+                <span />
+              )}
+              <div className="flex items-center gap-2">
+                <Button variant="outline" size="sm" onClick={() => setCalibrating(null)}>
+                  取消
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="!bg-[#EB9D2A] !border-[#EB9D2A] !text-white hover:!bg-[#d98d1f] hover:!border-[#d98d1f]"
+                  isLoading={calSaving}
+                  onClick={submitCalibration}
+                >
+                  保存校准
+                </Button>
+              </div>
             </div>
           </div>
         </div>

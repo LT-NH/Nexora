@@ -495,6 +495,39 @@ async def test_calibration_by_remaining_and_by_used(session_factory, patch_sessi
             await mr.set_quota_calibration(db, "no-such-model", used=1)
 
 
+async def test_clear_calibration_returns_to_estimated_state(
+    session_factory, patch_session
+):
+    """填错要能回退：清除校准 → 回到未校准（上限估算）状态。"""
+    from sqlalchemy import select
+
+    from app.models.ai_model import AIModel
+
+    await mr.hydrate()
+    async with session_factory() as db:
+        await mr.set_quota_calibration(db, "qwen-plus", total=2_000_000, used=500_000)
+        await db.commit()
+
+    async with session_factory() as db:
+        row = (await db.execute(
+            select(AIModel).where(AIModel.model_id == "qwen-plus")
+        )).scalars().first()
+        assert row.quota_calibrated_at is not None
+        assert row.quota_total == 2_000_000
+
+    async with session_factory() as db:
+        row = await mr.clear_quota_calibration(db, "qwen-plus")
+        await db.commit()
+        assert row.quota_calibrated_at is None
+        assert row.quota_total == 1_000_000, "回到官方默认总量"
+        assert row.quota_used_base == 0
+        assert row.tokens_used == 0
+
+    async with session_factory() as db:
+        with pytest.raises(LookupError):
+            await mr.clear_quota_calibration(db, "no-such-model")
+
+
 async def test_exhausted_error_auto_zeros_remaining(session_factory, patch_session):
     """官方报「额度耗尽」时，记账直接归零 —— 这是真实校准，不是估算。"""
     from sqlalchemy import select
