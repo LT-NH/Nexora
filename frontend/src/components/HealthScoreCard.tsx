@@ -4,7 +4,7 @@ import {
 } from 'lucide-react';
 import api from '@/services/api';
 import { usePageT, useI18n } from '@/i18n';
-import { HealthRadarChart } from '@/components/charts/HealthRadarChart';
+import { HealthRadarChart, splitRadarSides } from '@/components/charts/HealthRadarChart';
 
 interface HealthDimension {
   key: string;
@@ -107,6 +107,11 @@ const levelColor = (level: string) =>
 const levelLabel = (level: string, t: any) =>
   level === 'green' ? t('level_green') : level === 'yellow' ? t('level_yellow') : t('level_red');
 
+// Tailwind JIT 只识别源码里**完整出现**的类名，动态拼接无效 → 用字面量映射表。
+// ROW_START_CLS：xl 三栏布局里侧栏卡片的行位；ORDER_CLS：窄屏堆叠时还原维度原始顺序。
+const ROW_START_CLS = ['xl:row-start-1', 'xl:row-start-2', 'xl:row-start-3'];
+const ORDER_CLS = ['order-2', 'order-3', 'order-4', 'order-5', 'order-6', 'order-7'];
+
 const fmtTime = (iso?: string | null) => {
   if (!iso) return '';
   const d = new Date(iso);
@@ -203,6 +208,48 @@ export const HealthScoreCard: React.FC<{ slug: string }> = ({ slug }) => {
   const anomalyCount = data.anomalies?.length || 0;
   const weakest = data.dimensions.reduce((m, d) => (d.score < m.score ? d : m), data.dimensions[0]);
   const prevDelta = data.prev ? data.score - data.prev.score : null;
+
+  // 维度评分卡按雷达图顶点的**真实几何位置**分列：
+  //   左列 = 左上 / 左下 / 正下    右列 = 正上 / 右上 / 右下
+  // 让卡片贴着各自顶点方向的留白（原先六行堆在图下方，雷达图左右大片空白）。
+  const { left: leftDims, right: rightDims } = splitRadarSides(data.dimensions);
+
+  const renderDimCard = (dim: HealthDimension, placement: string, orderCls: string) => {
+    const c = levelColor(dim.level);
+    const active = selectedDim === dim.key;
+    return (
+      <button
+        key={dim.key}
+        onClick={() => setSelectedDim(active ? null : dim.key)}
+        aria-pressed={active}
+        className={`min-w-0 text-left rounded-xl px-3 py-2.5 transition-all ${placement} ${orderCls} ${
+          active
+            ? 'bg-gray-50 dark:bg-gray-700/30 ring-1 ring-gray-200 dark:ring-gray-600'
+            : 'hover:bg-gray-50/70 dark:hover:bg-gray-700/20'
+        }`}
+      >
+        <div className="flex items-center justify-between gap-2 mb-2">
+          <span className="text-sm font-semibold text-gray-700 dark:text-gray-200 flex items-center gap-1.5 min-w-0">
+            <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: c }} />
+            <span className="truncate">{dim.name}</span>
+          </span>
+          <span className="text-base font-bold tabular-nums leading-none flex-shrink-0" style={{ color: c }}>
+            {dim.score}
+            <span className="text-[11px] font-normal text-gray-400 dark:text-gray-500 ml-0.5">/100</span>
+          </span>
+        </div>
+        <div className="h-1.5 rounded-full bg-gray-100 dark:bg-gray-700/60 overflow-hidden">
+          <div
+            className="h-full rounded-full transition-all duration-700"
+            style={{ width: `${Math.max(4, dim.score)}%`, backgroundColor: c }}
+          />
+        </div>
+        <p className={`text-[13px] text-gray-500 dark:text-gray-400 mt-2 leading-relaxed ${active ? '' : 'line-clamp-2'}`}>
+          {dim.reasons.join(' · ')}
+        </p>
+      </button>
+    );
+  };
 
   return (
     <div id="health-engine-card" className="rounded-2xl bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 shadow-sm overflow-hidden scroll-mt-20">
@@ -345,32 +392,26 @@ export const HealthScoreCard: React.FC<{ slug: string }> = ({ slug }) => {
             </div>
           </div>
 
-          {/* 维度快捷选择 chips：点击联动雷达顶点强调 + 下方归因高亮 */}
-          <div className="flex flex-wrap gap-1.5 mb-2">
-            {data.dimensions.map((d) => {
-              const c = levelColor(d.level);
-              const active = selectedDim === d.key;
-              return (
-                <button
-                  key={d.key}
-                  onClick={() => setSelectedDim(active ? null : d.key)}
-                  className={`inline-flex items-center gap-1.5 text-[12px] font-semibold px-2.5 py-1 rounded-full border transition-all ${
-                    active
-                      ? 'border-transparent text-white shadow-sm'
-                      : 'border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300 hover:border-gray-300 dark:hover:border-gray-600 bg-white dark:bg-gray-800/60'
-                  }`}
-                  style={active ? { backgroundColor: c } : undefined}
-                  aria-pressed={active}
-                >
-                  <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: active ? '#fff' : c }} />
-                  {d.name}
-                  <span className="tabular-nums">{d.score}</span>
-                </button>
-              );
-            })}
+          {/* 雷达图主视觉 + 两侧维度评分卡。
+              xl 起三栏并列：左右各 3 张评分卡贴着对应顶点方向的留白，
+              卡片行高会被跨 3 行的雷达图均分，与顶点高低位置对齐；
+              窄屏退化为「雷达图 + 两列卡片」堆叠，卡片按原始维度顺序排列。 */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-3 items-center xl:grid-cols-[minmax(0,1fr)_440px_minmax(0,1fr)] xl:grid-rows-3 xl:gap-x-4 xl:gap-y-1">
+            {/* 雷达图主视觉（跨 3 行，居中列）。
+                ⚠️ sm:col-span-2 是窄屏跨满两列用的，xl 必须显式 col-span-1 取消，
+                否则会从第 2 列一路跨到第 3 列（754px），压住右侧评分卡。 */}
+            <div className="order-first sm:col-span-2 xl:col-span-1 xl:col-start-2 xl:row-start-1 xl:row-span-3">
+              <HealthRadarChart dimensions={data.dimensions} previous={data.prev?.dimensions ?? null} selectedKey={selectedDim} />
+            </div>
+            {/* 左列：雷达图左半边顶点（左上 / 左下 / 正下） */}
+            {leftDims.map(({ item: dim, index }, i) =>
+              renderDimCard(dim, `xl:col-start-1 ${ROW_START_CLS[i] ?? ''}`, ORDER_CLS[index] ?? ''),
+            )}
+            {/* 右列：雷达图右半边顶点（正上 / 右上 / 右下） */}
+            {rightDims.map(({ item: dim, index }, i) =>
+              renderDimCard(dim, `xl:col-start-3 ${ROW_START_CLS[i] ?? ''}`, ORDER_CLS[index] ?? ''),
+            )}
           </div>
-
-          <HealthRadarChart dimensions={data.dimensions} previous={data.prev?.dimensions ?? null} selectedKey={selectedDim} />
 
           {/* 真实历史趋势（持久化快照） */}
           <div className="flex items-center justify-between mt-1 pt-3 border-t border-gray-100 dark:border-gray-700/60">
@@ -390,43 +431,6 @@ export const HealthScoreCard: React.FC<{ slug: string }> = ({ slug }) => {
               </span>
             )}
           </div>
-        </div>
-
-        {/* 维度条（点击选中展开完整归因） */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-5 content-center mt-6">
-          {data.dimensions.map((dim) => {
-            const c = levelColor(dim.level);
-            const active = selectedDim === dim.key;
-            return (
-              <button
-                key={dim.key}
-                onClick={() => setSelectedDim(active ? null : dim.key)}
-                className={`min-w-0 text-left rounded-xl px-3 py-2 -mx-3 transition-all ${
-                  active ? 'bg-gray-50 dark:bg-gray-700/30 ring-1 ring-gray-200 dark:ring-gray-600' : 'hover:bg-gray-50/70 dark:hover:bg-gray-700/20'
-                }`}
-              >
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-sm font-semibold text-gray-700 dark:text-gray-200 flex items-center gap-1.5">
-                    <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: c }} />
-                    {dim.name}
-                  </span>
-                  <span className="text-base font-bold tabular-nums leading-none" style={{ color: c }}>
-                    {dim.score}
-                    <span className="text-[11px] font-normal text-gray-400 dark:text-gray-500 ml-0.5">/100</span>
-                  </span>
-                </div>
-                <div className="h-1.5 rounded-full bg-gray-100 dark:bg-gray-700/60 overflow-hidden">
-                  <div
-                    className="h-full rounded-full transition-all duration-700"
-                    style={{ width: `${Math.max(4, dim.score)}%`, backgroundColor: c }}
-                  />
-                </div>
-                <p className={`text-[13px] text-gray-500 dark:text-gray-400 mt-2 leading-relaxed ${active ? '' : 'line-clamp-2'}`}>
-                  {dim.reasons.join(' · ')}
-                </p>
-              </button>
-            );
-          })}
         </div>
 
         {/* 评分方法弹层 */}
