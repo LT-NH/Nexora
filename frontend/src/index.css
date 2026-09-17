@@ -179,9 +179,13 @@
 }
 
 /* Smooth scroll behavior */
+/* 字体栈单一事实来源在 tailwind.config.js 的 fontFamily.sans，
+   这里用 theme() 引用，避免两处漂移（曾经两处不一致，中文回退到了微软雅黑）。 */
 html, body {
-  font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'PingFang SC',
-    'HarmonyOS Sans SC', 'Microsoft YaHei', 'Noto Sans SC', system-ui, sans-serif;
+  font-family: theme('fontFamily.sans');
+  /* 中文在小字号下的渲染质量：开启连字与字距微调，
+     配合思源黑体可显著改善 14-15px 的观感 */
+  text-rendering: optimizeLegibility;
 }
 
 body {

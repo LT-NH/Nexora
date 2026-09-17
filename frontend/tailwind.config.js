@@ -62,16 +62,29 @@ export default {
       },
       fontFamily: {
         sans: [
+          // 拉丁/数字：Plus Jakarta Sans（自托管变量字体，见 index.css @font-face）
+          // 中文：按「观感最好 → 兜底」排序。**Noto Sans SC 必须排在 Microsoft YaHei 之前**
+          // —— 实测（canvas 宽度法）本机装了思源黑体，但旧栈里雅黑优先，导致中文
+          // 全部落到微软雅黑 14px，观感差且偏小。思源黑体笔画均匀、屏幕渲染干净。
+          // 未装思源的机器会自然回退到雅黑，不会比现在更差；macOS 用苹方。
           'Plus Jakarta Sans',
           '-apple-system',
           'BlinkMacSystemFont',
           'PingFang SC',
+          'MiSans',
           'HarmonyOS Sans SC',
-          'Microsoft YaHei',
           'Noto Sans SC',
+          'Source Han Sans SC',
+          'Microsoft YaHei',
           'system-ui',
           'sans-serif',
         ],
+      },
+      // 字号微调：正文/按钮/侧栏的主力档位是 text-sm(14px)，实测偏小。
+      // 只放大「文字档位」，间距与宽度(w-/p-/gap- 是另一套 rem)不动，避免全局膨胀。
+      fontSize: {
+        xs: ['0.8125rem', { lineHeight: '1.125rem' }], // 12px → 13px
+        sm: ['0.9375rem', { lineHeight: '1.4rem' }],   // 14px → 15px
       },
       animation: {
         'fade-in': 'fadeIn 0.3s ease-in-out',

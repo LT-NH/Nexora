@@ -1331,13 +1331,13 @@ export const Products: React.FC = () => {
       </Card>
 
       {/* 分类树 + 商品列表 */}
-      <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-6 gap-6">
         {/* 分类树 */}
         <Card title={t('product_categories')} className="lg:col-span-1" padding>
           {categories.length === 0 ? (
             <p className="text-sm text-gray-500 text-center py-4">{t('no_categories')}</p>
           ) : (
-            <div className="space-y-0.5 -mx-2" role="tree" aria-label={t('tree_aria')}>
+            <div className="space-y-0.5 -mx-2 max-h-[420px] overflow-y-auto" role="tree" aria-label={t('tree_aria')}>
               <button
                 onClick={() => setCategoryFilter('')}
                 className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-colors text-left ${
@@ -1355,7 +1355,7 @@ export const Products: React.FC = () => {
         </Card>
 
         {/* 商品列表 */}
-        <div className="lg:col-span-3">
+        <div className="lg:col-span-5">
           <Card padding={false}>
             {/* Batch Action Bar */}
             {selectedIds.size > 0 && (

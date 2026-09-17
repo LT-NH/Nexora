@@ -11,6 +11,17 @@ interface ChangelogEntry {
 
 const changelogData: ChangelogEntry[] = [
   {
+    version: 'v5.5',
+    date: '2026年9月17日',
+    changes: [
+      '工作空间中文字体重排：此前中文实际渲染为微软雅黑 —— 旧字体栈里 Microsoft YaHei 排在 Noto Sans SC 之前，而实测（canvas 宽度测量法，document.fonts.check 会误报不可用）本机装着观感好得多的思源黑体（Noto Sans SC）却没用上。现按「苹方 → MiSans → 鸿蒙黑体 → 思源黑体 → 微软雅黑」重排，装了思源黑体的机器中文立刻变干净（笔画均匀、屏幕渲染好）；没装的机器回退雅黑，不会比原来差；macOS 继续用苹方',
+      '正文字号放大：工作空间的主力档位 text-sm 14px → 15px、text-xs 12px → 13px（实测页面字号分布 14px×123 → 15px×123、12px×10 → 13px×10），行高同步调整为 1.4rem / 1.125rem。只放大「文字档位」，间距与宽度（w-/p-/gap- 是另一套 rem）不动，避免整站等比膨胀；16px 的标题与大数字保持不变，层次感不受影响',
+      '字体栈收敛为单一事实来源：此前 tailwind.config.js 与 index.css 各写了一份字体栈且两处不一致（这正是中文回退到雅黑的间接原因），现 index.css 改用 theme(fontFamily.sans) 引用配置，杜绝再次漂移',
+      '渲染质量：html 增加 text-rendering: optimizeLegibility，改善中文在 13-15px 小字号下的连字与字距',
+      '验证：全量浏览器用例 36 项通过（含 4 个断点的横向溢出守卫与管理台溢出守卫），确认字号放大后无布局回归',
+    ],
+  },
+  {
     version: 'v5.4',
     date: '2026年9月17日',
     changes: [
