@@ -1,9 +1,10 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   Activity, AlertTriangle, ArrowRight, RefreshCw, Sparkles, Info, ShieldCheck, LineChart as LineChartIcon, Stethoscope, History,
 } from 'lucide-react';
 import api from '@/services/api';
 import { usePageT, useI18n } from '@/i18n';
+import { useToast } from '@/components/ui/Toast';
 import { HealthRadarChart, splitRadarSides } from '@/components/charts/HealthRadarChart';
 
 interface HealthDimension {
@@ -43,6 +44,9 @@ const D = {
     health_title: '经营健康引擎',
     health_subtitle: '自动体检 · 归因诊断 · 历史沉淀（处方由 AI 决策助手开具）',
     refresh: '重新体检',
+    refresh_hint: '正在重新体检，约需 10~30 秒',
+    refresh_done: '体检完成，数据已更新',
+    refresh_fail: '体检失败，请稍后重试',
     level_green: '健康',
     level_yellow: '需关注',
     level_red: '需干预',
@@ -68,6 +72,9 @@ const D = {
     health_title: 'Business Health Engine',
     health_subtitle: 'Auto check-up · diagnosis · history (prescriptions via AI Assistant)',
     refresh: 'Re-check',
+    refresh_hint: 'Re-checking, ~10-30s',
+    refresh_done: 'Check-up done, data updated',
+    refresh_fail: 'Check-up failed, try again later',
     level_green: 'Healthy',
     level_yellow: 'Watch',
     level_red: 'Action needed',
@@ -150,16 +157,21 @@ const TrendSpark: React.FC<{ points: HistoryPoint[]; color: string }> = ({ point
 export const HealthScoreCard: React.FC<{ slug: string }> = ({ slug }) => {
   const t = usePageT(D);
   const { lang } = useI18n();
+  const { addToast } = useToast();
   const [data, setData] = useState<HealthData | null>(null);
   const [loading, setLoading] = useState(true);
   const [history, setHistory] = useState<HistoryPoint[]>([]);
   const [showMethod, setShowMethod] = useState(false);
   const [selectedDim, setSelectedDim] = useState<string | null>(null);
+  const methodRef = useRef<HTMLDivElement>(null);
 
-  const fetchHealth = async () => {
+  const fetchHealth = async (manual = false) => {
+    // @ts-ignore 临时探针
+    console.log('[probe] fetchHealth entered, manual=', manual);
     setLoading(true);
     try {
       // 后端默认 ai=1：千问基于六维画像生成 AI 总结（失败自动回落规则版）
+      // ⚠️ 该端点每次都真实重算 + 调千问，耗时 10~35s —— 必须给用户明确反馈
       const [healthRes, historyRes] = await Promise.all([
         api.get(`/workspaces/${slug}/health?ai=1`, { timeout: 35000 }),
         api.get(`/workspaces/${slug}/health/history?limit=12`, { timeout: 10000 }),
@@ -168,8 +180,11 @@ export const HealthScoreCard: React.FC<{ slug: string }> = ({ slug }) => {
       setHistory((historyRes.data?.items || []).map((it: any) => ({
         score: it.score, level: it.level, created_at: it.created_at,
       })));
+      // 只在手动「重新体检」时提示；页面首载不弹（否则每次进页面都弹）
+      if (manual) addToast('success', t('refresh_done'));
     } catch {
-      setData(null);
+      // 重新体检失败时保留旧数据（清空会让整卡变成一条加载文案），只报错
+      addToast('error', t('refresh_fail'));
     } finally {
       setLoading(false);
     }
@@ -179,6 +194,18 @@ export const HealthScoreCard: React.FC<{ slug: string }> = ({ slug }) => {
     fetchHealth();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [slug]);
+
+  // 评分方法弹层：点击弹层与两个按钮之外的区域时关闭
+  useEffect(() => {
+    if (!showMethod) return;
+    const onDown = (e: MouseEvent) => {
+      if (methodRef.current && !methodRef.current.contains(e.target as Node)) {
+        setShowMethod(false);
+      }
+    };
+    document.addEventListener('mousedown', onDown);
+    return () => document.removeEventListener('mousedown', onDown);
+  }, [showMethod]);
 
   const scrollToPrescription = () => {
     document.getElementById('ai-decision-panel')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -277,22 +304,63 @@ export const HealthScoreCard: React.FC<{ slug: string }> = ({ slug }) => {
             <p className="text-[13px] text-gray-400 dark:text-gray-500 mt-1">{t('health_subtitle')}</p>
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div ref={methodRef} className="relative flex items-center gap-2">
+          {/* 重新体检进行中：给一个当前视口内**立刻可见**的状态提示（完成/失败另有 toast）。
+              该端点每次都真实重算并调千问（10~35s），只靠 16px 图标转圈会被当成「没反应」。 */}
+          {loading && (
+            <span
+              className="inline-flex items-center gap-1.5 text-[12px] font-semibold text-primary-600 dark:text-primary-300 px-2.5 py-1 rounded-full bg-primary-50 dark:bg-primary-500/10"
+              role="status"
+            >
+              <RefreshCw size={12} className="animate-spin" />
+              {t('refresh_hint')}
+            </span>
+          )}
           <button
             onClick={() => setShowMethod(s => !s)}
             title={t('score_method')}
+            aria-expanded={showMethod}
             className={`p-2 rounded-lg transition-colors ${showMethod ? 'text-primary-600 bg-primary-50 dark:bg-primary-500/10' : 'text-gray-400 hover:text-primary-500 hover:bg-gray-50 dark:hover:bg-gray-700/50'}`}
           >
             <Info size={16} />
           </button>
           <button
-            onClick={fetchHealth}
+            onClick={() => { console.log('[probe] refresh onClick fired'); fetchHealth(true); }}
             disabled={loading}
-            title={t('refresh')}
-            className="p-2 rounded-lg text-gray-400 hover:text-primary-500 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors"
+            title={loading ? t('refresh_hint') : t('refresh')}
+            aria-busy={loading}
+            className={`p-2 rounded-lg transition-colors ${
+              loading
+                ? 'text-primary-600 bg-primary-50 dark:bg-primary-500/10 cursor-wait'
+                : 'text-gray-400 hover:text-primary-500 hover:bg-gray-50 dark:hover:bg-gray-700/50'
+            }`}
           >
             <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
           </button>
+
+          {/* 评分方法弹层：紧贴按钮下方弹出（原来藏在页面很下方的雷达卡之后，
+              点击后视口内毫无变化，会被当成「按钮没反应」） */}
+          {showMethod && (
+            <div
+              data-testid="score-method-popover"
+              className="absolute right-0 top-full mt-2 w-[320px] rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-xl z-30 p-4 text-left"
+            >
+              <div className="flex items-center gap-2 mb-2.5">
+                <ShieldCheck size={13} className="text-primary-500" />
+                <span className="text-[12px] font-bold text-gray-600 dark:text-gray-300 tracking-wide">
+                  {t('score_method_title')}
+                </span>
+              </div>
+              <div className="space-y-2">
+                {data.dimensions.map((dim) => (
+                  <div key={dim.key} className="flex items-start gap-2 text-[12px] text-gray-500 dark:text-gray-400 leading-relaxed">
+                    <span className="font-semibold text-gray-600 dark:text-gray-300 whitespace-nowrap flex-shrink-0">{dim.name}</span>
+                    <span>{DIM_DESC[dim.key]?.[lang] || ''}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
@@ -430,23 +498,6 @@ export const HealthScoreCard: React.FC<{ slug: string }> = ({ slug }) => {
                 {history.length === 1 ? t('first_check') : t('trend_empty')}
               </span>
             )}
-          </div>
-        </div>
-
-        {/* 评分方法弹层 */}
-        <div className={`mt-5 rounded-xl border border-gray-100 dark:border-gray-700/60 bg-gray-50/70 dark:bg-gray-800/40 transition-all ${showMethod ? 'block' : 'hidden'}`}>
-          <div className="flex items-center gap-2 px-4 pt-3">
-            <ShieldCheck size={13} className="text-primary-500" />
-            <span className="text-[12px] font-bold text-gray-600 dark:text-gray-300 tracking-wide">{t('score_method_title')}</span>
-            <span className="h-px flex-1 bg-gray-100 dark:bg-gray-700/60" />
-          </div>
-          <div className="px-4 py-3 grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2">
-            {data.dimensions.map((dim) => (
-              <div key={dim.key} className="flex items-start gap-2 text-[12px] text-gray-500 dark:text-gray-400 leading-relaxed">
-                <span className="font-semibold text-gray-600 dark:text-gray-300 whitespace-nowrap flex-shrink-0">{dim.name}</span>
-                <span>{DIM_DESC[dim.key]?.[lang] || ''}</span>
-              </div>
-            ))}
           </div>
         </div>
       </div>

@@ -128,4 +128,39 @@ test.describe('六维雷达图两侧评分卡', () => {
       expect(c.y, `卡片「${c.name}」应在雷达图下方`).toBeGreaterThan(0);
     }
   });
+
+  test('header 按钮：评分方法弹层就近弹出，重新体检有完成反馈', async ({ page }) => {
+    test.setTimeout(180_000);
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await openHealthCard(page);
+
+    // ── 评分方法：弹层必须紧贴按钮出现在当前视口内 ──
+    // （原来弹层藏在页面很下方的雷达卡之后，点了视口内毫无变化，会被当成「没反应」）
+    const infoBtn = page.locator('#health-engine-card button[title="评分方法"]');
+    await infoBtn.click();
+    const pop = page.getByTestId('score-method-popover');
+    await expect(pop).toBeVisible();
+    const popBox = (await pop.boundingBox())!;
+    const btnBox = (await infoBtn.boundingBox())!;
+    expect(
+      Math.abs(popBox.y - (btnBox.y + btnBox.height)),
+      '弹层应紧贴按钮下方（间距 <24px）',
+    ).toBeLessThan(24);
+    expect(
+      popBox.y + popBox.height,
+      '弹层应完整落在当前视口内（原实现会在视口外）',
+    ).toBeLessThanOrEqual(900);
+    await expect(pop).toContainText('现金流');
+    // 点击弹层外 → 关闭
+    await page.getByRole('heading', { name: '工作台' }).click();
+    await expect(pop).toBeHidden();
+
+    // ── 重新体检：端点每次都真实重算并调千问（10~35s），完成后必有 toast 反馈。
+    // 不断言瞬时 disabled/pill —— 后端偶发极快返回时该状态一闪而过，断言会竞态。
+    await page.locator('#health-engine-card button[title*="体检"]').click();
+    await expect(
+      page.getByText(/体检完成，数据已更新|体检失败/),
+      '重新体检后必须有明确的完成/失败反馈',
+    ).toBeVisible({ timeout: 90_000 });
+  });
 });
