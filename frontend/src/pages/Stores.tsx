@@ -26,6 +26,7 @@ import { PageHeader } from '@/components/ui/PageHeader';
 import { Input } from '@/components/ui/Input';
 import { Badge } from '@/components/ui/Badge';
 import { Modal, ModalFooter } from '@/components/ui/Modal';
+import { Portal } from '@/components/ui/Portal';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { storeService } from '@/services/ecommerce';
 import type {
@@ -1066,8 +1067,10 @@ export const Stores: React.FC = () => {
         </div>
       </Modal>
 
-      {/* 写操作结果（库存/价格/发货共用） */}
+      {/* 写操作结果（库存/价格/发货共用）。走 Portal：本页根节点是 space-y-6，
+          会给子元素强加 margin-top，把底部浮层顶出视口。 */}
       {writeResult && (
+        <Portal>
         <div className="fixed inset-x-0 bottom-0 z-[70] flex justify-center px-4 pb-4 pointer-events-none">
           <div className="pointer-events-auto w-full max-w-lg rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-lg p-3 text-xs">
             <p className="font-medium text-gray-800 dark:text-gray-100 mb-1">
@@ -1092,6 +1095,7 @@ export const Stores: React.FC = () => {
             </button>
           </div>
         </div>
+        </Portal>
       )}
 
       {/* 库存 / 价格批量回写 */}

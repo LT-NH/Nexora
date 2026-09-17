@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { Building2, Search, RefreshCw, PauseCircle, PlayCircle, Users as UsersIcon, X, Package, ShoppingBag, Activity } from 'lucide-react';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
+import { Portal } from '@/components/ui/Portal';
 import api from '@/services/api';
 
 interface WsRow {
@@ -156,8 +157,9 @@ export const AdminWorkspaces: React.FC = () => {
         </div>
       </Card>
 
-      {/* 详情弹窗 */}
+      {/* 详情弹窗（走 Portal，避免被页面容器的排版规则挤偏） */}
       {detail && (
+        <Portal>
         <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={() => setDetail(null)}>
           <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-2xl max-h-[85vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between px-6 py-4 border-b border-[#E4E6DC] dark:border-gray-700">
@@ -253,6 +255,7 @@ export const AdminWorkspaces: React.FC = () => {
             )}
           </div>
         </div>
+        </Portal>
       )}
     </div>
   );

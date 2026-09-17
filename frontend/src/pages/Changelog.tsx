@@ -11,6 +11,19 @@ interface ChangelogEntry {
 
 const changelogData: ChangelogEntry[] = [
   {
+    version: 'v5.4',
+    date: '2026年9月17日',
+    changes: [
+      '修复全站弹窗遮罩错位：「添加店铺」弹窗的背景没有铺满屏幕、面板标题被裁掉。实测（1280×720）遮罩落在 x=240 / y=24 / 1040×509，而正确值应是整个视口 1280×720',
+      '根因一：AppLayout 内容层写着 Tailwind 的裸 `transform` 工具类 —— 它输出 translate(0,0) rotate(0) … scale(1)，计算值是 matrix(1,0,0,1,0,0) 而**不是 none**，按 CSS 规范会成为 `position: fixed` 后代的包含块，于是所有弹窗遮罩改为相对该容器定位而不是视口。已用 `relative isolate` 精确替代：保留「绝对定位包含块」与「层叠上下文」两个副作用，唯独解除对 fixed 的约束；侧栏展开动画只过渡 margin，本就不需要 transform',
+      '根因二：页面根节点用 `space-y-6` 做间距，而该工具类展开后会给「除第一个之外的所有子元素」强加 `margin-top: 1.5rem`。一个同时设了 top 和 bottom 且 height:auto 的全屏遮罩，被这 24px 的 margin 挤成 y=24 / h=696。实测两个问题叠加在同一元素上',
+      '新增 `ui/Portal` 组件：把浮层挂到 document.body，与祖先的排版与样式彻底解耦，同时免疫上述两类问题。`ui/Modal`（全站弹窗基座）、支付弹窗、库存流水、批量编辑、商品图片灯箱、订单批量打单打印区、超管台额度校准与工作空间详情弹窗、店铺页写操作结果条共 9 处接入',
+      '对暗色模式无影响：本项目 darkMode 为 class 模式且挂在 html 根节点上，body 仍在 html 内；React 事件沿组件树冒泡，弹窗的焦点陷阱与滚动锁行为不变（新增用例验证）',
+      '新增浏览器回归守卫 `e2e/modal-backdrop.spec.ts`（5 项）：断言遮罩必须**精确覆盖视口**（±1px）、面板必须完整落在视口内（含 1280×720 与 390×844 两种尺寸）、管理台自绘遮罩同样成立、弹窗打开后滚动锁生效。守卫断言的是行为不变量而非某个类名，日后无论谁在任何祖先上加了 transform / filter / perspective / contain 都会立刻被抓住',
+      '附带修复：订单「批量打单」打印区此前同样被挤偏 24px，打印内容会错位 —— 一并修正',
+    ],
+  },
+  {
     version: 'v5.3',
     date: '2026年9月17日',
     changes: [

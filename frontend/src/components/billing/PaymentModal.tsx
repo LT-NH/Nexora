@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { X, QrCode, CheckCircle, AlertCircle, Clock, Copy, ExternalLink } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
+import { Portal } from '@/components/ui/Portal';
 import { useToast } from '@/components/ui/Toast';
 
 interface PaymentModalProps {
@@ -80,11 +81,12 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
   };
 
   return (
-    <div
-      ref={overlayRef}
-      onClick={handleOverlayClick}
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-fade-in"
-    >
+    <Portal>
+      <div
+        ref={overlayRef}
+        onClick={handleOverlayClick}
+        className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-fade-in"
+      >
       <div
         className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden animate-scale-in"
         role="dialog"
@@ -195,6 +197,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
           </p>
         </div>
       </div>
-    </div>
+      </div>
+    </Portal>
   );
 };

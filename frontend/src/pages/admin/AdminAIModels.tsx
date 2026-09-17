@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
+import { Portal } from '@/components/ui/Portal';
 import api from '@/services/api';
 import { useToast } from '@/components/ui/Toast';
 
@@ -886,8 +887,11 @@ export const AdminAIModels: React.FC = () => {
         )}
       </Card>
 
-      {/* 免费额度校准弹窗（官方无查询 API，只能一次性对齐真实数字） */}
+      {/* 免费额度校准弹窗（官方无查询 API，只能一次性对齐真实数字）。
+          浮层必须走 Portal：本页根节点是 space-y-6，会给子元素强加 margin-top:24px，
+          把 fixed inset-0 的遮罩挤成 y=24 / h=696（实测），铺不满视口。 */}
       {calibrating && (
+        <Portal>
         <div
           className="fixed inset-0 z-[80] flex items-center justify-center bg-black/40 p-4"
           onClick={() => setCalibrating(null)}
@@ -1017,6 +1021,7 @@ export const AdminAIModels: React.FC = () => {
             </div>
           </div>
         </div>
+        </Portal>
       )}
     </div>
   );

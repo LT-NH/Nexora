@@ -36,6 +36,7 @@ import { PageHeader } from '@/components/ui/PageHeader';
 import { Input } from '@/components/ui/Input';
 import { Badge } from '@/components/ui/Badge';
 import { Modal, ModalFooter } from '@/components/ui/Modal';
+import { Portal } from '@/components/ui/Portal';
 import { Table } from '@/components/ui/Table';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { AIProductGenerator } from '@/components/ecommerce/AIProductGenerator';
@@ -1554,8 +1555,10 @@ export const Products: React.FC = () => {
         </Card>
       )}
 
-      {/* Image Lightbox（背景淡入 + 图片缩放浮现） */}
+      {/* Image Lightbox（背景淡入 + 图片缩放浮现）。走 Portal 以免被页面容器
+          的排版规则（space-y-* 的 margin-top、祖先 transform）挤偏。 */}
       {enlargedImage && (
+        <Portal>
         <div
           className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 cursor-pointer animate-fade-in"
           onClick={() => setEnlargedImage(null)}
@@ -1573,6 +1576,7 @@ export const Products: React.FC = () => {
             <X size={32} />
           </button>
         </div>
+        </Portal>
       )}
 
       {/* 商品创建/编辑 Modal */}
@@ -1850,8 +1854,9 @@ export const Products: React.FC = () => {
           />
         </div>
       </Modal>
-      {/* 批量编辑模态 */}
+      {/* 批量编辑模态（走 Portal，避免被容器排版规则挤偏） */}
       {batchField && (
+        <Portal>
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => setBatchField(null)}>
           <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-6 w-full max-w-sm" onClick={(e) => e.stopPropagation()}>
             <h3 className="text-lg font-bold text-slate-900 dark:text-gray-100 mb-1">{t('batch_edit_title')}</h3>
@@ -1875,10 +1880,12 @@ export const Products: React.FC = () => {
             </div>
           </div>
         </div>
+        </Portal>
       )}
 
-      {/* 库存流水弹窗 */}
+      {/* 库存流水弹窗（走 Portal） */}
       {showMovements && (
+        <Portal>
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => setShowMovements(false)}>
           <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl w-full max-w-md p-5" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-4">
@@ -1910,6 +1917,7 @@ export const Products: React.FC = () => {
             )}
           </div>
         </div>
+        </Portal>
       )}
     </div>
   );

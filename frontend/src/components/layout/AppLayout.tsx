@@ -143,9 +143,24 @@ export const AppLayout: React.FC = () => {
         <Sidebar onNavigate={() => setSidebarOpen(false)} railOpen={railOpen} />
       </div>
 
-      {/* Main content - 边距与侧边栏宽度同步过渡 */}
+      {/*
+        Main content - 边距与侧边栏宽度同步过渡。
+
+        ⚠️ 这里**不能**写 `transform`（哪怕是裸的 `transform` 工具类）。
+        Tailwind 的 `transform` 会输出 `translate(0,0) rotate(0) … scale(1)`，
+        计算值是 matrix(1,0,0,1,0,0) —— **不是 none**，于是本容器成为
+        `position: fixed` 后代的包含块，所有弹窗遮罩都会相对它定位而不是视口。
+        实测（1280×720）：遮罩落在 x=240 / y=24 / 1040×509，而正确值是整个视口，
+        表现为「遮罩铺不满、面板被顶出屏幕、标题被裁掉」。
+
+        用 `relative isolate` 精确替代 `transform`：
+          - `relative` → 保留「绝对定位包含块」（原 transform 也提供这个）
+          - `isolate`  → 保留「层叠上下文」（原 transform 也提供这个）
+        两者都**不**创建 fixed 包含块，所以 fixed 浮层重新相对视口定位。
+        动画只过渡 margin，本来也不需要 transform。
+      */}
       <div
-        className={`bg-tech-dots transform transition-[margin] duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] ${
+        className={`bg-tech-dots relative isolate transition-[margin] duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] ${
           railOpen ? 'md:ml-60' : 'md:ml-[72px]'
         }`}
       >
@@ -160,13 +175,17 @@ export const AppLayout: React.FC = () => {
       </div>
 
       {/*
-        所有 fixed 浮层必须放在上面那个带 transform 的容器「之外」。
+        浮层区：FeedbackWidget / OnboardingWizard / AIAssistant 统一挂在这一层
+        （内容层之外、根节点之下）。
 
-        CSS 规范：祖先元素带 transform 时，其 position: fixed 的后代会改为
-        **相对该祖先**定位，而不是相对视口。实测踩坑：FeedbackWidget 一直写在
-        `bottom-24 right-6`，但因为被这个容器裹着，实际落在视口偏上
-        （bottom 实测 670px，而 24px 才是预期），且引导层的全屏遮罩也铺不满。
-        AIAssistant 当初就是因此被移出来的 —— 这里把剩下两个补齐。
+        这一层不是「必须」的 —— 内容层已经用 `relative isolate` 取代了原先的
+        `transform`，不再是 fixed 的包含块。保持独立仍有两个好处：
+          1. 浮层不参与内容层的层叠上下文，z-index 关系更简单可预测；
+          2. 内容层的 margin 过渡动画不会波及浮层。
+
+        更根本的保险在组件侧：`ui/Modal` 用 portal 挂到 body，与祖先样式彻底解耦；
+        `e2e/floating-actions.spec.ts` 与 `e2e/modal-backdrop.spec.ts` 负责守住
+        「浮层必须相对视口定位」这条不变量。
       */}
       <FeedbackWidget />
       <OnboardingWizard />

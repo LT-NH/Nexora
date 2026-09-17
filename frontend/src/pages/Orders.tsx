@@ -27,6 +27,7 @@ import { Input } from '@/components/ui/Input';
 import { Badge } from '@/components/ui/Badge';
 import { Table } from '@/components/ui/Table';
 import { Modal, ModalFooter } from '@/components/ui/Modal';
+import { Portal } from '@/components/ui/Portal';
 import { StatsOverview } from '@/components/ecommerce/StatsOverview';
 import { orderService } from '@/services/ecommerce';
 import type { Order, OrderStatus, OrderStats, PaymentStatus } from '@/types/ecommerce';
@@ -2077,8 +2078,10 @@ export const Orders: React.FC = () => {
           isLoading={deleteLoading}
         />
       </Modal>
-      {/* 批量打单（打印视图） */}
+      {/* 批量打单（打印视图）。走 Portal：本页根节点是 space-y-6，会给子元素强加
+          margin-top，把 fixed inset-0 的打印区挤成 y=24 / 少 24px 高 —— 打印内容会错位。 */}
       {showPrint && (
+        <Portal>
         <div className="fixed inset-0 z-50 bg-white dark:bg-gray-900 overflow-y-auto print-area" onClick={() => setShowPrint(false)}>
           <div className="sticky top-0 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700 z-10 px-6 py-3 flex items-center justify-between print:hidden" onClick={(e) => e.stopPropagation()}>
             <h3 className="text-base font-bold text-slate-900 dark:text-gray-100">{t('batch_print')}（{printOrders.length} 单）</h3>
@@ -2109,6 +2112,7 @@ export const Orders: React.FC = () => {
             ))}
           </div>
         </div>
+        </Portal>
       )}
     </div>
 

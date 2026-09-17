@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useCallback } from 'react';
 import { X } from 'lucide-react';
 import { Button } from './Button';
+import { Portal } from './Portal';
 
 interface ModalProps {
   isOpen: boolean;
@@ -100,7 +101,10 @@ export const Modal: React.FC<ModalProps> = ({
     if (e.target === overlayRef.current) onClose();
   };
 
-  return (
+  // 浮层交给 Portal 挂到 body —— 详见 Portal.tsx 里记录的两种踩坑：
+  // 祖先 transform 会让 fixed 相对祖先定位；父级 space-y-* 会给子元素强加
+  // margin-top 把全屏遮罩挤小。挂到 body 下同时免疫这两种。
+  const overlay = (
     <div
       ref={overlayRef}
       onClick={handleOverlayClick}
@@ -130,6 +134,8 @@ export const Modal: React.FC<ModalProps> = ({
       </div>
     </div>
   );
+
+  return <Portal>{overlay}</Portal>;
 };
 
 interface ModalFooterProps {
