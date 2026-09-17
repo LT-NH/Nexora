@@ -89,6 +89,13 @@ class Store(Base):
         default=StoreStatus.DISCONNECTED,
         nullable=False,
     )
+    # 是否走平台沙箱环境（淘宝 TOP 有独立沙箱网关；京东/拼多多暂无公开沙箱）
+    sandbox: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default="0",
+    )
     last_sync_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True),
         nullable=True,

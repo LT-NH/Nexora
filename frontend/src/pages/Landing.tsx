@@ -235,7 +235,7 @@ const pricingPlans = [
 const faqs = [
   {
     q: 'Nexora 支持哪些电商平台？',
-    a: '目前完整支持 Shopify、抖音和沙盒离线测试环境。淘宝、京东、Amazon 平台适配器框架已就绪，新增平台只需实现 4 个接口方法。',
+    a: '已完成真实接口对接的有 Shopify、抖音、淘宝 / 天猫、京东、拼多多，以及沙盒离线测试环境：六家都支持商品、订单、客户的拉取，淘宝 / 京东 / 拼多多还支持库存与价格的批量回写、发货回填（双向同步）。Amazon 适配器仍在开发中。需要注意的是，淘宝 / 京东 / 拼多多的订单类接口对企业开发者开放，个人账号申请不到相应权限。',
   },
   {
     q: '我的数据安全如何保证？',
@@ -1281,7 +1281,7 @@ export const Landing: React.FC = () => {
               <Reveal>
                 <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-white/70 border border-violet-100 text-violet-700 text-sm font-medium shadow-sm backdrop-blur">
                   <span className="w-2 h-2 rounded-full bg-gradient-to-r from-violet-500 to-fuchsia-500 animate-pulse-glow" />
-                  v5.2 现已发布
+                  v5.3 现已发布
                   <span className="text-violet-300">·</span>
                   <span className="text-[#8e8e93]">6 大平台已接入</span>
                 </div>

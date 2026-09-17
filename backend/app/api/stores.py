@@ -19,10 +19,18 @@ from app.models.store import Store, StorePlatform, StoreStatus
 from app.models.user import User
 from app.models.workspace import WorkspaceRole
 from app.schemas.store import (
+    InventoryWriteRequest,
+    PlatformCapabilityInfo,
+    PriceWriteRequest,
+    ShipRequest,
     StoreCreate,
     StoreResponse,
     StoreUpdate,
+    WriteOpResponse,
 )
+from app.services.platforms import get_integration
+from app.services.platforms.base import PlatformCapability, WriteResult
+from app.services.platforms.catalog import platform_catalog
 from app.services.store import StoreService
 from app.utils.logging import get_logger
 from app.utils.pagination import PaginatedResponse, PaginationParams
@@ -66,6 +74,26 @@ async def list_stores(
 
     items = [_build_store_response(s) for s in stores]
     return PaginatedResponse.create(items=items, total=total, params=pagination)
+
+
+# 注意：此路由必须放在 `/{store_id}` 之前，否则 "platforms" 会被当成 store_id
+@router.get(
+    "/platforms",
+    response_model=list[PlatformCapabilityInfo],
+    summary="List platform integration capabilities",
+)
+async def list_platforms(
+    slug: str,
+    principal: Annotated[AuthContext, Depends(get_principal)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> list[PlatformCapabilityInfo]:
+    """返回各平台的接入能力、凭证字段与资质门槛。
+
+    前端据此渲染表单，并**只为支持写能力的平台显示回写入口** ——
+    避免商家点了按钮才发现自己账号没有接口权限。
+    """
+    await _require_member(slug, principal, db, WorkspaceRole.VIEWER)
+    return [PlatformCapabilityInfo(**item) for item in platform_catalog()]
 
 
 @router.post(
@@ -457,6 +485,183 @@ async def test_store_connection(
 # ===========================================================================
 
 
+# ===========================================================================
+# 双向同步 —— 写操作（库存回写 / 价格回写 / 发货回填）
+# ===========================================================================
+
+
+async def _load_writable_store(
+    slug: str,
+    store_id: str,
+    principal: AuthContext,
+    db: AsyncSession,
+    capability: PlatformCapability,
+):
+    """取出店铺与适配器，并**先校验平台是否真的声明了这项写能力**。
+
+    校验放在最前面：不支持就直接 400 并说明原因，而不是发一个注定失败的
+    请求、再让用户对着平台报错猜。返回 (workspace, store, integration, config)。
+    """
+    workspace, _ = await _require_member(slug, principal, db, WorkspaceRole.MEMBER)
+
+    result = await db.execute(
+        select(Store).where(
+            Store.id == store_id,
+            Store.workspace_id == workspace.id,
+        )
+    )
+    store = result.scalar_one_or_none()
+    if store is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Store not found."
+        )
+
+    platform = (
+        store.platform.value
+        if hasattr(store.platform, "value")
+        else str(store.platform)
+    )
+    integration = get_integration(platform)
+    if integration is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"平台「{platform}」暂无可用适配器。",
+        )
+    if not integration.supports(capability):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                f"平台「{platform}」当前不支持该操作，"
+                "可调用 GET .../stores/platforms 查看各平台能力。"
+            ),
+        )
+
+    config = await StoreService.get_plain_credentials(store)
+    # 沙箱开关必须带上，否则适配器会打到生产网关 —— 在沙箱店铺做写操作
+    # 会直接改到真实商品数据。
+    config["sandbox"] = bool(store.sandbox)
+    return workspace, store, integration, config
+
+
+def _to_write_response(result: WriteResult) -> WriteOpResponse:
+    return WriteOpResponse(
+        operation=result.operation,
+        ok=result.ok,
+        succeeded=result.succeeded,
+        failed=result.failed,
+        total=result.total,
+        errors=result.errors[:50],
+        details=result.details[:50],
+    )
+
+
+@router.post(
+    "/{store_id}/inventory",
+    response_model=WriteOpResponse,
+    summary="Push inventory to the platform",
+)
+async def push_inventory(
+    slug: str,
+    store_id: str,
+    payload: InventoryWriteRequest,
+    principal: Annotated[AuthContext, Depends(get_principal)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> WriteOpResponse:
+    """把本地库存回写到平台（双向同步的「写」方向）。"""
+    workspace, store, integration, config = await _load_writable_store(
+        slug, store_id, principal, db, PlatformCapability.WRITE_INVENTORY
+    )
+    result = await integration.update_inventory(
+        config, workspace.id, [item.model_dump() for item in payload.items]
+    )
+    await _audit_write(db, workspace, principal, store, "store.inventory_pushed", result)
+    return _to_write_response(result)
+
+
+@router.post(
+    "/{store_id}/price",
+    response_model=WriteOpResponse,
+    summary="Push prices to the platform",
+)
+async def push_price(
+    slug: str,
+    store_id: str,
+    payload: PriceWriteRequest,
+    principal: Annotated[AuthContext, Depends(get_principal)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> WriteOpResponse:
+    """把本地价格回写到平台。
+
+    注意：部分平台（如淘宝）价格回写有前置条件，逐条错误会体现在
+    ``errors`` 里，不会因为单条失败就把整批吞掉。
+    """
+    workspace, store, integration, config = await _load_writable_store(
+        slug, store_id, principal, db, PlatformCapability.WRITE_PRICE
+    )
+    result = await integration.update_price(
+        config, workspace.id, [item.model_dump() for item in payload.items]
+    )
+    await _audit_write(db, workspace, principal, store, "store.price_pushed", result)
+    return _to_write_response(result)
+
+
+@router.post(
+    "/{store_id}/orders/{order_number}/ship",
+    response_model=WriteOpResponse,
+    summary="Push shipment (tracking number) to the platform",
+)
+async def push_shipment(
+    slug: str,
+    store_id: str,
+    order_number: str,
+    payload: ShipRequest,
+    principal: Annotated[AuthContext, Depends(get_principal)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> WriteOpResponse:
+    """发货回填：把运单号 + 物流公司写回平台。"""
+    workspace, store, integration, config = await _load_writable_store(
+        slug, store_id, principal, db, PlatformCapability.SHIP_ORDER
+    )
+    result = await integration.ship_order(
+        config,
+        workspace.id,
+        order_number,
+        payload.tracking_number,
+        payload.carrier,
+    )
+    await _audit_write(db, workspace, principal, store, "store.shipped", result)
+    return _to_write_response(result)
+
+
+async def _audit_write(
+    db: AsyncSession,
+    workspace,
+    principal: AuthContext,
+    store: Store,
+    action: str,
+    result: WriteResult,
+) -> None:
+    """写操作留痕 —— 回写会直接改动线上商品/订单，必须可追溯。"""
+    await create_audit_log(
+        db=db,
+        workspace_id=workspace.id,
+        user_id=principal.user_id,
+        action=action,
+        resource_type="store",
+        resource_id=store.id,
+        details={
+            "platform": (
+                store.platform.value
+                if hasattr(store.platform, "value")
+                else str(store.platform)
+            ),
+            "sandbox": bool(store.sandbox),
+            "succeeded": result.succeeded,
+            "failed": result.failed,
+        },
+    )
+
+
 def _build_store_response(store: Store) -> StoreResponse:
     """Build a StoreResponse from a Store model instance."""
     status_val = store.status.value if hasattr(store.status, "value") else store.status
@@ -470,6 +675,7 @@ def _build_store_response(store: Store) -> StoreResponse:
         store_url=store.store_url,
         api_key=store.api_key,
         access_token=masked_token,
+        sandbox=bool(store.sandbox),
         status=status_val,
         last_sync_at=store.last_sync_at,
         auto_sync_enabled=bool(store.auto_sync_enabled),
@@ -498,6 +704,7 @@ def _create_store_orm(db: AsyncSession, workspace, store_data: StoreCreate) -> S
         api_secret=secret_enc,
         access_token=token_enc,
         status=StoreStatus.DISCONNECTED,
+        sandbox=bool(store_data.sandbox),
         auto_sync_enabled=store_data.auto_sync_enabled,
         sync_interval_minutes=store_data.sync_interval_minutes,
     )

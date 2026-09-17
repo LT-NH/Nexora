@@ -17,6 +17,9 @@ import type {
   Store,
   StoreCreateRequest,
   StoreUpdateRequest,
+  PlatformInfo,
+  WriteOpResult,
+  ShipRequest,
   AIGenerateRequest,
   AIGenerateResponse,
   Coupon,
@@ -269,6 +272,61 @@ export const storeService = {
   async testConnection(workspaceSlug: string, storeId: string): Promise<{ ok: boolean; message: string }> {
     const response = await api.post<{ ok: boolean; message: string }>(
       `/workspaces/${workspaceSlug}/stores/${storeId}/test`,
+    );
+    return response.data;
+  },
+
+  /**
+   * 平台能力目录：各平台的凭证字段、支持的操作、资质门槛。
+   * 前端不硬编码平台能力，一律以此为准。
+   */
+  async getPlatforms(workspaceSlug: string): Promise<PlatformInfo[]> {
+    const response = await api.get<PlatformInfo[]>(
+      `/workspaces/${workspaceSlug}/stores/platforms`,
+    );
+    return response.data;
+  },
+
+  /** 库存回写（双向同步的写方向） */
+  async pushInventory(
+    workspaceSlug: string,
+    storeId: string,
+    items: { sku: string; stock: number; sku_id?: string }[],
+  ): Promise<WriteOpResult> {
+    const response = await api.post<WriteOpResult>(
+      `/workspaces/${workspaceSlug}/stores/${storeId}/inventory`,
+      { items },
+      // 逐条调用平台接口，条数多时耗时较长
+      { timeout: 120000 },
+    );
+    return response.data;
+  },
+
+  /** 价格回写 */
+  async pushPrice(
+    workspaceSlug: string,
+    storeId: string,
+    items: { sku: string; price: number; sku_id?: string }[],
+  ): Promise<WriteOpResult> {
+    const response = await api.post<WriteOpResult>(
+      `/workspaces/${workspaceSlug}/stores/${storeId}/price`,
+      { items },
+      { timeout: 120000 },
+    );
+    return response.data;
+  },
+
+  /** 发货回填（运单号 + 物流公司） */
+  async pushShipment(
+    workspaceSlug: string,
+    storeId: string,
+    orderNumber: string,
+    data: ShipRequest,
+  ): Promise<WriteOpResult> {
+    const response = await api.post<WriteOpResult>(
+      `/workspaces/${workspaceSlug}/stores/${storeId}/orders/${encodeURIComponent(orderNumber)}/ship`,
+      data,
+      { timeout: 60000 },
     );
     return response.data;
   },

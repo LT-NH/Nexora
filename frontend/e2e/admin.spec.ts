@@ -130,8 +130,25 @@ test.describe('超管管理台', () => {
 
     const activeCard = page.locator('div.border-violet-200').first();
     await expect(activeCard).toBeVisible({ timeout: 30_000 });
+
+    // ── 前置：把活跃模型归一到「未校准」态 ──
+    // 「≈ 剩余」是未校准时的展示口径。若上一次运行中断在校准之后，
+    // 库里会留下 quota_used_base，UI 就变成精确值，用例会**误报失败**——
+    // 断言不能依赖环境残留状态，所以这里显式归一。
+    await page.getByRole('button', { name: '校准额度' }).click();
+    await expect(page.getByText('校准免费额度')).toBeVisible();
+
+    const clearBtn = page.getByRole('button', { name: '清除校准' });
+    if ((await clearBtn.count()) > 0) {
+      await clearBtn.click();
+    } else {
+      // 未校准时没有「清除校准」按钮 → 直接关掉弹窗
+      const cancelBtn = page.getByRole('button', { name: '取消' });
+      if ((await cancelBtn.count()) > 0) await cancelBtn.click();
+    }
+
     // 未校准时带「≈」前缀（按本机记录推算，零手动就有数字）
-    await expect(activeCard.getByText(/≈ 剩余 /)).toBeVisible();
+    await expect(activeCard.getByText(/≈ 剩余 /)).toBeVisible({ timeout: 30_000 });
 
     await page.getByRole('button', { name: '校准额度' }).click();
     await expect(page.getByText('校准免费额度')).toBeVisible();

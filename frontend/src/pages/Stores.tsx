@@ -10,6 +10,11 @@ import {
   CheckCircle,
   XCircle,
   PlugZap,
+  Boxes,
+  Tag,
+  Truck,
+  FlaskConical,
+  Info,
 } from 'lucide-react';
 import { useWorkspace } from '@/hooks/useWorkspace';
 import { usePageTitle } from '@/hooks/usePageTitle';
@@ -23,10 +28,28 @@ import { Badge } from '@/components/ui/Badge';
 import { Modal, ModalFooter } from '@/components/ui/Modal';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { storeService } from '@/services/ecommerce';
-import type { Store, StorePlatform, StoreStatus } from '@/types/ecommerce';
+import type {
+  Store,
+  StorePlatform,
+  StoreStatus,
+  PlatformInfo,
+  PlatformCapability,
+  WriteOpResult,
+} from '@/types/ecommerce';
 import { usePageT, type Lang } from '@/i18n';
 
 type T = (key: string, fallback?: string) => string;
+
+/** 能力 → i18n key + 图标（写操作入口按能力渲染，不支持就完全不显示） */
+const CAPABILITY_META: Record<
+  PlatformCapability,
+  { labelKey: string; icon: React.ReactNode }
+> = {
+  read: { labelKey: 'cap_read', icon: <RefreshCw size={12} /> },
+  write_inventory: { labelKey: 'cap_write_inventory', icon: <Boxes size={12} /> },
+  write_price: { labelKey: 'cap_write_price', icon: <Tag size={12} /> },
+  ship_order: { labelKey: 'cap_ship_order', icon: <Truck size={12} /> },
+};
 
 const D = {
   zh: {
@@ -105,6 +128,36 @@ const D = {
     st_connected: '已连接',
     st_disconnected: '已断开',
     st_error: '错误',
+    // ── 平台能力与双向同步 ──
+    label_sandbox: '使用沙箱环境',
+    sandbox_hint: '走平台沙箱网关，不会影响线上商品与订单数据',
+    sandbox_unsupported: '该平台暂无公开沙箱环境',
+    qualification_title: '接入资质提示',
+    capabilities_title: '支持的操作',
+    cap_read: '数据拉取',
+    cap_write_inventory: '库存回写',
+    cap_write_price: '价格回写',
+    cap_ship_order: '发货回填',
+    btn_push_inventory: '回写库存',
+    btn_push_price: '回写价格',
+    btn_ship: '发货',
+    write_inventory_title: '批量回写库存',
+    write_price_title: '批量回写价格',
+    write_ship_title: '发货回填',
+    write_need_rows: '请至少填写一行完整的 SKU 与数值',
+    write_done: '已提交到平台',
+    write_col_sku: '商品 SKU',
+    write_col_stock: '目标库存',
+    write_col_price: '目标价格（元）',
+    write_add_row: '添加一行',
+    ship_need_fields: '请填写订单号与运单号',
+    ship_order_number: '订单号（含平台前缀，如 TB-9001）',
+    ship_tracking: '运单号',
+    ship_carrier: '物流公司（如 顺丰速运；京东需数字 ID）',
+    write_result_title: '执行结果',
+    write_result_summary: '成功 {ok} 条 / 失败 {fail} 条',
+    write_not_supported: '该平台未声明此操作能力，入口已隐藏',
+    platform_not_implemented: '适配器开发中',
   },
   en: {
     page_title: 'Stores',
@@ -182,6 +235,36 @@ const D = {
     st_connected: 'Connected',
     st_disconnected: 'Disconnected',
     st_error: 'Error',
+    // ── Platform capabilities & two-way sync ──
+    label_sandbox: 'Use sandbox environment',
+    sandbox_hint: 'Routes to the platform sandbox gateway — live products and orders are untouched',
+    sandbox_unsupported: 'This platform has no public sandbox environment',
+    qualification_title: 'Access requirements',
+    capabilities_title: 'Supported operations',
+    cap_read: 'Data pull',
+    cap_write_inventory: 'Inventory push',
+    cap_write_price: 'Price push',
+    cap_ship_order: 'Shipment push',
+    btn_push_inventory: 'Push inventory',
+    btn_push_price: 'Push price',
+    btn_ship: 'Ship',
+    write_inventory_title: 'Push inventory in bulk',
+    write_price_title: 'Push prices in bulk',
+    write_ship_title: 'Push shipment',
+    write_need_rows: 'Fill in at least one complete SKU/value row',
+    write_done: 'Submitted to the platform',
+    write_col_sku: 'Product SKU',
+    write_col_stock: 'Target stock',
+    write_col_price: 'Target price',
+    write_add_row: 'Add row',
+    ship_need_fields: 'Order number and tracking number are required',
+    ship_order_number: 'Order number (with platform prefix, e.g. TB-9001)',
+    ship_tracking: 'Tracking number',
+    ship_carrier: 'Carrier (e.g. SF Express; JD needs the numeric ID)',
+    write_result_title: 'Result',
+    write_result_summary: '{ok} succeeded / {fail} failed',
+    write_not_supported: 'This platform does not declare the capability — the entry is hidden',
+    platform_not_implemented: 'Adapter in progress',
   },
 } as Record<Lang, Record<string, string>>;
 
@@ -235,7 +318,25 @@ export const Stores: React.FC = () => {
   const [formApiKey, setFormApiKey] = useState('');
   const [formApiSecret, setFormApiSecret] = useState('');
   const [formAccessToken, setFormAccessToken] = useState('');
+  const [formSandbox, setFormSandbox] = useState(false);
   const [formSubmitting, setFormSubmitting] = useState(false);
+
+  // 平台能力目录 —— 由后端下发，前端不硬编码
+  const [platforms, setPlatforms] = useState<PlatformInfo[]>([]);
+  const platformInfo = (p: StorePlatform): PlatformInfo | undefined =>
+    platforms.find((x) => x.platform === p);
+
+  // 写操作（双向同步的写方向）
+  const [writeStore, setWriteStore] = useState<Store | null>(null);
+  const [writeKind, setWriteKind] = useState<'inventory' | 'price' | null>(null);
+  const [writeRows, setWriteRows] = useState<{ sku: string; value: string }[]>([
+    { sku: '', value: '' },
+  ]);
+  const [shipOrderNumber, setShipOrderNumber] = useState('');
+  const [shipTracking, setShipTracking] = useState('');
+  const [shipCarrier, setShipCarrier] = useState('');
+  const [writeBusy, setWriteBusy] = useState(false);
+  const [writeResult, setWriteResult] = useState<WriteOpResult | null>(null);
 
   const fetchStores = useCallback(async () => {
     if (!currentWorkspace) { setIsLoading(false); return; }
@@ -251,6 +352,15 @@ export const Stores: React.FC = () => {
     }
   }, [currentWorkspace]);
 
+  // 平台目录拉取失败不阻塞页面（只影响能力徽章与写入口的显示）
+  useEffect(() => {
+    if (!currentWorkspace) return;
+    storeService
+      .getPlatforms(currentWorkspace.slug)
+      .then(setPlatforms)
+      .catch(() => setPlatforms([]));
+  }, [currentWorkspace]);
+
   useEffect(() => {
     fetchStores();
   }, [fetchStores]);
@@ -262,6 +372,7 @@ export const Stores: React.FC = () => {
     setFormApiKey('');
     setFormApiSecret('');
     setFormAccessToken('');
+    setFormSandbox(false);
     clearErrors();
   };
 
@@ -280,9 +391,14 @@ export const Stores: React.FC = () => {
     setFormApiSecret((store as any).api_secret || '');
     // access_token 后端返回的是掩码值（如 shpa****e1dc），回填会把掩码当真实 token 覆盖存储 → 编辑时不回填
     setFormAccessToken('');
+    setFormSandbox(Boolean(store.sandbox));
     clearErrors();
     setShowModal(true);
   };
+
+  /** 当前平台要求的凭证字段（由后端目录下发，前端不猜） */
+  const requiredFields = platformInfo(formPlatform)?.credential_fields ?? [];
+  const needsStoreUrl = requiredFields.includes('store_url');
 
   const handleSubmit = async () => {
     if (!currentWorkspace) return;
@@ -292,11 +408,13 @@ export const Stores: React.FC = () => {
       setFieldError('name', t('err_store_name_required'));
       hasError = true;
     }
-    if (!formStoreUrl.trim() && formPlatform !== 'sandbox') {
+    // 只有该平台确实需要店铺地址时才校验 —— 淘宝/京东/拼多多靠 AppKey + 令牌
+    // 识别店铺，强填店铺地址是多余的
+    if (needsStoreUrl && !formStoreUrl.trim()) {
       setFieldError('storeUrl', t('err_store_url_required'));
       hasError = true;
     }
-    if (formPlatform !== 'sandbox' && formStoreUrl.trim()) {
+    if (needsStoreUrl && formStoreUrl.trim()) {
       try {
         new URL(formStoreUrl.trim());
       } catch {
@@ -312,6 +430,7 @@ export const Stores: React.FC = () => {
         platform: formPlatform,
         store_url: formStoreUrl.trim(),
         api_key: formApiKey.trim(),
+        sandbox: formSandbox,
       };
       // Only send secret/token fields when non-empty, so editing a store
       // without re-entering credentials does not overwrite stored values.
@@ -331,6 +450,91 @@ export const Stores: React.FC = () => {
       addToast('error', t('err_op_failed'), err?.response?.data?.detail || t('pls_retry'));
     } finally {
       setFormSubmitting(false);
+    }
+  };
+
+  // ------------------------------------------------------------------
+  // 双向同步 —— 写操作（库存 / 价格 / 发货）
+  // ------------------------------------------------------------------
+
+  const openWriteModal = (store: Store, kind: 'inventory' | 'price') => {
+    setWriteStore(store);
+    setWriteKind(kind);
+    setWriteRows([{ sku: '', value: '' }]);
+    setWriteResult(null);
+  };
+
+  const openShipModal = (store: Store) => {
+    setWriteStore(store);
+    setWriteKind(null);
+    setShipOrderNumber('');
+    setShipTracking('');
+    setShipCarrier('');
+    setWriteResult(null);
+  };
+
+  const closeWriteModal = () => {
+    setWriteStore(null);
+    setWriteKind(null);
+    setWriteResult(null);
+  };
+
+  const handleWriteSubmit = async () => {
+    if (!currentWorkspace || !writeStore || !writeKind) return;
+    const entries = writeRows
+      .map((r) => ({ sku: r.sku.trim(), value: r.value.trim() }))
+      .filter((r) => r.sku && r.value);
+    if (entries.length === 0) {
+      addToast('error', t('err_op_failed'), t('write_need_rows'));
+      return;
+    }
+    setWriteBusy(true);
+    setWriteResult(null);
+    try {
+      const result =
+        writeKind === 'inventory'
+          ? await storeService.pushInventory(
+              currentWorkspace.slug,
+              writeStore.id,
+              entries.map((e) => ({ sku: e.sku, stock: Math.max(0, parseInt(e.value, 10) || 0) })),
+            )
+          : await storeService.pushPrice(
+              currentWorkspace.slug,
+              writeStore.id,
+              entries.map((e) => ({ sku: e.sku, price: parseFloat(e.value) || 0 })),
+            );
+      setWriteResult(result);
+      if (result.ok) addToast('success', t('write_done'));
+      fetchStores();
+    } catch (err: any) {
+      addToast('error', t('err_op_failed'), err?.response?.data?.detail || t('pls_retry'));
+    } finally {
+      setWriteBusy(false);
+    }
+  };
+
+  const handleShipSubmit = async () => {
+    if (!currentWorkspace || !writeStore) return;
+    if (!shipOrderNumber.trim() || !shipTracking.trim()) {
+      addToast('error', t('err_op_failed'), t('ship_need_fields'));
+      return;
+    }
+    setWriteBusy(true);
+    setWriteResult(null);
+    try {
+      const result = await storeService.pushShipment(
+        currentWorkspace.slug,
+        writeStore.id,
+        shipOrderNumber.trim(),
+        { tracking_number: shipTracking.trim(), carrier: shipCarrier.trim() },
+      );
+      setWriteResult(result);
+      if (result.ok) addToast('success', t('write_done'));
+      fetchStores();
+    } catch (err: any) {
+      addToast('error', t('err_op_failed'), err?.response?.data?.detail || t('pls_retry'));
+    } finally {
+      setWriteBusy(false);
     }
   };
 
@@ -585,6 +789,94 @@ export const Stores: React.FC = () => {
                     </div>
                   </div>
 
+                  {/* 能力徽章 —— 由后端下发，如实反映该平台能做到什么 */}
+                  {(() => {
+                    const info = platformInfo(store.platform);
+                    if (!info) return null;
+                    const writable = info.capabilities.filter((c) => c !== 'read');
+                    return (
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        {info.capabilities.map((cap) => (
+                          <span
+                            key={cap}
+                            className={`inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] ${
+                              cap === 'read'
+                                ? 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400'
+                                : 'bg-primary-50 text-primary-700 dark:bg-primary-900/30 dark:text-primary-300'
+                            }`}
+                          >
+                            {CAPABILITY_META[cap]?.icon}
+                            {t(CAPABILITY_META[cap]?.labelKey || 'cap_read')}
+                          </span>
+                        ))}
+                        {store.sandbox && info.sandbox_supported && (
+                          <span className="inline-flex items-center gap-1 rounded-md bg-amber-50 px-1.5 py-0.5 text-[11px] text-amber-700 dark:bg-amber-900/30 dark:text-amber-300">
+                            <FlaskConical size={12} />
+                            Sandbox
+                          </span>
+                        )}
+                        {!info.implemented && (
+                          <span className="inline-flex items-center gap-1 rounded-md bg-gray-100 px-1.5 py-0.5 text-[11px] text-gray-500 dark:bg-gray-800 dark:text-gray-400">
+                            {t('platform_not_implemented')}
+                          </span>
+                        )}
+                        {writable.length === 0 && (
+                          <span
+                            className="text-[11px] text-gray-400 dark:text-gray-500"
+                            title={t('write_not_supported')}
+                          >
+                            {t('write_not_supported')}
+                          </span>
+                        )}
+                      </div>
+                    );
+                  })()}
+
+                  {/* 双向同步入口 —— 只在该平台声明了对应能力时才渲染 */}
+                  {(() => {
+                    const caps = platformInfo(store.platform)?.capabilities ?? [];
+                    if (!caps.some((c) => c.startsWith('write') || c === 'ship_order')) {
+                      return null;
+                    }
+                    return (
+                      <div className="flex items-center gap-2">
+                        {caps.includes('write_inventory') && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            leftIcon={<Boxes size={14} />}
+                            onClick={() => openWriteModal(store, 'inventory')}
+                            className="flex-1"
+                          >
+                            {t('btn_push_inventory')}
+                          </Button>
+                        )}
+                        {caps.includes('write_price') && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            leftIcon={<Tag size={14} />}
+                            onClick={() => openWriteModal(store, 'price')}
+                            className="flex-1"
+                          >
+                            {t('btn_push_price')}
+                          </Button>
+                        )}
+                        {caps.includes('ship_order') && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            leftIcon={<Truck size={14} />}
+                            onClick={() => openShipModal(store)}
+                            className="flex-1"
+                          >
+                            {t('btn_ship')}
+                          </Button>
+                        )}
+                      </div>
+                    );
+                  })()}
+
                   {/* 操作按钮 */}
                   <div className="flex items-center gap-2 pt-2 border-t border-gray-100 dark:border-gray-700">
                     <Button
@@ -652,29 +944,53 @@ export const Stores: React.FC = () => {
               ))}
             </select>
           </div>
+
+          {/* 平台接入资质提示 —— 如实告知门槛，避免填完才发现没权限 */}
+          {platformInfo(formPlatform)?.qualification_note && (
+            <div className="flex gap-2 p-3 bg-amber-50 dark:bg-amber-900/20 rounded-lg text-xs text-amber-800 dark:text-amber-300 leading-relaxed">
+              <Info size={14} className="shrink-0 mt-0.5" />
+              <div>
+                <p className="font-medium mb-0.5">{t('qualification_title')}</p>
+                <p>{platformInfo(formPlatform)?.qualification_note}</p>
+              </div>
+            </div>
+          )}
+
+          {/* 凭证字段按平台裁剪：淘宝/京东/拼多多不需要店铺地址 */}
+          {needsStoreUrl && (
+            <Input
+              label={t('label_store_url')}
+              placeholder="https://shop.example.com"
+              value={formStoreUrl}
+              onChange={(e) => setFormStoreUrl(e.target.value)}
+              error={errors.storeUrl}
+            />
+          )}
           <Input
-            label={t('label_store_url')}
-            placeholder="https://shop.example.com"
-            value={formStoreUrl}
-            onChange={(e) => setFormStoreUrl(e.target.value)}
-            error={errors.storeUrl}
-          />
-          <Input
-            label={t('label_api_key')}
+            label={
+              platformInfo(formPlatform)?.credential_labels?.api_key ||
+              t('label_api_key')
+            }
             placeholder={t('placeholder_api_key')}
             type="password"
             value={formApiKey}
             onChange={(e) => setFormApiKey(e.target.value)}
           />
           <Input
-            label={t('label_api_secret')}
+            label={
+              platformInfo(formPlatform)?.credential_labels?.api_secret ||
+              t('label_api_secret')
+            }
             placeholder={t('placeholder_api_secret')}
             type="password"
             value={formApiSecret}
             onChange={(e) => setFormApiSecret(e.target.value)}
           />
           <Input
-            label={t('label_access_token')}
+            label={
+              platformInfo(formPlatform)?.credential_labels?.access_token ||
+              t('label_access_token')
+            }
             placeholder={
               formPlatform === 'shopify'
                 ? 'shpat_xxxxxxxx'
@@ -686,6 +1002,33 @@ export const Stores: React.FC = () => {
             value={formAccessToken}
             onChange={(e) => setFormAccessToken(e.target.value)}
           />
+
+          {/* 沙箱开关：只有平台确实提供沙箱网关时才显示 */}
+          {platformInfo(formPlatform)?.sandbox_supported ? (
+            <label className="flex items-start gap-2 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={formSandbox}
+                onChange={(e) => setFormSandbox(e.target.checked)}
+                className="mt-0.5 h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+              />
+              <span className="text-xs text-gray-600 dark:text-gray-400 leading-relaxed">
+                <span className="font-medium text-gray-700 dark:text-gray-300">
+                  {t('label_sandbox')}
+                </span>
+                <br />
+                {t('sandbox_hint')}
+              </span>
+            </label>
+          ) : (
+            formPlatform === 'taobao' ||
+            formPlatform === 'jd' ||
+            formPlatform === 'pdd' ? (
+              <p className="text-[11px] text-gray-400 dark:text-gray-500">
+                {t('sandbox_unsupported')}
+              </p>
+            ) : null
+          )}
           {(formPlatform === 'shopify' || formPlatform === 'douyin' || formPlatform === 'sandbox') && (
             <div className="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg text-xs text-blue-700 dark:text-blue-400 leading-relaxed">
               {formPlatform === 'shopify' && (
@@ -719,6 +1062,143 @@ export const Stores: React.FC = () => {
             onConfirm={handleSubmit}
             confirmText={editingStore ? t('btn_save_changes') : t('btn_add_store')}
             isLoading={formSubmitting}
+          />
+        </div>
+      </Modal>
+
+      {/* 写操作结果（库存/价格/发货共用） */}
+      {writeResult && (
+        <div className="fixed inset-x-0 bottom-0 z-[70] flex justify-center px-4 pb-4 pointer-events-none">
+          <div className="pointer-events-auto w-full max-w-lg rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-lg p-3 text-xs">
+            <p className="font-medium text-gray-800 dark:text-gray-100 mb-1">
+              {t('write_result_title')} —{' '}
+              {t('write_result_summary')
+                .replace('{ok}', String(writeResult.succeeded))
+                .replace('{fail}', String(writeResult.failed))}
+            </p>
+            {writeResult.errors.length > 0 && (
+              <ul className="max-h-32 overflow-y-auto space-y-0.5 text-red-600 dark:text-red-400 leading-relaxed">
+                {writeResult.errors.map((e, i) => (
+                  <li key={i}>· {e}</li>
+                ))}
+              </ul>
+            )}
+            <button
+              type="button"
+              onClick={() => setWriteResult(null)}
+              className="mt-2 text-[11px] text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+            >
+              收起
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* 库存 / 价格批量回写 */}
+      <Modal
+        isOpen={writeStore !== null && writeKind !== null}
+        onClose={closeWriteModal}
+        title={
+          writeKind === 'inventory'
+            ? t('write_inventory_title')
+            : t('write_price_title')
+        }
+        size="md"
+      >
+        <div className="space-y-3">
+          <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
+            <span>{writeStore?.name}</span>
+            {writeStore?.sandbox && (
+              <span className="inline-flex items-center gap-1 rounded bg-amber-50 px-1.5 py-0.5 text-[11px] text-amber-700 dark:bg-amber-900/30 dark:text-amber-300">
+                <FlaskConical size={11} />
+                Sandbox
+              </span>
+            )}
+          </div>
+          <div className="space-y-2 max-h-64 overflow-y-auto">
+            {writeRows.map((row, idx) => (
+              <div key={idx} className="flex items-center gap-2">
+                <input
+                  value={row.sku}
+                  onChange={(e) =>
+                    setWriteRows((rows) =>
+                      rows.map((r, i) =>
+                        i === idx ? { ...r, sku: e.target.value } : r,
+                      ),
+                    )
+                  }
+                  placeholder={t('write_col_sku')}
+                  className="flex-1 rounded-lg border border-gray-300 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100 px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-200 focus:border-primary-500"
+                />
+                <input
+                  value={row.value}
+                  onChange={(e) =>
+                    setWriteRows((rows) =>
+                      rows.map((r, i) =>
+                        i === idx ? { ...r, value: e.target.value } : r,
+                      ),
+                    )
+                  }
+                  inputMode="decimal"
+                  placeholder={
+                    writeKind === 'inventory'
+                      ? t('write_col_stock')
+                      : t('write_col_price')
+                  }
+                  className="w-32 rounded-lg border border-gray-300 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100 px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-200 focus:border-primary-500"
+                />
+              </div>
+            ))}
+          </div>
+          <button
+            type="button"
+            onClick={() =>
+              setWriteRows((rows) => [...rows, { sku: '', value: '' }])
+            }
+            className="text-xs text-primary-600 dark:text-primary-400 hover:underline"
+          >
+            + {t('write_add_row')}
+          </button>
+          <ModalFooter
+            onCancel={closeWriteModal}
+            onConfirm={handleWriteSubmit}
+            confirmText={t('btn_confirm')}
+            isLoading={writeBusy}
+          />
+        </div>
+      </Modal>
+
+      {/* 发货回填 */}
+      <Modal
+        isOpen={writeStore !== null && writeKind === null}
+        onClose={closeWriteModal}
+        title={t('write_ship_title')}
+        size="md"
+      >
+        <div className="space-y-4">
+          <Input
+            label={t('ship_order_number')}
+            placeholder="TB-9001"
+            value={shipOrderNumber}
+            onChange={(e) => setShipOrderNumber(e.target.value)}
+          />
+          <Input
+            label={t('ship_tracking')}
+            placeholder="SF1234567890"
+            value={shipTracking}
+            onChange={(e) => setShipTracking(e.target.value)}
+          />
+          <Input
+            label={t('ship_carrier')}
+            placeholder="顺丰速运"
+            value={shipCarrier}
+            onChange={(e) => setShipCarrier(e.target.value)}
+          />
+          <ModalFooter
+            onCancel={closeWriteModal}
+            onConfirm={handleShipSubmit}
+            confirmText={t('btn_confirm')}
+            isLoading={writeBusy}
           />
         </div>
       </Modal>

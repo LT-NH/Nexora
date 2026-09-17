@@ -122,6 +122,8 @@ async def _ensure_store_columns(conn) -> None:
         ("last_sync_status", "VARCHAR(16)"),
         ("last_sync_errors", "TEXT"),
         ("last_incremental_at", "TIMESTAMP"),
+        # 平台沙箱开关（淘宝 TOP 有独立沙箱网关；京东/拼多多暂无公开沙箱）
+        ("sandbox", "BOOLEAN NOT NULL DEFAULT 0"),
     ]
     for name, ddl in columns:
         try:

@@ -59,9 +59,21 @@ async def patch_session(session_factory, monkeypatch):
     import app.services.platforms.shopify as shopify_mod
     import app.services.platforms.douyin as douyin_mod
     import app.services.platforms.sandbox as sandbox_mod
+    import app.services.platforms.taobao as taobao_mod
+    import app.services.platforms.jd as jd_mod
+    import app.services.platforms.pdd as pdd_mod
     import app.services.webhooks as webhooks_mod
 
-    for mod in (shopify_mod, douyin_mod, sandbox_mod, webhooks_mod, db_mod):
+    for mod in (
+        shopify_mod,
+        douyin_mod,
+        sandbox_mod,
+        taobao_mod,
+        jd_mod,
+        pdd_mod,
+        webhooks_mod,
+        db_mod,
+    ):
         monkeypatch.setattr(mod, "async_session_factory", session_factory)
     monkeypatch.setattr(db_mod, "engine", engine)
     yield session_factory

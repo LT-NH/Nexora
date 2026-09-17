@@ -239,7 +239,50 @@ export interface Store {
   sync_interval_minutes: number;
   last_sync_status: 'success' | 'partial' | 'error' | null;
   last_sync_errors: string | null;
+  /** 是否走平台沙箱环境（淘宝 TOP 有独立沙箱网关） */
+  sandbox: boolean;
   created_at: string;
+}
+
+/** 平台能力标识 —— 后端适配器声明，前端据此决定显示哪些操作入口 */
+export type PlatformCapability =
+  | 'read'
+  | 'write_inventory'
+  | 'write_price'
+  | 'ship_order';
+
+/**
+ * 单平台的接入元数据。
+ * 由后端 `GET /stores/platforms` 下发，前端**不硬编码**能力与字段，
+ * 这样后端新增写能力时前端无需改代码。
+ */
+export interface PlatformInfo {
+  platform: StorePlatform;
+  label: string;
+  implemented: boolean;
+  capabilities: PlatformCapability[];
+  sandbox_supported: boolean;
+  credential_fields: string[];
+  credential_labels: Record<string, string>;
+  /** 该平台拿到订单类接口所需的资质门槛（如实告知） */
+  qualification_note: string;
+}
+
+/** 写操作（库存/价格/发货）结果 —— 逐条可见成败 */
+export interface WriteOpResult {
+  operation: string;
+  /** 全部成功才为 true（由后端判定，前端不自行推断） */
+  ok: boolean;
+  succeeded: number;
+  failed: number;
+  total: number;
+  errors: string[];
+  details: Record<string, unknown>[];
+}
+
+export interface ShipRequest {
+  tracking_number: string;
+  carrier?: string;
 }
 
 export interface StoreCreateRequest {
@@ -249,6 +292,7 @@ export interface StoreCreateRequest {
   api_key?: string;
   api_secret?: string;
   access_token?: string;
+  sandbox?: boolean;
   auto_sync_enabled?: boolean;
   sync_interval_minutes?: number;
 }

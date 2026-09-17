@@ -3,10 +3,59 @@
 Defines the contract that every e-commerce platform integration must fulfill.
 """
 
+import enum
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any
+
+# 平台中文名 —— 用于面向用户的报错文案（不要把 slug 直接抛给商家看）。
+PLATFORM_LABELS: dict[str, str] = {
+    "taobao": "淘宝",
+    "jd": "京东",
+    "pdd": "拼多多",
+    "douyin": "抖音",
+    "shopify": "Shopify",
+    "amazon": "Amazon",
+    "sandbox": "沙盒",
+    "other": "其他平台",
+}
+
+
+class PlatformCapability(str, enum.Enum):
+    """平台能力标记 —— 前端据此决定显示哪些操作入口。
+
+    只读平台（如淘宝个人账号）不会出现写操作按钮，避免用户点了才发现
+    「无接口权限」。
+    """
+
+    READ = "read"                      # 拉取商品/订单/客户
+    WRITE_INVENTORY = "write_inventory"  # 库存回写
+    WRITE_PRICE = "write_price"          # 价格回写
+    SHIP_ORDER = "ship_order"            # 发货回填（运单号）
+
+
+@dataclass
+class WriteResult:
+    """双向同步中「写操作」的结果。
+
+    与 SyncResult 的区别：写操作是逐条命令，成败需逐条可见
+    （一条凭证错误不能让整批看起来「成功 0 条」却看不出原因）。
+    """
+
+    operation: str = ""
+    succeeded: int = 0
+    failed: int = 0
+    errors: list[str] = field(default_factory=list)
+    details: list[dict[str, Any]] = field(default_factory=list)
+
+    @property
+    def total(self) -> int:
+        return self.succeeded + self.failed
+
+    @property
+    def ok(self) -> bool:
+        return self.failed == 0 and not self.errors
 
 
 @dataclass
@@ -52,6 +101,16 @@ class FullSyncResult:
         return self.products.errors + self.orders.errors + self.customers.errors
 
 
+def _unsupported(operation: str, platform: str) -> WriteResult:
+    """构造「该平台未声明此写能力」的统一结果。"""
+    label = PLATFORM_LABELS.get(platform, platform)
+    return WriteResult(
+        operation=operation,
+        failed=0,
+        errors=[f"{label}（{platform}）暂不支持{operation}。"],
+    )
+
+
 class PlatformIntegration(ABC):
     """Abstract base for e-commerce platform integrations.
 
@@ -65,6 +124,24 @@ class PlatformIntegration(ABC):
     """
 
     platform_name: str = "generic"
+
+    # 能力声明 —— 子类按实际支持的接口覆盖。
+    # 默认只读：未声明写能力的平台，前端不显示回写入口。
+    capabilities: frozenset[str] = frozenset({PlatformCapability.READ.value})
+
+    def supports(self, capability: PlatformCapability | str) -> bool:
+        """该平台是否支持某项能力。"""
+        value = (
+            capability.value
+            if isinstance(capability, PlatformCapability)
+            else str(capability)
+        )
+        return value in self.capabilities
+
+    def capability_list(self) -> list[str]:
+        """稳定排序的能力列表（供 API 序列化，避免前端渲染顺序抖动）。"""
+        order = [c.value for c in PlatformCapability]
+        return [c for c in order if c in self.capabilities]
 
     # ------------------------------------------------------------------
     # Abstract — subclasses MUST implement
@@ -107,6 +184,39 @@ class PlatformIntegration(ABC):
         Returns True if the platform API responds successfully.
         """
         return True
+
+    # ------------------------------------------------------------------
+    # 双向同步 —— 写操作（默认不支持，具备能力的子类覆盖）
+    # ------------------------------------------------------------------
+
+    async def update_inventory(
+        self,
+        config: dict[str, Any],
+        workspace_id: str,
+        items: list[dict[str, Any]],
+    ) -> WriteResult:
+        """回写库存。``items`` = ``[{"sku": "tb-123", "stock": 100}, ...]``"""
+        return _unsupported("库存回写", self.platform_name)
+
+    async def update_price(
+        self,
+        config: dict[str, Any],
+        workspace_id: str,
+        items: list[dict[str, Any]],
+    ) -> WriteResult:
+        """回写价格。``items`` = ``[{"sku": "tb-123", "price": 99.0}, ...]``"""
+        return _unsupported("价格回写", self.platform_name)
+
+    async def ship_order(
+        self,
+        config: dict[str, Any],
+        workspace_id: str,
+        order_number: str,
+        tracking_number: str,
+        carrier: str = "",
+    ) -> WriteResult:
+        """发货回填（运单号 + 物流公司）。"""
+        return _unsupported("发货回填", self.platform_name)
 
     async def full_sync(
         self,
