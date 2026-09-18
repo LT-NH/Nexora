@@ -11,6 +11,19 @@ interface ChangelogEntry {
 
 const changelogData: ChangelogEntry[] = [
   {
+    version: 'v5.8',
+    date: '2026年9月18日',
+    changes: [
+      '修复淘宝签名算法语义错误：官方明确规定 sign_method=hmac 是 **HMAC-MD5**（不是 HMAC-SHA256），三者分别是 md5 = MD5(secret+拼接串+secret)、hmac = HMAC-MD5、hmac-sha256 = HMAC-SHA256。此前把 hmac 与 hmac-sha256 混为一谈，会让配置成 hmac 的店铺验签必然失败（淘宝返回 25 Invalid Signature）',
+      '新增官方测试向量回归锁：用淘宝开放平台文档给出的完整示例做断言 —— method=taobao.item.seller.get、app_key=12345678、session=test、fields/num_iid、secret=helloworld ⇒ 签名必须是 66987CB115214E59E6EC978214934FB8。实测逐字节一致，同时锁定「空值参数不参与拼接」规则（与官方 SDK 示例的 areNotEmpty 过滤一致）',
+      '淘宝网关切到官方指定地址 gw.api.taobao.com（原用 eco.taobao.com）。实测大陆生产 / eco / 沙箱 / 海外四个地址均能返回标准 TOP 错误信封与 request_id，但既然官方文档明确指定 gw.api，就按官方来',
+      '淘宝错误码表按官方「常见平台级错误码」全面校正：21 实为 Missing Method（缺少方法名参数，原表误标为「调用频率超限」）、22 Invalid Method、24 Missing Signature、25 Invalid Signature、26/27 SessionKey 缺失或失效（原表误标为参数错误）、28 Missing App Key、29 Invalid App Key',
+      '补上 code 7 与 code 11 —— 尤其 **11 Insufficient ISV Permissions（权限不足）**：个人开发者调用订单类接口撞的正是这个码，此前不在码表里会落到「未知错误」，商家看不出真正原因。同时把码表错位可能带来的最坏后果消掉：权限不足与凭证无效必须分开，否则商家会反复重填 AppKey 而实际问题是没有企业资质',
+      '补充官方 sub_code 关键词：App Call Limited / accesscontrol.limited-by-* → 限流，isv.permission-ip-whitelist-limit → 权限不足（IP 白名单未配置）',
+      '接口可行性实证：新增可复用自检工具（用假凭证走生产代码路径打真实网关），四个端点全部返回**凭证类**错误而非格式类错误，证明端点、HTTP 方法、参数命名与编码格式均已被网关接受；后端测试 165 → 173 项，全部通过',
+    ],
+  },
+  {
     version: 'v5.7',
     date: '2026年9月17日',
     changes: [

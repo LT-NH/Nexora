@@ -70,17 +70,34 @@ def sign_params(
 ) -> str:
     """按平台规则生成大写十六进制签名。
 
-    - ``md5``：``MD5(secret + 拼接串 + secret)``
-    - ``hmac-sha256``：``HMAC-SHA256(key=secret, msg=拼接串)``
+    淘宝官方（开放平台文档中心 · API调用方法详解）明确支持**三种**摘要算法：
+
+    ==================  ==========================  ===============================
+    sign_method         算法                        签名串构造
+    ==================  ==========================  ===============================
+    ``md5``             MD5(secret + base + secret) 两端各拼一次 secret
+    ``hmac``            **HMAC-MD5**                key=secret, msg=base
+    ``hmac-sha256``     HMAC-SHA256                 key=secret, msg=base
+    ==================  ==========================  ===============================
+
+    ⚠️ 注意 ``hmac`` 是 **HMAC-MD5**，不是 HMAC-SHA256 —— 早期实现把二者混为一谈，
+    会让配置成 ``hmac`` 的店铺验签必然失败（淘宝返回 25 Invalid Signature）。
+    京东/拼多多只用 md5，走默认分支。
     """
     base = build_sign_base(params)
     normalized = (method or "md5").lower().replace("_", "-")
 
-    if normalized in ("hmac-sha256", "hmacsha256", "hmac"):
+    if normalized in ("hmac-sha256", "hmacsha256"):
         digest = hmac.new(
             secret.encode("utf-8"),
             base.encode("utf-8"),
             hashlib.sha256,
+        ).hexdigest()
+    elif normalized in ("hmac", "hmac-md5", "hmacmd5"):
+        digest = hmac.new(
+            secret.encode("utf-8"),
+            base.encode("utf-8"),
+            hashlib.md5,
         ).hexdigest()
     else:
         digest = hashlib.md5(

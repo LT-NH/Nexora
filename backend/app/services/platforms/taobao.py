@@ -99,7 +99,13 @@ class TaobaoIntegration(RpcSignedIntegration):
 
     platform_name = "taobao"
 
-    gateway_prod = "https://eco.taobao.com/router/rest"
+    # 网关以**官方文档为准**（开放平台文档中心 · API调用方法详解，2026-04-24 更新）：
+    #   正式环境 https://gw.api.taobao.com/router/rest
+    #   海外环境 https://api.taobao.com/router/rest
+    #   沙箱    https://gw.api.tbsandbox.com/router/rest
+    # 实测（2026-09-18）这四个地址（含旧常用的 eco.taobao.com）均返回标准 TOP
+    # error_response 信封 + request_id，但既然官方指定 gw.api，就按官方来。
+    gateway_prod = "https://gw.api.taobao.com/router/rest"
     gateway_sandbox = "https://gw.api.tbsandbox.com/router/rest"
 
     method_field = "method"

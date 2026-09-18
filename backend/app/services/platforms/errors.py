@@ -45,6 +45,8 @@ _KEYWORD_RULES: list[tuple[PlatformErrorKind, tuple[str, ...]]] = [
             "没有权限", "接口未授权", "not subscribe", "isv-not-subscribe",
             "app-not-subscribe", "api not exist", "接口不存在", "api不存在",
             "no api access", "无权访问该接口", "insufficient permission",
+            # 官方：isv.permission-ip-whitelist-limit（IP 白名单未配置）
+            "ip-whitelist", "ip 白名单", "ip白名单",
         ),
     ),
     (
@@ -69,6 +71,8 @@ _KEYWORD_RULES: list[tuple[PlatformErrorKind, tuple[str, ...]]] = [
         (
             "rate limit", "ratelimit", "throttl", "too many requests",
             "限流", "调用频率", "调用次数超限", "qps", "请求过于频繁",
+            # 官方：code 7 / msg "App Call Limited" / sub_code accesscontrol.limited-by-*
+            "app call limited", "limited-by",
         ),
     ),
     (
@@ -108,20 +112,31 @@ _KEYWORD_RULES: list[tuple[PlatformErrorKind, tuple[str, ...]]] = [
 
 
 # 错误码兜底表 —— **必须按平台隔离**。
-# 踩坑实证（2026-09-17 真实网关探测）：京东与淘宝的 code 会撞车 ——
-# 淘宝 ``21`` = 调用频率超限，而京东 ``21`` = AppKey 无效。
-# 若共用一张表，京东的「Key 填错」会被误报成「限流」，商家会一直等重试。
+# 踩坑实证（2026-09-18 真实网关探测 + 官方文档核对）：
+# 京东与淘宝的 code 会撞车，但**含义完全不同**：
+#   淘宝 ``21`` = Missing Method（缺少方法名参数），京东 ``21`` = AppKey 无效。
+# 若共用一张表，京东的「Key 填错」会被误报成「参数缺失」。
+# 淘宝一侧的码值以官方文档「常见平台级错误码」为准（更新于 2026-04-24）。
 _CODE_RULES: dict[str, dict[str, PlatformErrorKind]] = {
     "taobao": {
-        "15": PlatformErrorKind.UNKNOWN,           # Remote service error
-        "21": PlatformErrorKind.RATE_LIMITED,      # 调用频率超限
-        "22": PlatformErrorKind.PARAM_INVALID,     # 请求被禁止
-        "25": PlatformErrorKind.AUTH_INVALID,      # 无效签名
-        "26": PlatformErrorKind.PARAM_INVALID,     # 请求参数非法
-        "27": PlatformErrorKind.PARAM_INVALID,
-        "29": PlatformErrorKind.AUTH_INVALID,      # Invalid app Key（实测）
-        "40": PlatformErrorKind.PERMISSION_NEEDED,
-        "41": PlatformErrorKind.SESSION_EXPIRED,   # 缺少 session
+        # 实测：{"code":1,"sub_code":"isp.get-app-error",
+        #      "msg":"Platform System error:获取第三方APP信息失败,AppKey: null"}
+        # —— AppKey 在平台上根本不存在（连查 App 信息都失败）
+        "1": PlatformErrorKind.AUTH_INVALID,
+        # 官方：App Call Limited（sub_code=accesscontrol.limited-by-*）
+        "7": PlatformErrorKind.RATE_LIMITED,
+        # 官方：Insufficient ISV Permissions —— **个人开发者调订单类接口就是撞这个码**，
+        # 必须与「Key 填错」区分开，否则商家会反复重填凭证而实际问题是没有企业资质
+        "11": PlatformErrorKind.NO_API_PERMISSION,
+        "15": PlatformErrorKind.UNKNOWN,          # Remote service error
+        "21": PlatformErrorKind.PARAM_INVALID,    # 官方：Missing Method（缺方法名）
+        "22": PlatformErrorKind.PARAM_INVALID,    # 官方：Invalid Method（方法名不存在）
+        "24": PlatformErrorKind.PARAM_INVALID,    # 官方：Missing Signature（缺 sign）
+        "25": PlatformErrorKind.AUTH_INVALID,     # 官方：Invalid Signature（验签失败）
+        "26": PlatformErrorKind.SESSION_EXPIRED,  # 官方：Missing SessionKey
+        "27": PlatformErrorKind.SESSION_EXPIRED,  # 官方：Invalid SessionKey
+        "28": PlatformErrorKind.AUTH_INVALID,     # 官方：Missing App Key
+        "29": PlatformErrorKind.AUTH_INVALID,     # 官方：Invalid App Key
     },
     "jd": {
         # 实测：HTTP 200 + {"code":"21","en_desc":"Invalid app_key"}

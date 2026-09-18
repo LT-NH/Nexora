@@ -88,14 +88,70 @@ def test_hmac_sha256_sign_recipe():
     assert len(sign_params(params, "SECRET", "hmac-sha256")) == 64
 
 
+def test_official_taobao_test_vector():
+    """官方文档给出的完整测试向量 —— 签名实现的权威锚点。
+
+    开放平台文档中心「API调用方法详解」（2026-04-24 更新）第五节调用示例：
+      method=taobao.item.seller.get, app_key=12345678, session=test,
+      timestamp=2016-01-01 12:00:00, format=json, v=2.0, sign_method=md5,
+      fields=num_iid,title,nick,price,num, num_iid=11223344, secret=helloworld
+      ⇒ sign = 66987CB115214E59E6EC978214934FB8
+    """
+    params = {
+        "method": "taobao.item.seller.get",
+        "app_key": "12345678",
+        "session": "test",
+        "timestamp": "2016-01-01 12:00:00",
+        "format": "json",
+        "v": "2.0",
+        "sign_method": "md5",
+        "fields": "num_iid,title,nick,price,num",
+        "num_iid": "11223344",
+    }
+    assert (
+        sign_params(params, "helloworld", "md5")
+        == "66987CB115214E59E6EC978214934FB8"
+    )
+
+
+def test_official_empty_value_rule():
+    """官方 SDK 示例用 areNotEmpty / IsNullOrEmpty 过滤 —— 空值参数不参与拼接。"""
+    base = {"a": "1", "empty": "", "none": None, "b": "2"}
+    assert build_sign_base(base) == "a1b2"
+
+
+def test_hmac_md5_is_not_hmac_sha256():
+    """官方：``sign_method=hmac`` 是 **HMAC-MD5**（不是 HMAC-SHA256）。
+
+    早期实现把 ``hmac`` 当成 HMAC-SHA256，会让配置成 hmac 的店铺验签必然失败
+    （淘宝返回 25 Invalid Signature）。
+    """
+    import hashlib
+    import hmac
+
+    params = {"a": "1", "b": "2"}
+    md5_expected = hmac.new(b"S", b"a1b2", hashlib.md5).hexdigest().upper()
+    sha_expected = hmac.new(b"S", b"a1b2", hashlib.sha256).hexdigest().upper()
+
+    assert sign_params(params, "S", "hmac") == md5_expected
+    assert len(sign_params(params, "S", "hmac")) == 32
+    assert sign_params(params, "S", "hmac-sha256") == sha_expected
+    assert len(sign_params(params, "S", "hmac-sha256")) == 64
+    assert md5_expected != sha_expected
+    # 别名等价性
+    assert sign_params(params, "S", "hmac-md5") == md5_expected
+    assert sign_params(params, "S", "HMAC") == md5_expected
+
+
 def test_sign_method_aliases_normalized():
-    """``hmac_sha256`` / ``hmac-sha256`` / ``hmac`` 应等价。"""
+    """``hmac_sha256`` / ``hmac-sha256`` 等价；``hmac_sha256`` 走 SHA256 分支。"""
     params = {"a": "1"}
     variants = [
         sign_params(params, "S", m)
-        for m in ("hmac-sha256", "hmac_sha256", "hmac", "HMAC-SHA256")
+        for m in ("hmac-sha256", "hmac_sha256", "HMAC-SHA256")
     ]
     assert len(set(variants)) == 1
+    assert len(variants[0]) == 64
 
 
 def test_sign_changes_with_secret():
@@ -112,7 +168,7 @@ def test_taobao_request_shape_and_gateway():
     params = integ.build_request_params(
         FAKE_CFG, "taobao.items.onsale.get", {"page_no": "1"}
     )
-    assert integ._gateway(FAKE_CFG) == "https://eco.taobao.com/router/rest"
+    assert integ._gateway(FAKE_CFG) == "https://gw.api.taobao.com/router/rest"
     assert params["method"] == "taobao.items.onsale.get"
     assert params["app_key"] == "test-app-key"
     assert params["session"] == "test-token"       # TOP 里 token 叫 session
@@ -188,7 +244,7 @@ def test_sandbox_gateway_switch():
         "https://gw.api.tbsandbox.com/router/rest"
     )
     assert tb._gateway({**FAKE_CFG, "sandbox": False}) == (
-        "https://eco.taobao.com/router/rest"
+        "https://gw.api.taobao.com/router/rest"
     )
     pdd = PddIntegration()
     assert pdd._gateway({**FAKE_CFG, "sandbox": True}) == pdd.gateway_prod
@@ -217,19 +273,111 @@ def test_classify_taobao_invalid_appkey():
     assert kind == PlatformErrorKind.AUTH_INVALID
 
 
+def test_classify_taobao_official_code_table():
+    """淘宝错误码表以官方文档「常见平台级错误码」为准（2026-04-24 更新）。
+
+    这里刻意**不传 message**，只靠 code 判定，确保兜底表本身正确 ——
+    否则关键词层会掩盖码值错误。
+    """
+    cases = {
+        # 官方：App Call Limited（sub_code=accesscontrol.limited-by-*）
+        7: PlatformErrorKind.RATE_LIMITED,
+        # 官方：Insufficient ISV Permissions ★ 个人开发者调订单接口就是撞这个码
+        11: PlatformErrorKind.NO_API_PERMISSION,
+        # 官方：Missing Method / Invalid Method —— 不是限流！
+        21: PlatformErrorKind.PARAM_INVALID,
+        22: PlatformErrorKind.PARAM_INVALID,
+        24: PlatformErrorKind.PARAM_INVALID,
+        25: PlatformErrorKind.AUTH_INVALID,
+        26: PlatformErrorKind.SESSION_EXPIRED,
+        27: PlatformErrorKind.SESSION_EXPIRED,
+        28: PlatformErrorKind.AUTH_INVALID,
+        29: PlatformErrorKind.AUTH_INVALID,
+    }
+    for code, expected in cases.items():
+        assert (
+            classify_platform_error(platform="taobao", code=code) == expected
+        ), f"淘宝 code={code} 应归为 {expected}"
+
+
+def test_taobao_11_is_permission_not_auth():
+    """「11 权限不足」必须与「29 AppKey 无效」区分：
+
+    合并的话，个人开发者会以为是自己 Key 填错了，于是反复重填凭证，
+    而真正该做的是去申请企业资质 —— 这正是最需要给出正确指引的场景。
+    """
+    permission = classify_platform_error(
+        platform="taobao",
+        code=11,
+        message="Insufficient ISV Permissions",
+        sub_code="isv.permission-api-package-empty",
+    )
+    auth = classify_platform_error(
+        platform="taobao",
+        code=29,
+        message="Invalid app Key",
+        sub_code="isv.appkey-not-exists",
+    )
+    assert permission == PlatformErrorKind.NO_API_PERMISSION
+    assert auth == PlatformErrorKind.AUTH_INVALID
+    assert permission != auth
+
+
+def test_taobao_rate_limit_is_code7_not_code21():
+    """限流是 code 7；21 是「缺少方法名参数」，两者不可混。"""
+    limited = classify_platform_error(
+        platform="taobao",
+        code=7,
+        message="App Call Limited",
+        sub_code="accesscontrol.limited-by-api-access-count",
+    )
+    missing_method = classify_platform_error(
+        platform="taobao", code=21, message="Missing Method"
+    )
+    assert limited == PlatformErrorKind.RATE_LIMITED
+    assert missing_method == PlatformErrorKind.PARAM_INVALID
+
+
+def test_taobao_ip_whitelist_maps_to_permission():
+    """官方 sub_code：isv.permission-ip-whitelist-limit（IP 白名单未配置）。"""
+    kind = classify_platform_error(
+        platform="taobao",
+        message="Insufficient ISV Permissions",
+        sub_code="isv.permission-ip-whitelist-limit",
+    )
+    assert kind == PlatformErrorKind.NO_API_PERMISSION
+
+
+def test_taobao_isp_get_app_error_is_auth():
+    """实测真实报文（2026-09-18 网关探测）：
+
+    {"code":1,"sub_code":"isp.get-app-error",
+     "msg":"Platform System error:获取第三方APP信息失败,AppKey: null"}
+    """
+    kind = classify_platform_error(
+        platform="taobao",
+        code=1,
+        message="Platform System error:获取第三方APP信息失败,AppKey: null",
+        sub_code="isp.get-app-error",
+    )
+    assert kind == PlatformErrorKind.AUTH_INVALID
+
+
 def test_classify_jd_code21_is_auth_not_rate_limited():
-    """回归：京东 ``21`` 是 AppKey 无效，**不能**按淘宝的 ``21``（限流）判。
+    """回归：京东 ``21`` 是 AppKey 无效，**不能**按淘宝同码值的含义判。
 
     实测报文：{"code":"21","zh_desc":"key=xxx 信息无效","en_desc":"Invalid app_key"}
+    官方文档：淘宝 ``21`` = Missing Method（缺方法名参数）—— 两个平台同码不同义，
+    这正是错误码表必须按平台隔离的原因。
     """
     jd_kind = classify_platform_error(
         platform="jd", code=21, message="key=12345678 信息无效"
     )
     assert jd_kind == PlatformErrorKind.AUTH_INVALID
 
-    # 同一个 code 在淘宝是限流 —— 证明平台隔离是必要的
+    # 同一个 code 在淘宝是「缺少方法名参数」—— 证明平台隔离是必要的
     taobao_kind = classify_platform_error(platform="taobao", code=21, message="")
-    assert taobao_kind == PlatformErrorKind.RATE_LIMITED
+    assert taobao_kind == PlatformErrorKind.PARAM_INVALID
     assert jd_kind != taobao_kind
 
 

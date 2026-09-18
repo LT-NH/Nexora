@@ -1281,7 +1281,7 @@ export const Landing: React.FC = () => {
               <Reveal>
                 <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-white/70 border border-violet-100 text-violet-700 text-sm font-medium shadow-sm backdrop-blur">
                   <span className="w-2 h-2 rounded-full bg-gradient-to-r from-violet-500 to-fuchsia-500 animate-pulse-glow" />
-                  v5.7 现已发布
+                  v5.8 现已发布
                   <span className="text-violet-300">·</span>
                   <span className="text-[#8e8e93]">6 大平台已接入</span>
                 </div>
