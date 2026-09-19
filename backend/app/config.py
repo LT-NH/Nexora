@@ -9,6 +9,8 @@ from typing import List
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from app.version import APP_VERSION as _APP_VERSION
+
 
 class Settings(BaseSettings):
     """Application settings loaded from environment variables."""
@@ -53,8 +55,9 @@ class Settings(BaseSettings):
     SENTRY_ENV: str = "development"
     SENTRY_TRACES_SAMPLE_RATE: float = 0.1
 
-    # 产品版本（与 CHANGELOG.md / frontend/package.json 保持一致）
-    APP_VERSION: str = "5.4.0"
+    # 产品版本：唯一来源是 app/version.py（它的权威来源又是前端 Changelog.tsx）。
+    # 不要在这里写死字符串 —— 曾经三处硬编码全部漂移在旧版本上。
+    APP_VERSION: str = _APP_VERSION
     PUBLIC_BASE_URL: str = "http://127.0.0.1:8000"  # 公网基址（回调/二维码拼装用）
 
     # Metrics endpoint auth. When set, the Prometheus /metrics endpoint

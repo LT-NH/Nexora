@@ -2,6 +2,8 @@
 
 from fastapi import APIRouter
 
+from app.config import settings
+
 from app.api.auth import router as auth_router
 from app.api.workspaces import router as workspaces_router
 from app.api.subscriptions import router as subscriptions_router
@@ -41,7 +43,8 @@ async def api_root() -> dict:
     """Root endpoint for the API v1."""
     return {
         "service": "Nexora API",
-        "version": "5.4.0",
+        # 版本号唯一来源 app/version.py —— 不要在此写死字符串
+        "version": settings.APP_VERSION,
         "docs": "/docs",
         "redoc": "/redoc",
     }

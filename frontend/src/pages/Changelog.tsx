@@ -11,6 +11,19 @@ interface ChangelogEntry {
 
 const changelogData: ChangelogEntry[] = [
   {
+    version: 'v5.9',
+    date: '2026年9月19日',
+    changes: [
+      '数据库并发写加固：实测确认 SQLite 默认 journal_mode=delete（读写互斥），已启用 WAL + synchronous=NORMAL。本项目有 5 个常驻定时任务（含每 5 分钟的店铺同步），并发写是常态而非边缘情况。附带纠正一处误判：busy_timeout 并非默认 0，aiosqlite 驱动已默认给 5 秒，真正的隐患是 journal_mode',
+      '刻意**不启用** SQLite 外键强制（foreign_keys=ON）：实测现有库存在 10 处孤儿数据（products/customers/orders 引用了不存在的 workspace_id，为演示数据残留）。开启不会回溯清理旧数据，但会让后续涉及这些行的写入直接报错 —— 等于用「更严谨」的配置引入线上故障。已记为待办并加守卫测试，清理孤儿数据后再开启',
+      '限流降级行为补齐测试覆盖：Redis 不可用时降级到进程内存继续限流（不是放行，放行等于限流失效），并带冷却期避免每个请求都付连接超时。5 项测试锁定「降级但不失效」「冷却期只试一次」「恢复后自动回切」',
+      '版本号收敛为单一来源：后端新增 app/version.py，修掉三处硬编码导致的漂移（config.py / main.py / api/ai 根接口此前都对外报 5.4.0，而产品已到 v5.8）。新增 4 项一致性测试，把后端、更新日志、落地页徽章三处互锁，并禁止后端再出现写死的版本字符串',
+      '后端 app/main.py 拆分：616 → 148 行。它原本同时承担应用装配、套餐能力矩阵、Sentry 初始化、5 个定时任务注册、健康探针与运维端点。现按职责拆为 plan_matrix（套餐矩阵与种子）、bootstrap（Sentry 与中间件）、scheduler（定时任务）、api/system（系统端点，路径保持不变）',
+      '前端大页面拆分：Dashboard 1418 → 1049 行，按职责抽出文案字典（数据与视图分离，避免子组件反向依赖页面造成循环引用）、纯函数工具、迷你趋势线与会员卡片两个子组件；Orders 的批量打单打印视图抽为独立组件（全屏浮层与列表交互无关，且打印样式需独立维护）',
+      '经验库（agent_experiences）经核查为「按设计低频」而非缺陷：它需要「洞察 → 执行动作 → 事后回访对比」完整闭环才会沉淀一条，当前 2 条均带真实的前后对比数据（improved / not_improved），机制工作正常',
+    ],
+  },
+  {
     version: 'v5.8',
     date: '2026年9月18日',
     changes: [

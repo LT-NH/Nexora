@@ -5,6 +5,7 @@ Provides async SQLAlchemy engine, session factory, and a shared declarative base
 
 import os
 
+from sqlalchemy import event
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase
 
@@ -42,6 +43,61 @@ if not _database_url.startswith("sqlite"):
     _engine_kwargs["pool_recycle"] = 3600
 
 engine = create_async_engine(_database_url, **_engine_kwargs)
+
+# ---------------------------------------------------------------------------
+# SQLite 并发写保护
+# ---------------------------------------------------------------------------
+# 实测基线（2026-09-19，aiosqlite 驱动的真实默认值）：
+#   journal_mode = delete      ← **真正的隐患**：读写互斥，写者阻塞读者
+#   busy_timeout = 5000        ← 驱动已默认给 5s（不是 0）
+#   synchronous  = 2 (FULL)
+#   foreign_keys = 0           ← 外键未强制
+#
+# 本项目有 5 个常驻定时任务（含每 5 分钟的店铺同步），并发写是常态而非边缘
+# 情况，因此显式配置：
+#   journal_mode=WAL    读写不互斥（写者不再阻塞读者），锁粒度降到页级
+#   synchronous=NORMAL  WAL 下的官方推荐档位：系统崩溃不会损坏库，
+#                       仅在操作系统级崩溃时可能丢失最近事务
+#   busy_timeout=5000   显式写出（驱动默认已是此值），防止日后被误改成 0
+#
+# ⚠️ 刻意**不**开启 `PRAGMA foreign_keys=ON`：
+#   实测现有库存在 10 处外键违规（products 4 / customers 3 / orders 3，
+#   均引用了不存在的 workspace_id —— 演示数据残留）。SQLite 打开外键强制
+#   不会回溯清理旧数据，但会让**后续**涉及这些行的写入直接报错，等于用
+#   「更严谨」的配置引入线上故障。
+#   开启前置条件：先清理孤儿行（`PRAGMA foreign_key_check` 返回空），
+#   届时再把 "PRAGMA foreign_keys=ON" 加回本配方。
+SQLITE_PRAGMAS: tuple[str, ...] = (
+    "PRAGMA journal_mode=WAL",
+    "PRAGMA synchronous=NORMAL",
+    "PRAGMA busy_timeout=5000",
+)
+
+# 记录待办：外键强制未启用的原因（供检测脚本与运维参考）
+SQLITE_FOREIGN_KEYS_PENDING_REASON = (
+    "存在历史孤儿数据（外键违规），清理完成后才可开启 foreign_keys=ON"
+)
+
+
+def apply_sqlite_pragmas(sync_engine) -> None:
+    """为指定的 SQLAlchemy **同步** 引擎挂上 SQLite 调优 PRAGMA。
+
+    抽成函数是为了让测试能对同一个配方做验证（而不是复制一份），
+    生产与测试共用一份事实来源。
+    """
+
+    @event.listens_for(sync_engine, "connect")
+    def _set_sqlite_pragmas(dbapi_connection, _connection_record) -> None:
+        cursor = dbapi_connection.cursor()
+        try:
+            for pragma in SQLITE_PRAGMAS:
+                cursor.execute(pragma)
+        finally:
+            cursor.close()
+
+
+if _database_url.startswith("sqlite"):
+    apply_sqlite_pragmas(engine.sync_engine)
 
 async_session_factory = async_sessionmaker(
     engine,
