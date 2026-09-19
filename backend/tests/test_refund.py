@@ -4,6 +4,11 @@ Covers:
   - creating a refund links it to the workspace and records the reason
   - refund stats aggregate correctly across statuses
   - approving a refund transitions the status
+
+注：2026-09-19 起测试跑在外键强制下。此前用例用 `str(uuid.uuid4())` 凭空造
+order_id / user_id —— 那在生产里不可能出现（order_id 来自真实订单，
+user_id 来自鉴权主体），外键强制后这类"悬空引用"会被数据库直接拒绝。
+现统一改为**先建真实行再引用**。
 """
 
 import uuid
@@ -17,19 +22,25 @@ from app.schemas.refund import RefundCreate, RefundUpdate
 from app.services.refund import RefundService
 
 
-async def test_create_refund(workspace_id, session_factory):
+async def _order(db, workspace_id) -> Order:
+    """插入一个真实订单并 flush，供退款用例引用。"""
+    order = Order(
+        id=str(uuid.uuid4()),
+        workspace_id=workspace_id,
+        customer_name="退款测试客户",
+        order_number=str(uuid.uuid4())[:8].upper(),
+        subtotal=199.0,
+        total=199.0,
+        status=OrderStatus.DELIVERED,
+    )
+    db.add(order)
+    await db.flush()
+    return order
+
+
+async def test_create_refund(workspace_id, user_id, session_factory):
     async with session_factory() as db:
-        order = Order(
-            id=str(uuid.uuid4()),
-            workspace_id=workspace_id,
-            customer_name="退款测试客户",
-            order_number=str(uuid.uuid4())[:8].upper(),
-            subtotal=199.0,
-            total=199.0,
-            status=OrderStatus.DELIVERED,
-        )
-        db.add(order)
-        await db.flush()
+        order = await _order(db, workspace_id)
 
         ws = (await db.execute(select(Workspace).where(Workspace.id == workspace_id))).scalar_one()
         service = RefundService()
@@ -42,7 +53,7 @@ async def test_create_refund(workspace_id, session_factory):
                 reason="quality",
                 reason_detail="收到货有破损",
             ),
-            user_id=workspace_id,
+            user_id=user_id,
         )
 
         stored = (await db.execute(select(Refund).where(Refund.id == refund.id))).scalar_one()
@@ -59,10 +70,11 @@ async def test_refund_stats(workspace_id, session_factory):
             (30.0, RefundStatus.COMPLETED),
             (20.0, RefundStatus.PENDING),
         ]:
+            order = await _order(db, workspace_id)
             db.add(Refund(
                 id=str(uuid.uuid4()),
                 workspace_id=workspace_id,
-                order_id=str(uuid.uuid4()),
+                order_id=order.id,
                 amount=amount,
                 reason=RefundReason.OTHER,
                 status=status,
@@ -78,12 +90,13 @@ async def test_refund_stats(workspace_id, session_factory):
         assert stats["total_refunded"] == 30.0
 
 
-async def test_process_refund_approves(workspace_id, session_factory):
+async def test_process_refund_approves(workspace_id, user_id, session_factory):
     async with session_factory() as db:
+        order = await _order(db, workspace_id)
         refund = Refund(
             id=str(uuid.uuid4()),
             workspace_id=workspace_id,
-            order_id=str(uuid.uuid4()),
+            order_id=order.id,
             amount=80.0,
             reason=RefundReason.WRONG_ITEM,
             status=RefundStatus.PENDING,
@@ -98,6 +111,6 @@ async def test_process_refund_approves(workspace_id, session_factory):
             workspace=ws,
             refund_id=refund.id,
             update_data=RefundUpdate(status="approved", reviewer_note="同意退款"),
-            user_id=workspace_id,
+            user_id=user_id,
         )
         assert updated.status == "approved"

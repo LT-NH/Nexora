@@ -22,7 +22,7 @@ async def _workspace(session_factory, workspace_id) -> Workspace:
         return result.scalar_one()
 
 
-async def test_create_nps_feedback(workspace_id, session_factory):
+async def test_create_nps_feedback(workspace_id, user_id, session_factory):
     async with session_factory() as db:
         ws = await _workspace(session_factory, workspace_id)
         service = FeedbackService()
@@ -30,7 +30,7 @@ async def test_create_nps_feedback(workspace_id, session_factory):
             db=db,
             workspace=ws,
             data=FeedbackCreate(type="nps", nps_score=9, content="很好用"),
-            user_id=str(uuid.uuid4()),
+            user_id=user_id,
         )
         stored = await db.execute(select(Feedback).where(Feedback.id == result.id))
         fb = stored.scalar_one()
@@ -39,7 +39,7 @@ async def test_create_nps_feedback(workspace_id, session_factory):
         assert fb.nps_score == 9
 
 
-async def test_create_text_feedback_without_score(workspace_id, session_factory):
+async def test_create_text_feedback_without_score(workspace_id, user_id, session_factory):
     async with session_factory() as db:
         ws = await _workspace(session_factory, workspace_id)
         service = FeedbackService()
@@ -47,7 +47,7 @@ async def test_create_text_feedback_without_score(workspace_id, session_factory)
             db=db,
             workspace=ws,
             data=FeedbackCreate(type="feedback", content="希望能支持微信支付"),
-            user_id=str(uuid.uuid4()),
+            user_id=user_id,
         )
         stored = await db.execute(select(Feedback).where(Feedback.id == result.id))
         fb = stored.scalar_one()
@@ -56,7 +56,7 @@ async def test_create_text_feedback_without_score(workspace_id, session_factory)
         assert fb.content == "希望能支持微信支付"
 
 
-async def test_list_feedbacks(workspace_id, session_factory):
+async def test_list_feedbacks(workspace_id, user_id, session_factory):
     async with session_factory() as db:
         ws = await _workspace(session_factory, workspace_id)
         service = FeedbackService()
@@ -65,7 +65,7 @@ async def test_list_feedbacks(workspace_id, session_factory):
                 db=db,
                 workspace=ws,
                 data=FeedbackCreate(type="nps", nps_score=8 + i),
-                user_id=str(uuid.uuid4()),
+                user_id=user_id,
             )
         items = await service.list_feedbacks(db, ws)
         assert len(items) == 3

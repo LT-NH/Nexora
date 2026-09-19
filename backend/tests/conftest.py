@@ -29,12 +29,20 @@ TEST_DATABASE_URL = "sqlite+aiosqlite:///:memory:"
 
 @pytest_asyncio.fixture
 async def engine():
-    """In-memory SQLite engine with all tables created."""
+    """In-memory SQLite engine with all tables created.
+
+    与生产共用同一份 PRAGMA 配方（`apply_sqlite_pragmas`）—— 关键是让测试也跑在
+    **外键强制**下，否则「删父行留下子行」这类问题在测试里永远不会暴露
+    （本项目真实踩过：生产库积累了 10 处孤儿数据）。
+    """
+    from app.database import apply_sqlite_pragmas
+
     eng = create_async_engine(
         TEST_DATABASE_URL,
         connect_args={"check_same_thread": False},
         poolclass=StaticPool,
     )
+    apply_sqlite_pragmas(eng.sync_engine)
     async with eng.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     yield eng
@@ -91,6 +99,33 @@ async def workspace_id(patch_session, session_factory):
         db.add(Workspace(id=ws_id, name="Test Workspace", slug="test-workspace"))
         await db.commit()
     yield ws_id
+
+
+@pytest_asyncio.fixture
+async def user_id(patch_session, session_factory):
+    """Create a **real** user row and return its id.
+
+    为什么需要它：外键强制开启后（2026-09-19），用 `str(uuid.uuid4())` 凭空造一个
+    user_id 去插入子表会被数据库直接拒绝。生产环境里 user_id 来自鉴权主体
+    （`get_principal`），永远是真实存在的用户 —— 测试也必须构造真实行，
+    否则测的是「生产不可能出现的状态」。
+    """
+    import uuid
+
+    from app.models.user import User
+
+    uid = str(uuid.uuid4())
+    async with session_factory() as db:
+        db.add(
+            User(
+                id=uid,
+                email=f"test-{uid[:8]}@example.com",
+                password_hash="not-a-real-hash",
+                full_name="Test User",
+            )
+        )
+        await db.commit()
+    yield uid
 
 
 # ---------------------------------------------------------------------------

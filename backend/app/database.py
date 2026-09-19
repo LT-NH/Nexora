@@ -55,27 +55,17 @@ engine = create_async_engine(_database_url, **_engine_kwargs)
 #
 # 本项目有 5 个常驻定时任务（含每 5 分钟的店铺同步），并发写是常态而非边缘
 # 情况，因此显式配置：
-#   journal_mode=WAL    读写不互斥（写者不再阻塞读者），锁粒度降到页级
-#   synchronous=NORMAL  WAL 下的官方推荐档位：系统崩溃不会损坏库，
-#                       仅在操作系统级崩溃时可能丢失最近事务
-#   busy_timeout=5000   显式写出（驱动默认已是此值），防止日后被误改成 0
-#
-# ⚠️ 刻意**不**开启 `PRAGMA foreign_keys=ON`：
-#   实测现有库存在 10 处外键违规（products 4 / customers 3 / orders 3，
-#   均引用了不存在的 workspace_id —— 演示数据残留）。SQLite 打开外键强制
-#   不会回溯清理旧数据，但会让**后续**涉及这些行的写入直接报错，等于用
-#   「更严谨」的配置引入线上故障。
-#   开启前置条件：先清理孤儿行（`PRAGMA foreign_key_check` 返回空），
-#   届时再把 "PRAGMA foreign_keys=ON" 加回本配方。
+#   journal_mode=WAL      读写不互斥（写者不再阻塞读者），锁粒度降到页级
+#   synchronous=NORMAL    WAL 下的官方推荐档位：系统崩溃不会损坏库，
+#                         仅在操作系统级崩溃时可能丢失最近事务
+#   busy_timeout=5000     显式写出（驱动默认已是此值），防止日后被误改成 0
+#   foreign_keys=ON       SQLite 默认**不强制**外键；不开启会导致删父行时子行残留
+#                         （本项目就因此积累过 10 处孤儿数据，2026-09-19 清理完毕）
 SQLITE_PRAGMAS: tuple[str, ...] = (
     "PRAGMA journal_mode=WAL",
     "PRAGMA synchronous=NORMAL",
     "PRAGMA busy_timeout=5000",
-)
-
-# 记录待办：外键强制未启用的原因（供检测脚本与运维参考）
-SQLITE_FOREIGN_KEYS_PENDING_REASON = (
-    "存在历史孤儿数据（外键违规），清理完成后才可开启 foreign_keys=ON"
+    "PRAGMA foreign_keys=ON",
 )
 
 

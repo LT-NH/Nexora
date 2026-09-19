@@ -128,22 +128,51 @@ async def test_concurrent_mixed_read_write(file_engine):
 
 
 def test_pragma_recipe_is_documented():
-    """配方内容锁定：不允许悄悄去掉 WAL 或 busy_timeout。"""
+    """配方内容锁定：不允许悄悄去掉 WAL / busy_timeout / 外键强制。"""
     joined = " ".join(SQLITE_PRAGMAS).lower()
     assert "journal_mode=wal" in joined
     assert "busy_timeout=5000" in joined
+    assert "foreign_keys=on" in joined
 
 
-def test_foreign_keys_deliberately_not_enabled():
-    """守卫：**不要**顺手打开 foreign_keys=ON。
+async def test_foreign_keys_are_enforced(file_engine):
+    """外键必须真的强制生效 —— 删父行时子行不应残留。
 
-    现有库存在 10 处外键违规（演示数据残留，引用不存在的 workspace）。
-    SQLite 打开外键强制不会回溯清理旧数据，但会让后续涉及这些行的写入
-    直接报错 —— 等于用「更严谨」的配置引入线上故障。
-
-    要开启请先清理孤儿数据，并同步修改本测试与本文件的说明。
+    背景（2026-09-19）：SQLite 默认**不强制**外键，本项目因此积累过 10 处
+    孤儿数据（删工作空间后 products/customers/orders 的子行仍然留着）。
+    清理干净后才开启本 PRAGMA，这条测试确保不会被人误删掉。
     """
-    joined = " ".join(SQLITE_PRAGMAS).lower()
-    assert "foreign_keys" not in joined, (
-        "开启 foreign_keys 前必须先清理孤儿数据（见 SQLITE_FOREIGN_KEYS_PENDING_REASON）"
-    )
+    engine, _ = file_engine
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+
+    async with engine.begin() as conn:
+        await conn.execute(text("PRAGMA foreign_keys=ON"))
+        await conn.execute(text("CREATE TABLE parent (id TEXT PRIMARY KEY)"))
+        await conn.execute(
+            text(
+                "CREATE TABLE child (id TEXT PRIMARY KEY, "
+                "parent_id TEXT REFERENCES parent(id) ON DELETE CASCADE)"
+            )
+        )
+
+    async with factory() as s:
+        await s.execute(text("INSERT INTO parent (id) VALUES ('p1')"))
+        await s.execute(text("INSERT INTO child (id, parent_id) VALUES ('c1', 'p1')"))
+        await s.commit()
+
+    # 插入引用不存在父行的子行 → 必须被拒绝
+    with pytest.raises(Exception):
+        async with factory() as s:
+            await s.execute(text("INSERT INTO child (id, parent_id) VALUES ('c2', 'nope')"))
+            await s.commit()
+
+    # 删父行 → 子行应被级联删除（不再残留孤儿）
+    async with factory() as s:
+        await s.execute(text("DELETE FROM parent WHERE id='p1'"))
+        await s.commit()
+
+    async with engine.connect() as conn:
+        left = (await conn.execute(text("SELECT COUNT(*) FROM child"))).scalar()
+        orphan = (await conn.execute(text("PRAGMA foreign_key_check"))).fetchall()
+    assert int(left) == 0, "级联删除未生效：子行残留"
+    assert not orphan, f"仍有外键违规：{orphan}"
