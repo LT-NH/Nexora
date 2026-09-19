@@ -12,7 +12,7 @@
 发版流程：改 Changelog + Landing 徽章之后，同步更新本文件。
 """
 
-APP_VERSION = "5.10"
+APP_VERSION = "5.11"
 
 # 与前端 Changelog 对齐时使用的版本格式（前端写 "v5.8"，后端存 "5.8"）
 VERSION_PREFIX = "v"

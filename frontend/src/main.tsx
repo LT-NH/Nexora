@@ -5,6 +5,7 @@ import * as Sentry from '@sentry/react';
 import { ErrorBoundaryFallback } from '@/components/ErrorBoundary';
 import { AuthProvider } from '@/contexts/AuthContext';
 import { WorkspaceProvider } from '@/contexts/WorkspaceContext';
+import { ThemeProvider } from '@/contexts/ThemeContext';
 import { ToastProvider, useToast } from '@/components/ui/Toast';
 import App from './App';
 import './index.css';
@@ -74,16 +75,19 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
         <ErrorBoundaryFallback error={error as Error} resetError={resetError} />
       )}
     >
-      <Router>
-        <ToastProvider>
-          <AppUpdateNotifier />
-          <AuthProvider>
-            <WorkspaceProvider>
-              <App />
-            </WorkspaceProvider>
-          </AuthProvider>
-        </ToastProvider>
-      </Router>
+      {/* ThemeProvider 放在最外层：主题是全局单例，且错误兜底 UI 也需要正确主题 */}
+      <ThemeProvider>
+        <Router>
+          <ToastProvider>
+            <AppUpdateNotifier />
+            <AuthProvider>
+              <WorkspaceProvider>
+                <App />
+              </WorkspaceProvider>
+            </AuthProvider>
+          </ToastProvider>
+        </Router>
+      </ThemeProvider>
     </Sentry.ErrorBoundary>
   </React.StrictMode>
 );

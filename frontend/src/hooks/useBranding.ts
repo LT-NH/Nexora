@@ -1,37 +1,33 @@
 import { useEffect } from 'react';
 import { useWorkspace } from '@/hooks/useWorkspace';
+import { useTheme } from '@/contexts/ThemeContext';
 
 /**
- * 品牌白标定制：将当前工作空间的品牌色应用到全局 CSS 变量。
+ * 品牌白标定制：把当前工作空间的品牌色应用到全局 CSS 变量。
  *
- * 深色模式规则（避免与 useTheme 冲突）：
- * - 用户通过主题切换器明确选择了 light/dark → 尊重用户选择
- * - 用户处于 system 或从未选择 → 由品牌 brand_dark_mode 决定（默认浅色）
+ * ⚠️ 深色模式**不再由本 hook 直接改 DOM**（2026-09-19 修复）。
+ *
+ * 历史问题：本 hook 原先自己往 `<html>` 加/删 `dark` class，于是与
+ * `useTheme`、Landing 的固定浅色逻辑形成**三个互抢的写入方**，谁最后跑谁赢。
+ * 具体冲突：theme=system 时它按品牌设置覆盖，把「跟随系统」的深色抹掉；
+ * brand_dark_mode=true 时它加 dark，而顶栏切换器仍显示「浅色模式」。
+ *
+ * 现在只通过 `setBrandDark()` 把品牌偏好**告知主题层**，由 ThemeProvider
+ * 作为唯一写入方按统一优先级裁决：
+ *   用户显式选择 > 品牌默认（仅当用户从未选择）> 系统偏好
  */
 export const useBranding = () => {
   const { currentWorkspace } = useWorkspace();
+  const { setBrandDark } = useTheme();
 
+  // 品牌色：写入 CSS 变量（与主题无关，保持原样）
   useEffect(() => {
     const color = currentWorkspace?.brand_color || '#7C3AED';
-    const brandDark = currentWorkspace?.brand_dark_mode ?? false;
-    const root = document.documentElement;
-    root.style.setProperty('--brand-color', color);
-
-    let userTheme: string | null = null;
-    try {
-      userTheme = localStorage.getItem('nexora-theme');
-    } catch {
-      /* ignore */
-    }
-
-    if (userTheme === 'light') {
-      root.classList.remove('dark');
-    } else if (userTheme === 'dark') {
-      root.classList.add('dark');
-    } else {
-      // system / 未选择 → 品牌设置决定（默认浅色）
-      if (brandDark) root.classList.add('dark');
-      else root.classList.remove('dark');
-    }
+    document.documentElement.style.setProperty('--brand-color', color);
   }, [currentWorkspace]);
+
+  // 品牌默认深色：交给主题层裁决，本 hook 不碰 classList
+  useEffect(() => {
+    setBrandDark(currentWorkspace?.brand_dark_mode ?? false);
+  }, [currentWorkspace, setBrandDark]);
 };

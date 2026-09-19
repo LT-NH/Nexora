@@ -32,6 +32,7 @@ import { TransitionLink } from '@/components/ui/TransitionLink';
 import { CountUp } from '@/components/ui/CountUp';
 import { useReveal, shouldSkipReveal } from '@/hooks/useReveal';
 import { useTilt } from '@/hooks/useTilt';
+import { useTheme } from '@/contexts/ThemeContext';
 
 /* ─── Reveal wrapper ─── */
 const Reveal: React.FC<{ children: React.ReactNode; className?: string; delay?: number }> = ({
@@ -937,22 +938,16 @@ export const Landing: React.FC = () => {
     };
   }, []);
 
-  // 首页营销页固定浅色：强制移除 dark class（含 MutationObserver 兜底），
-  // 离开时恢复用户主题选择
+  // 首页营销页固定浅色。**不再自己删 dark class**（2026-09-19 修复）：
+  // 原先用 MutationObserver 硬扛，是第三个与 useTheme / useBranding 互抢的写入方，
+  // 且卸载时用挂载时捕获的旧值恢复（期间用户若切过主题就会还原错）。
+  // 现在只向主题层声明「本页强制浅色」，由 ThemeProvider 统一裁决与写入；
+  // 用户的选择不被篡改，离开本页后自动恢复。
+  const { setForceLight } = useTheme();
   useEffect(() => {
-    const root = document.documentElement;
-    const hadDark = root.classList.contains('dark');
-    root.classList.remove('dark');
-    // 兜底：Landing 挂载期间任何代码加回 dark class 都立即清除
-    const mo = new MutationObserver(() => {
-      if (root.classList.contains('dark')) root.classList.remove('dark');
-    });
-    mo.observe(root, { attributes: true, attributeFilter: ['class'] });
-    return () => {
-      mo.disconnect();
-      if (hadDark) root.classList.add('dark');
-    };
-  }, []);
+    setForceLight(true);
+    return () => setForceLight(false);
+  }, [setForceLight]);
 
   // 鼠标视差：原生 window 监听（transform-only，60fps 友好）
   useEffect(() => {
@@ -1281,7 +1276,7 @@ export const Landing: React.FC = () => {
               <Reveal>
                 <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-white/70 border border-violet-100 text-violet-700 text-sm font-medium shadow-sm backdrop-blur">
                   <span className="w-2 h-2 rounded-full bg-gradient-to-r from-violet-500 to-fuchsia-500 animate-pulse-glow" />
-                  v5.10 现已发布
+                  v5.11 现已发布
                   <span className="text-violet-300">·</span>
                   <span className="text-[#8e8e93]">6 大平台已接入</span>
                 </div>
