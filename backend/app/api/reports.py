@@ -52,12 +52,17 @@ async def profit_analysis(
     workspace, _ = await _require_member(workspace_slug, principal, db, WorkspaceRole.VIEWER)
     from sqlalchemy import select as _select
 
-    # 1. 该工作区所有订单明细
+    from app.services import metrics
+
+    # 1. 该工作区所有订单明细（排除取消/退款单，口径见 app/services/metrics.py）
     items = (
         await db.execute(
             _select(OrderItem)
             .join(Order, OrderItem.order_id == Order.id)
-            .where(Order.workspace_id == workspace.id)
+            .where(
+                Order.workspace_id == workspace.id,
+                Order.status.notin_(metrics.EXCLUDED_STATUSES),
+            )
         )
     ).scalars().all()
 

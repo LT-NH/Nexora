@@ -12,7 +12,7 @@ import json
 from datetime import datetime, timedelta, timezone
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -26,8 +26,18 @@ from app.models.health_snapshot import HealthSnapshot
 from app.models.order import Order, OrderItem
 from app.models.product import Product
 from app.models.workspace import Workspace, WorkspaceRole
+from app.services import metrics
+from app.services.insight_ranking import rank_insights
+from app.utils.logging import get_logger
+from app.utils.memory_cache import cache
+
+logger = get_logger(__name__)
 
 router = APIRouter(prefix="/workspaces/{slug}/ai", tags=["AI Decision Loop"])
+
+# 今日摘要缓存时长（秒）：挡掉「页面重载 / 执行后 reload / 反馈后 reload」引起的
+# 重复千问调用；执行与反馈端点会主动作废缓存，不会让用户看到过期的待办状态。
+AI_SUMMARY_CACHE_TTL = 180
 
 # ── AI 能力套餐档位门控 ────────────────────────────────────────────────
 # 能力矩阵（见 app/main.py _PLAN_FEATURES）：
@@ -38,13 +48,15 @@ router = APIRouter(prefix="/workspaces/{slug}/ai", tags=["AI Decision Loop"])
 
 
 async def _ensure_ai_tier(db: AsyncSession, principal, workspace_id: str, need: str = "pro") -> None:
-    """校验工作空间套餐档位；不达标抛 403。need: pro | enterprise。"""
-    u = getattr(principal, "user", None)
-    if u is not None and getattr(u, "is_superadmin", False):
-        return
+    """校验工作空间套餐档位；不达标抛 403。need: pro | enterprise。
+
+    超管与周期过期都交由 billing.resolve_workspace_tier 统一处理：
+    超管直通 enterprise，过期订阅不计入档位（此前 trial_ends_at 从未被读取，
+    导致试用到期后仍可无限期使用付费功能）。
+    """
     try:
-        from app.api.billing import get_ws_plan_tier
-        tier = await get_ws_plan_tier(db, workspace_id)
+        from app.api.billing import resolve_workspace_tier
+        tier = await resolve_workspace_tier(db, workspace_id, principal)
         _ok = (need == "pro" and tier in ("pro", "enterprise")) or (need == "enterprise" and tier == "enterprise")
         if not _ok:
             raise HTTPException(
@@ -55,8 +67,15 @@ async def _ensure_ai_tier(db: AsyncSession, principal, workspace_id: str, need: 
             )
     except HTTPException:
         raise
-    except Exception:
-        return  # 订阅表异常时保守放行（不因计费问题阻断核心功能）
+    except Exception as exc:  # noqa: BLE001
+        # fail-closed：门控查询异常时按最低档处理，与 store_agent.py 的策略对齐。
+        # 原实现是「保守放行」—— 订阅表迁移失败 / 查询超时 / 字段缺失时，
+        # 全部 Pro 专属端点会无条件开放。计费系统故障不该变成免费赠送。
+        logger.warning("AI 套餐门控查询失败，按最低档拒绝: %s", exc)
+        raise HTTPException(
+            status_code=403,
+            detail="订阅状态暂时无法确认，请稍后重试；如持续失败请联系支持。",
+        ) from exc
 
 
 
@@ -65,22 +84,20 @@ def _clamp(v: float, lo: float = 0.0, hi: float = 100.0) -> float:
 
 
 async def _compute_indicators(db: AsyncSession, ws_id: str):
-    """采集决策所需的真实业务指标（与健康引擎同源）。"""
-    now = datetime.utcnow()
+    """采集决策所需的真实业务指标（与健康引擎同源）。
+
+    口径统一在 app/services/metrics.py：订单量只算有效订单（排除取消/退款单），
+    退款率分母用有效订单。此前这里的订单数不过滤、退款率分母用全部订单，
+    与体检卡上的同一指标对不上（用户会看到两个都自称真实的数字）。
+    顺带把原先 3 次 count 查询合并为 2 次聚合（少一次数据库往返）。
+    """
+    now = metrics.utcnow()
     products = (await db.execute(select(Product).where(Product.workspace_id == ws_id))).scalars().all()
     customers = (await db.execute(select(Customer).where(Customer.workspace_id == ws_id))).scalars().all()
 
-    # 近 7 天订单数（近似日均销量）
-    since7 = now - timedelta(days=7)
-    orders7 = (
-        await db.execute(
-            select(func.count(Order.id)).where(
-                Order.workspace_id == ws_id,
-                Order.created_at >= since7,
-            )
-        )
-    ).scalar_one()
-    daily_sales = orders7 / 7.0 / max(len(products), 1) if orders7 else 0.0
+    # 近 7 天有效订单数 → 换算日均销量（决定库存还能撑几天）
+    counts7 = await metrics.order_counts(db, ws_id, days=7, now=now)
+    daily_sales = metrics.daily_sales_per_product(counts7["valid_orders"], 7, len(products))
 
     # 库存风险
     overstock: list[dict] = []
@@ -96,26 +113,9 @@ async def _compute_indicators(db: AsyncSession, ws_id: str):
             elif days < 14:
                 stockout_risk.append({"product_id": p.id, "name": p.name, "stock": stock, "days": round(days), "price": float(p.price or 0)})
 
-    # 退款率（近 30 天）
-    since30 = now - timedelta(days=30)
-    total30 = (
-        await db.execute(
-            select(func.count(Order.id)).where(
-                Order.workspace_id == ws_id,
-                Order.created_at >= since30,
-            )
-        )
-    ).scalar_one()
-    refund30 = (
-        await db.execute(
-            select(func.count(Order.id)).where(
-                Order.workspace_id == ws_id,
-                Order.created_at >= since30,
-                Order.status.in_(["refunded", "partially_refunded"]),
-            )
-        )
-    ).scalar_one()
-    refund_rate = refund30 / total30 * 100.0 if total30 else 0.0
+    # 退款率（近 30 天）：分子含部分退款，分母用有效订单 —— 与体检卡同口径
+    counts30 = await metrics.order_counts(db, ws_id, days=30, now=now)
+    refund_rate = metrics.refund_rate(counts30["refunded_orders"], counts30["valid_orders"])
 
     # 客户流失
     churn_risk: list[dict] = []
@@ -155,7 +155,15 @@ async def _qwen_enhance(prompt: str) -> str | None:
                 json={
                     "model": model,
                     "messages": [
-                        {"role": "system", "content": "你是资深电商运营专家，全程使用中文，只返回要求的内容。"},
+                        {
+                            "role": "system",
+                            "content": (
+                                "你是店主信任的电商经营搭档，全程使用中文，只返回要求的内容。"
+                                "面向不懂运营术语的小店主说人话：不要用「环比、同比、SKU、归因、置信度、"
+                                "转化率、履约、动销、客单价、GMV、ROI、处方、闭环」这类词，"
+                                "改用日常说法（比上一周多了多少 / 哪几款商品 / 钱花在哪了 / 每卖 100 元赚多少）。"
+                            ),
+                        },
                         {"role": "user", "content": prompt},
                     ],
                     "temperature": 0.5,
@@ -170,17 +178,21 @@ async def _qwen_enhance(prompt: str) -> str | None:
 
 
 def _build_insights(ws_id: str, ind: dict) -> list[dict]:
-    """基于指标生成今日 3 条决策结论（主动推送）。"""
+    """基于指标生成今日 3 条决策结论（主动推送）。
+
+    文案要求：说人话 —— 面向不懂运营术语的小店主，避开「SKU / 动销 / 断货流失 /
+    阈值 / 排查」这类词，换成「款商品 / 卖不动 / 卖断货 / 警戒线 / 查一下」。
+    这里是 AI 不可用时的兜底，一定会被用户看到，所以不能只在 prompt 里做约束。
+    """
     out: list[dict] = []
-    now = ind["now"]
 
     # 1) 库存：断货风险最高的一条
     if ind["stockout_risk"]:
         s = sorted(ind["stockout_risk"], key=lambda x: x["days"])[0]
         out.append({
             "insight_type": "stockout",
-            "title": f"{s['name']} 库存告急，建议补货",
-            "detail": f"当前库存 {s['stock']} 件，按近 7 天日均销量仅够支撑 {s['days']} 天（<14 天预警线）。建议立即补货避免断货流失。",
+            "title": f"{s['name']} 快卖断了，今天补货",
+            "detail": f"现在只剩 {s['stock']} 件，按最近的卖货速度还能撑 {s['days']} 天（少于 14 天就该补了）。今天就安排补货，别等卖光才想起来。",
             "confidence": round(_clamp(0.95 - min(s["days"], 14) * 0.03), 2),
             "action_type": "restock",
             "action_params": json.dumps({"product_id": s["product_id"]}),
@@ -190,8 +202,8 @@ def _build_insights(ws_id: str, ind: dict) -> list[dict]:
     if ind["refund_rate"] >= 8 and len(out) < 3:
         out.append({
             "insight_type": "refund",
-            "title": "近 30 天退款率偏高，建议排查",
-            "detail": f"近 30 天退款率 {ind['refund_rate']:.1f}%（阈值 8%）。建议优先核查高频退款订单的物流与品质问题。",
+            "title": "最近一个月退货有点多，查一下",
+            "detail": f"最近 30 天每 100 单里有 {ind['refund_rate']:.1f} 单退款（超过 8 单就该留意了）。先翻翻退得最多的那几单，多半是物流慢或者和描述不一样。",
             "confidence": round(_clamp(0.9 - (ind["refund_rate"] - 8) * 0.02), 2),
             "action_type": "refund_check",
             "action_params": "{}",
@@ -202,8 +214,8 @@ def _build_insights(ws_id: str, ind: dict) -> list[dict]:
         o = sorted(ind["overstock"], key=lambda x: -x["days"])[0]
         out.append({
             "insight_type": "overstock",
-            "title": f"{o['name']} 库存积压，建议清仓或停售",
-            "detail": f"库存 {o['stock']} 件，按当前动销需 {o['days']} 天售罄（>120 天积压线）。建议降价 15% 清仓或停售释放资金。",
+            "title": f"{o['name']} 压货了，考虑降价清一批",
+            "detail": f"仓库里还有 {o['stock']} 件，按最近的卖货速度要 {o['days']} 天才卖得完（超过 120 天就算压货）。降 15% 先清一批，把钱腾出来进新品。",
             "confidence": round(_clamp(0.9 - min(o["days"] - 120, 100) * 0.002), 2),
             "action_type": "clearance",
             "action_params": json.dumps({"product_id": o["product_id"]}),
@@ -214,8 +226,8 @@ def _build_insights(ws_id: str, ind: dict) -> list[dict]:
         c = sorted(ind["churn_risk"], key=lambda x: -x["last_order_days"])[0]
         out.append({
             "insight_type": "churn",
-            "title": f"客户 {c['name']} 流失风险高，建议唤醒",
-            "detail": f"{c['name']} 已 {c['last_order_days']} 天未下单（累计 {c['total_orders']} 单）。建议发送满减唤醒券挽回。",
+            "title": f"老客户 {c['name']} 很久没来了，发张券试试",
+            "detail": f"{c['name']} 已经 {c['last_order_days']} 天没下单（之前买过 {c['total_orders']} 次）。发一张满减券提醒一下，老客户回头比拉新便宜得多。",
             "confidence": round(_clamp(0.8 + min(c["last_order_days"], 60) * 0.003), 2),
             "action_type": "retention",
             "action_params": "{}",
@@ -233,9 +245,20 @@ async def daily_summary(
     slug: str,
     principal: Annotated[AuthContext, Depends(get_principal)],
     db: Annotated[AsyncSession, Depends(get_db)],
+    refresh: int = Query(0, description="传 1 强制重新生成（跳过缓存）"),
 ) -> dict:
     workspace, _ = await _require_member(slug, principal, db, WorkspaceRole.VIEWER)
     await _ensure_ai_tier(db, principal, workspace.id, "pro")
+
+    # 缓存：这个接口里有一次 1500 token 的千问调用，而前端在「页面重载 / 每次执行 /
+    # 每次反馈」后都会重新拉它。3 分钟内直接复用（执行与反馈端点会主动作废缓存，
+    # 所以用户不会看到过期的待办状态）。
+    ai_cache_key = f"ai-daily:{workspace.id}"
+    if not refresh:
+        cached = cache.get(ai_cache_key)
+        if cached is not None:
+            return cached
+
     ind = await _compute_indicators(db, workspace.id)
 
     # ── 消费健康引擎诊断（单向流：体检 → 诊断 → 处方）────────────────────
@@ -291,11 +314,11 @@ async def daily_summary(
     if diagnosis:
         _w = diagnosis.get("weakest") or {}
         _diag_text = (
-            "\n健康引擎体检结论（诊断已完成，你无需重复诊断）：综合分 "
+            "\n系统已完成体检（结论如下，你不用重复分析）：综合分 "
             f"{diagnosis['score']:.0f}/100（{diagnosis['level']}）"
-            + (f"，最薄弱维度「{_w.get('name')}」{_w.get('score'):.0f} 分" if _w.get("name") else "")
-            + "。你的职责是【开处方】：针对诊断与快照给出今天最值得执行的 2~3 个动作，"
-            "聚焦怎么做（做什么/对谁做/预期效果），不要复述诊断描述。\n"
+            + (f"，最弱的一项是「{_w.get('name')}」{_w.get('score'):.0f} 分" if _w.get("name") else "")
+            + "。你的任务：针对体检结论和下面的数据，给出今天最值得做的 2~3 件事，"
+            "重点是「该怎么做」（做什么 / 对谁做 / 做完会怎样），不要复述体检结论。\n"
         )
     try:
         from app.services.ai import _extract_json
@@ -327,27 +350,32 @@ async def daily_summary(
         if _exp_rows:
             _parts = []
             for _e in _exp_rows:
-                _fb = "命中改善" if _e.outcome == "improved" else ("未命中" if _e.outcome == "not_improved" else "待定")
+                _fb = "上次这么做有效果" if _e.outcome == "improved" else (
+                    "上次这么做没效果" if _e.outcome == "not_improved" else "效果待观察"
+                )
                 _delta = ""
                 if _e.result_before is not None and _e.result_after is not None:
                     _d = round(float(_e.result_after) - float(_e.result_before), 2)
-                    _delta = f"，主指标 {_e.result_before}→{_e.result_after}（{_d:+.2f}）"
-                _lesson = f"。教训：{_e.lesson}" if _e.lesson else ""
-                _parts.append(f"「{_e.title}」[{_e.action_type}] 执行后反馈={_fb}{_delta}{_lesson}")
-            _exp_text = "\n近期同类建议执行经验（经验库，供你参考真实效果，避免重蹈覆辙）：\n- " + "\n- ".join(_parts)
+                    _delta = f"，相关数字 {_e.result_before}→{_e.result_after}（{_d:+.2f}）"
+                _lesson = f"。当时的教训：{_e.lesson}" if _e.lesson else ""
+                _parts.append(f"「{_e.title}」[{_e.action_type}] 执行后：{_fb}{_delta}{_lesson}")
+            _exp_text = "\n以前做过类似事情的结果（供你参考真实效果，别重复无效的做法）：\n- " + "\n- ".join(_parts)
         _prompt = (
-            "你是多店铺电商经营决策副驾（AI 决策助手，负责开处方）。下面是系统从真实数据库采集的店铺指标快照（JSON）。\n"
+            "你是店主信得过的经营助手。下面是系统从真实数据库取到的店铺数据（JSON）。\n"
             + _diag_text
-            + "请基于体检诊断与指标快照，开出【今天最值得执行的 2~3 条经营处方】。\n"
-            "要求：处方必须是动作（做什么 + 对谁做 + 预期效果），不是现象描述；"
-            "可结合常识挖掘快照里的深层问题，但标题与详情都要以动作收尾。\n"
+            + "请给出【今天最值得做的 2~3 件事】。\n"
+            "要求：每件事都必须是具体动作（做什么 + 对谁做 + 做完会怎样），不能只是描述现象；"
+            "标题和内容都要落到「该做什么」上。\n"
+            "【说人话】读者是不懂运营术语的小店主：不要出现「环比、同比、SKU、归因、置信度、转化率、"
+            "履约、动销、客单价、GMV、ROI、处方、主指标」这类词，同一件事换日常说法"
+            "（「6 个 SKU 滞销」→「6 款商品卖不动」）。\n"
             "每条输出字段：\n"
             "  insight_type ∈ stockout|refund|overstock|churn|profit|growth（问题类型）\n"
-            "  action_type ∈ restock|clearance|retention|refund_check|price_adjust|keep（动作类型，keep=仅观察无需动作）\n"
-            "  title：≤26 字、动词开头、直接有力（如「今日补货 XX：库存仅够撑 9 天」）\n"
+            "  action_type ∈ restock|clearance|retention|refund_check|price_adjust|keep（动作类型，keep=只观察不用动手）\n"
+            "  title：≤26 字、动词开头、直接有力（如「今天补货 XX：还能撑 9 天」）\n"
             "  detail：≤100 字，数据证据 + 具体动作 + 预期效果\n"
-            "  confidence：0.3~0.99 该处方成立的可信度\n"
-            "  params：{product_id?} 或 {customer?}，尽量引用快照中的实体\n"
+            "  confidence：0.3~0.99 这件事值得做的把握\n"
+            "  params：{product_id?} 或 {customer?}，尽量引用快照里的具体商品/客户\n"
             "只输出 JSON 数组，不要任何解释文字。\n快照：" + json.dumps(_snapshot, ensure_ascii=False)
             + _exp_text
         )
@@ -420,7 +448,7 @@ async def daily_summary(
         if e.status in ("pending", "executed")
     ]
 
-    return {
+    result = {
         "date": ind["now"].date().isoformat(),
         "insights": visible[:3],
         "diagnosis": diagnosis,
@@ -431,6 +459,8 @@ async def daily_summary(
             "churn_risk_count": len(ind["churn_risk"]),
         },
     }
+    cache.set(ai_cache_key, result, ttl=AI_SUMMARY_CACHE_TTL)
+    return result
 
 
 # ----------------------------------------------------------------------
@@ -521,7 +551,7 @@ async def _execute_insight_action(
 
     if action == "restock":
         pid = params.get("product_id")
-        return "已引导至补货流程：请在商品管理确认该 SKU 补货数量。" if pid else "请选择需补货的商品。"
+        return "已帮你跳到补货：去「商品管理」把要补的数量填上就行。" if pid else "请选择要补货的商品。"
 
     if action == "clearance":
         pid = params.get("product_id")
@@ -557,7 +587,7 @@ async def _execute_insight_action(
         return "Shopify 优惠券创建失败，未生成唤醒券"
 
     if action == "refund_check":
-        return "已引导至退款售后页：请核查近 30 天高频退款订单。"
+        return "已帮你跳到退款页：看看最近 30 天退款最多的那几单。"
 
     if action == "price_adjust":
         # AI 定价建议执行：真实调整本地商品价格（可配 Shopify 反向同步）
@@ -607,6 +637,8 @@ async def execute_insight(
     if _metric_before is not None:
         ins.result_before = _metric_before
     await db.commit()
+    # 待办状态已变 → 作废今日摘要缓存，下次拉取重新生成（避免看到刚执行完的旧状态）
+    cache.invalidate(f"ai-daily:{workspace.id}")
     return {"executed": True, "message": message, "insight_id": ins.id}
 
 
@@ -645,11 +677,11 @@ async def feedback_insight(
         if improved and ins.result_before is not None and _metric_after is not None:
             _d = round(float(_metric_after) - float(ins.result_before), 2)
             _lesson = (
-                f"执行后主指标 {ins.result_before} → {_metric_after}（{_d:+.2f}），回访判定命中。"
-                "同类场景可优先复用该动作。"
+                f"做完后相关数字从 {ins.result_before} 变成 {_metric_after}（{_d:+.2f}），确实有效果。"
+                "下次遇到同类问题可以优先这么做。"
             )
         elif ins.feedback == "not_improved":
-            _lesson = "回访判定未命中——该动作对同类问题效果有限，下次应换策略（如换渠道/换动作类型）。"
+            _lesson = "试过了没起效果——同类问题下次换个做法（比如换个渠道或换个动作）。"
         db.add(AgentExperience(
             workspace_id=workspace.id,
             insight_id=ins.id,
@@ -666,12 +698,71 @@ async def feedback_insight(
         ))
 
     await db.commit()
+    # 反馈会写经验、可能改变待办展示 → 一并作废摘要缓存
+    cache.invalidate(f"ai-daily:{workspace.id}")
     return {"saved": True, "feedback": ins.feedback}
 
 
 # ----------------------------------------------------------------------
 # 3. 建议命中率（闭环指标）
 # ----------------------------------------------------------------------
+
+@router.get("/insights/top", summary="今天最该做的一件事（含可翻看的完整列表）")
+async def top_insight(
+    slug: str,
+    principal: Annotated[AuthContext, Depends(get_principal)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    limit: int = 10,
+) -> dict:
+    """把所有待处理建议去重排序后返回，前端以「可翻看的卡片堆」呈现。
+
+    背景：实测单个工作空间会堆 61 条建议（同类问题多达 23 条），全部平铺的结果是
+    用户「连看的欲望都没有」—— 125 条建议里只有 5 条被执行、4 条有反馈。
+    判断哪条最重要本就是 AI 该做的事，不该把取舍丢回给用户。
+
+    返回**多条**而不是只返回第一条：用户仍然需要一个「翻一下看看还有什么」的出口，
+    否则只是把信息藏起来。列表按影响力降序，默认取前 10 条 —— 再多就不会有人翻了。
+
+    排序依据见 ``app.services.insight_ranking``。
+    """
+    workspace, _ = await _require_member(slug, principal, db, WorkspaceRole.VIEWER)
+    await _ensure_ai_tier(db, principal, workspace.id, "pro")
+
+    rows = (
+        await db.execute(
+            select(AiInsight)
+            .where(
+                AiInsight.workspace_id == workspace.id,
+                AiInsight.status == "pending",
+            )
+            .order_by(AiInsight.suggested_at.desc())
+            .limit(200)
+        )
+    ).scalars().all()
+
+    ranked_all = rank_insights(rows)
+    ranked = ranked_all[: max(1, min(limit, 20))]
+
+    return {
+        "items": [
+            {
+                "id": r.id,
+                "insight_type": r.insight_type,
+                "title": r.title,
+                "detail": r.detail,
+                "confidence": r.confidence,
+                "action_type": r.action_type,
+                "action_params": r.action_params,
+                "suggested_at": r.suggested_at.isoformat() if r.suggested_at else None,
+            }
+            for r in ranked
+        ],
+        # 去重后的待办条数（≠ items 长度：列表被 limit 截断时两者不同）
+        "total_todos": len(ranked_all),
+        # 去重前的原始建议条数，用于向用户交代「一堆建议被合并了多少」
+        "total_pending": len(rows),
+    }
+
 
 @router.get("/insights/stats", summary="建议命中率统计")
 async def insight_stats(
@@ -802,7 +893,7 @@ async def predictions(
     churn_predictions = sorted(churn_predictions, key=lambda x: -x["days_since_last"])[:6]
 
     # 千问解读未来 7 天风险（失败则保留通用说明）
-    forecast_note = "基于近 7 天订单动销与复购间隔预测，仅供参考"
+    forecast_note = "按最近 7 天的卖货速度和老客户回购间隔推算，仅供参考"
     try:
         _prompt = (
             "未来 7 天缺货风险商品：" + (json.dumps(stockout_predictions[:3], ensure_ascii=False) if stockout_predictions else "无")
@@ -843,64 +934,58 @@ def _detect_intent(q: str) -> str:
 
 
 async def _collect_biz_snapshot(db: AsyncSession, ws_id: str) -> str:
-    """生成店铺数据快照文本（供千问回答使用）。"""
-    now = datetime.utcnow()
-    since7 = now - timedelta(days=7)
-    since30 = now - timedelta(days=30)
+    """生成店铺数据快照文本（供千问回答使用）。
+
+    口径与体检 / AI 助手统一（见 app/services/metrics.py）：只统计有效订单
+    （排除取消与退款单），退款率分母用有效订单，低库存用每个商品自己的预警线。
+    此前这里完全不过滤状态、阈值还硬编码成 5 —— AI 报出的营收比页面上的数字大，
+    用户会直接看到「AI 说的和我看到的不一样」。
+    """
+    now = metrics.utcnow()
+    since7 = metrics.since_days(7, now)
+    since30 = metrics.since_days(30, now)
+    _valid = Order.status.notin_(metrics.EXCLUDED_STATUSES)
 
     rev7 = (
         await db.execute(
             select(func.coalesce(func.sum(Order.total), 0)).where(
-                Order.workspace_id == ws_id, Order.created_at >= since7,
+                Order.workspace_id == ws_id, Order.created_at >= since7, _valid,
             )
         )
     ).scalar_one() or 0
     rev30 = (
         await db.execute(
             select(func.coalesce(func.sum(Order.total), 0)).where(
-                Order.workspace_id == ws_id, Order.created_at >= since30,
+                Order.workspace_id == ws_id, Order.created_at >= since30, _valid,
             )
         )
     ).scalar_one() or 0
-    orders30 = (
-        await db.execute(
-            select(func.count(Order.id)).where(
-                Order.workspace_id == ws_id, Order.created_at >= since30,
-            )
-        )
-    ).scalar_one()
-    # 商品 Top5（按订单明细聚合）
+    counts30 = await metrics.order_counts(db, ws_id, days=30, now=now)
+    # 商品 Top5（按订单明细聚合，只算有效订单）
     top_rows = (
         await db.execute(
             select(OrderItem.product_name, func.sum(OrderItem.total_price))
             .join(Order, Order.id == OrderItem.order_id)
-            .where(Order.workspace_id == ws_id)
+            .where(Order.workspace_id == ws_id, _valid)
             .group_by(OrderItem.product_name)
             .order_by(func.sum(OrderItem.total_price).desc())
             .limit(5)
         )
     ).all()
     top_text = "、".join(f"{r[0]}(¥{float(r[1] or 0):,.0f})" for r in top_rows) or "暂无"
-    # 库存风险
+    # 库存偏少：用商品自己的预警线（此前硬编码 stock <= 5，与商品管理页不一致）
     products = (await db.execute(select(Product).where(Product.workspace_id == ws_id))).scalars().all()
-    low_stock = [p.name for p in products if (p.stock or 0) <= 5][:5]
+    low_stock = [
+        p.name for p in products if (p.stock or 0) <= (p.low_stock_threshold or 10)
+    ][:5]
     low_text = "、".join(low_stock) or "无"
-    # 退款率
-    refund30 = (
-        await db.execute(
-            select(func.count(Order.id)).where(
-                Order.workspace_id == ws_id,
-                Order.created_at >= since30,
-                Order.status.in_(["refunded", "partially_refunded"]),
-            )
-        )
-    ).scalar_one()
-    refund_rate = round(refund30 / orders30 * 100, 1) if orders30 else 0.0
+    refund_rate = metrics.refund_rate(counts30["refunded_orders"], counts30["valid_orders"])
 
     return (
         f"店铺数据快照（真实数据）：近 7 天营收 ¥{float(rev7):,.0f}；"
-        f"近 30 天营收 ¥{float(rev30):,.0f}、订单 {orders30} 笔、退款率 {refund_rate}%。"
-        f"畅销商品 Top5：{top_text}。低库存商品：{low_text}。"
+        f"近 30 天营收 ¥{float(rev30):,.0f}、有效订单 {counts30['valid_orders']} 笔、"
+        f"每 100 单退款 {refund_rate} 单。"
+        f"卖得最好的商品：{top_text}。库存偏少的商品：{low_text}。"
     )
 
 
@@ -928,8 +1013,10 @@ async def ai_chat(
         {
             "role": "system",
             "content": (
-                "你是电商经营分析助手，基于店铺真实数据回答，简洁专业，中文回复。"
-                "先给出结论，再给 1-2 条可执行建议。"
+                "你是店主信得过的经营助手，基于店铺真实数据回答，中文回复，说人话。"
+                "不要用「环比、同比、SKU、归因、置信度、转化率、履约、动销、客单价、GMV、ROI」"
+                "这类词，换成日常说法（比上一周多了多少 / 哪几款商品 / 每卖 100 元赚多少）。"
+                "先给结论，再给 1-2 条今天就能做的事。"
             ),
         },
         *history[-6:],
@@ -1194,12 +1281,17 @@ async def ai_analyze_sales(
     period = str(body.get("period") or "30d")
     days_map = {"7d": 7, "30d": 30, "90d": 90}
     days = days_map.get(period, 30)
-    since = datetime.utcnow() - timedelta(days=days)
+    since = metrics.since_days(days)
 
+    # 只喂有效订单（排除取消/退款单）：含废单会让趋势和金额偏高，
+    # 与页面上看到的数字对不上（口径见 app/services/metrics.py）
     rows = (
         await db.execute(
-            select(Order.total, Order.created_at)
-            .where(Order.workspace_id == workspace.id, Order.created_at >= since)
+            select(Order.total, Order.created_at).where(
+                Order.workspace_id == workspace.id,
+                Order.created_at >= since,
+                Order.status.notin_(metrics.EXCLUDED_STATUSES),
+            )
         )
     ).all()
 
@@ -1294,16 +1386,16 @@ async def profit_by_product(
     advice: list[str] = []
     for i in loss[:3]:
         advice.append(
-            f"「{i['name']}」毛利为负（{i['margin_pct']:.1f}%，亏损 ¥{abs(i['gross']):.0f}）：建议提价或停售该 SKU。"
+            f"「{i['name']}」在亏钱（每卖 100 元倒贴 {abs(i['margin_pct']):.0f} 元，共亏 ¥{abs(i['gross']):.0f}）：建议提价，或者先下架。"
         )
     low = [i for i in bottom_list if (i["margin_pct"] or 0) >= 0 and (i["margin_pct"] or 0) < 15][:2]
     for i in low:
-        advice.append(f"「{i['name']}」毛利率仅 {i['margin_pct']:.1f}%，低于健康线，建议优化成本或调价。")
+        advice.append(f"「{i['name']}」每卖 100 元只赚 {i['margin_pct']:.0f} 元，偏薄，建议谈谈进货价或适当提价。")
     if top_list:
         best = top_list[0]
-        advice.append(f"「{best['name']}」毛利率 {best['margin_pct']:.1f}% 为最优，可加大推广与备货。")
+        advice.append(f"「{best['name']}」最赚钱（每卖 100 元赚 {best['margin_pct']:.0f} 元），可以多推、多备些货。")
     if without_cost > 0:
-        advice.append(f"有 {without_cost} 个在售 SKU 未录入成本价，毛利无法归因——补齐成本后才能看到真实利润。")
+        advice.append(f"有 {without_cost} 款在卖的商品还没填成本价，算不出到底赚不赚 —— 补上成本价就能看到真实利润。")
 
     return {
         "period": period,

@@ -13,6 +13,7 @@ import type { Refund, RefundStatus, RefundStats } from '@/types/ecommerce';
 import { extractErrorMessage } from '@/services/api';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { usePageT, type Lang } from '@/i18n';
+import { formatDateTime as formatDate } from '@/lib/format';
 
 type T = (key: string, fallback?: string) => string;
 
@@ -247,11 +248,7 @@ export const Refunds: React.FC = () => {
   };
 
   const formatPrice = (price: number) => `¥${price.toFixed(2)}`;
-  const formatDate = (dateStr: string) => {
-    const d = new Date(dateStr);
-    if (isNaN(d.getTime())) return '-';
-    return d.toLocaleDateString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
-  };
+  // formatDate 已统一到 lib/format
 
   return (
     <div className="space-y-6 animate-fade-in">

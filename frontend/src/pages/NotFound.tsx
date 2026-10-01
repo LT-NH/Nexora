@@ -1,5 +1,5 @@
 import React from 'react';
-import { Link } from 'react-router-dom';
+import { TransitionLink } from '@/components/ui/TransitionLink';
 import { Home, ArrowLeft } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 
@@ -22,11 +22,11 @@ export const NotFound: React.FC = () => {
           >
             返回上页
           </Button>
-          <Link to="/dashboard">
+          <TransitionLink to="/dashboard">
             <Button variant="primary" leftIcon={<Home size={16} />}>
               前往仪表板
             </Button>
-          </Link>
+          </TransitionLink>
         </div>
       </div>
     </div>

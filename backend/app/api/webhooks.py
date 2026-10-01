@@ -7,6 +7,7 @@ Two sets of endpoints:
    configure where Nexora sends events.
 """
 
+import asyncio
 import json
 from datetime import datetime, timezone
 from typing import Annotated
@@ -19,6 +20,7 @@ from app.config import settings
 from app.database import get_db
 from app.services.webhooks import handle_shopify_webhook, verify_shopify_hmac
 from app.utils.logging import get_logger
+from app.utils.urls import UnsafeUrlError, validate_outbound_url
 
 # ── Inbound webhook router (shared) ──────────────────────────────────────
 router = APIRouter(prefix="/webhooks")
@@ -146,6 +148,13 @@ async def create_webhook(
             detail="'name' and 'url' are required.",
         )
 
+    # SSRF 防护：URL 完全由租户配置，必须拒绝内网 / 环回 / 保留地址。
+    # DNS 解析是阻塞调用，放进线程避免卡住事件循环。
+    try:
+        url = await asyncio.to_thread(validate_outbound_url, url)
+    except UnsafeUrlError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+
     webhook = Webhook(
         workspace_id=workspace.id,
         name=name,
@@ -205,7 +214,14 @@ async def update_webhook(
     if "name" in data:
         webhook.name = data["name"].strip()
     if "url" in data:
-        webhook.url = data["url"].strip()
+        # 与创建端点同样的 SSRF 校验 —— 否则可以先建一个合法 URL、
+        # 再 PATCH 成内网地址来绕过。
+        try:
+            webhook.url = await asyncio.to_thread(
+                validate_outbound_url, data["url"].strip()
+            )
+        except UnsafeUrlError as exc:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
     if "events" in data:
         webhook.events = json.dumps(data["events"])
     if "secret" in data:
@@ -319,15 +335,26 @@ async def test_webhook(
             _hashlib.sha256,
         ).hexdigest()
 
+    # 发送前再校验一次（防止这是加校验之前写入的历史数据）；
+    # follow_redirects=False 阻断「公网地址 302 跳内网」的绕过，
+    # trust_env=False 避免走环境里的 HTTP 代理。
     try:
-        async with _httpx.AsyncClient(timeout=10) as client:
+        await asyncio.to_thread(validate_outbound_url, webhook.url)
+    except UnsafeUrlError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+
+    try:
+        async with _httpx.AsyncClient(
+            timeout=10, follow_redirects=False, trust_env=False
+        ) as client:
             resp = await client.post(webhook.url, content=body, headers=headers)
             webhook.last_triggered_at = datetime.now(timezone.utc)
             await db.flush()
+            # 不回显响应体：否则任何 OWNER 都能把这个端点当成「内网服务读取器」
+            # （填入内网地址 → 点测试 → 从 response_body 读结果）。
             return {
                 "status": "sent",
                 "response_status": resp.status_code,
-                "response_body": resp.text[:500],
             }
     except Exception as exc:
         logger.warning("Webhook test failed for '%s': %s", webhook.name, exc)

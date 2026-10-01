@@ -1,6 +1,6 @@
 # DEPLOY.md — Nexora 部署与运维手册（RUNBOOK）
 
-> 适用版本：v5.4.0+　最后更新：2026-09-13
+> 适用版本：v5.11.0+　最后更新：2026-09-20
 > 读者：负责把 Nexora 部署到服务器并维持其可用的人（当前即项目作者）。
 
 ---
@@ -9,7 +9,7 @@
 
 ```
                  ┌─────────────────────────────┐
-   浏览器  ───►  │ 前端：React 18 + Vite (3100)│
+   浏览器  ───►  │ 前端：React 18 + Vite (3000)│
                  └──────────────┬──────────────┘
                                 │ /api/* 代理
                  ┌──────────────▼──────────────┐
@@ -49,17 +49,17 @@ curl http://127.0.0.1:8000/health         # 期望 {"status":"healthy"|"degraded
 ### 方式 B：Render（配置已就绪）
 
 仓库根目录已含 `render.yaml`。在 Render 控制台 "New → Blueprint" 选择本仓库即可；
-需要在 Render 面板补齐密钥类环境变量（`SECRET_KEY`、`DASHSCOPE_API_KEY`、支付凭据等）。
+需要在 Render 面板补齐密钥类环境变量（`SECRET_KEY`、`QWEN_API_KEY`、支付凭据等）。
 
 ### 方式 C：本地 / 自有服务器（Windows 开发者机）
 
-- 一键：双击桌面 `Start-Nexora.bat`（自动清理 8000/3100 旧进程 → 清 vite 缓存 → 起前后端 → 自动开浏览器）。
+- 一键：双击桌面 `Start-Nexora.bat`（自动清理 8000/3000 旧进程 → 清 vite 缓存 → 起前后端 → 自动开浏览器）。
 - 手动：
   ```bash
   # 后端
   cd backend && python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
   # 前端
-  cd frontend && npx vite --port 3100 --strictPort
+  cd frontend && npx vite --port 3000 --strictPort
   ```
 
 ---
@@ -72,7 +72,7 @@ curl http://127.0.0.1:8000/health         # 期望 {"status":"healthy"|"degraded
 | `DATABASE_URL` | ✅ | 本地 `sqlite+aiosqlite:///./data/nexora.db`；生产 `postgresql+asyncpg://user:pass@host:5432/nexora` |
 | `PUBLIC_BASE_URL` | ✅ 生产 | 公网基址，用于支付异步通知与回跳（如 `https://app.your-domain.com`） |
 | `CORS_ORIGINS` | ✅ 生产 | 允许的前端域名列表（JSON 数组） |
-| `DASHSCOPE_API_KEY` | ✅ | 千问大模型调用密钥（AI 决策 / Agent / 诊断） |
+| `QWEN_API_KEY` | ✅ | 千问大模型调用密钥（AI 决策 / Agent / 诊断） |
 | `REDIS_URL` | 推荐 | 如 `redis://localhost:6379/0`；缺失时限流退化为内存实现 |
 | `SENTRY_DSN` | 推荐 | 后端错误监控；留空则自动跳过 |
 | `VITE_SENTRY_DSN`（前端） | 可选 | 前端错误监控 |
@@ -104,7 +104,7 @@ curl http://127.0.0.1:8000/health         # 期望 {"status":"healthy"|"degraded
 | 现象 | 根因 | 处理 |
 |---|---|---|
 | 页面报 `ECONNREFUSED 127.0.0.1:8000` / 接口全 502 | 后端未启动或掉线 | 双击 `Start-Nexora.bat`；或 `docker compose restart backend`；或手动起 uvicorn |
-| 端口 8000 / 3100 被占用，新服务起不来 | 旧进程残留 | `netstat -ano \| findstr :8000` 找到 PID → `taskkill /F /PID <pid>`（启动脚本已自动处理） |
+| 端口 8000 / 3000 被占用，新服务起不来 | 旧进程残留 | `netstat -ano \| findstr :8000` 找到 PID → `taskkill /F /PID <pid>`（启动脚本已自动处理） |
 | 前端白屏 / 依赖 504 / 动态 import 失败 | vite 预构建缓存损坏 | 删除 `frontend/node_modules/.vite` 后重启前端 |
 | 后端启动即报数据库锁 / `database is locked` | SQLite 并发写入 | 停后端再操作；长期方案：切 PostgreSQL |
 | 表结构缺字段 / 迁移状态不一致 | 未执行迁移 | `cd backend && alembic upgrade head`；误操作后 `alembic downgrade -1` |
@@ -141,7 +141,7 @@ copy backend\data\nexora.db backup\nexora_%date:~0,10%.db
 ## 7. 回滚
 
 - **代码**：`git revert <commit>` 后重新部署（保留历史，勿用 `reset --hard` 推远端）。
-- **容器**：为镜像打版本标签（`nexora-backend:5.4.0`），回滚时把 compose 的 image 指回上一标签并 `docker compose up -d`。
+- **容器**：为镜像打版本标签（`nexora-backend:5.11.0`），回滚时把 compose 的 image 指回上一标签并 `docker compose up -d`。
 - **数据库**：迁移回滚 `alembic downgrade -1`；结构性变更前先做一次 `pg_dump`。
 
 ---
@@ -149,4 +149,4 @@ copy backend\data\nexora.db backup\nexora_%date:~0,10%.db
 ## 8. 版本与变更
 
 - 版本号遵循语义化版本，变更记录见 [CHANGELOG.md](./CHANGELOG.md)。
-- 发布流程：更新 `CHANGELOG.md` → 同步版本号（`frontend/package.json`、后端 `FastAPI(version=...)`）→ 打 git tag `v5.4.0` → 部署 → 验证 `/health`。
+- 发布流程：更新 `CHANGELOG.md` → 同步版本号（权威来源 `frontend/src/pages/Changelog.tsx` → 同步 `frontend/package.json` 与后端 `backend/app/version.py`）→ 打 git tag `v5.11.0` → 部署 → 验证 `/health`。

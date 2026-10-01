@@ -30,10 +30,11 @@ from app.models.product import Product
 from app.models.subscription import Subscription, SubscriptionPlan, SubscriptionStatus
 from app.models.user import User
 from app.models.workspace import Workspace, WorkspaceMember
+from app.services import metrics
 
 router = APIRouter(prefix="/admin", tags=["Admin"])
 
-_EXCLUDED = (OrderStatus.CANCELLED, OrderStatus.REFUNDED)
+_EXCLUDED = metrics.EXCLUDED_STATUSES
 _WEIGHTS = {"cashflow": 0.25, "inventory": 0.25, "customer": 0.2, "channel": 0.15, "growth": 0.15}
 
 
@@ -56,6 +57,9 @@ def _pct(a: float, b: float) -> float:
 async def _tenant_health_snapshot(db: AsyncSession, ws_id: str) -> dict:
     now = datetime.utcnow()
     since = now - timedelta(days=14)
+    # 「近 7 天」= 含今天的 7 个自然日，与 app/api/health.py 严格同口径
+    last7_start = (now - timedelta(days=6)).date()
+    prev7_start = (now - timedelta(days=13)).date()
 
     # 订单聚合（近 14 天）
     order_rows = (
@@ -67,6 +71,7 @@ async def _tenant_health_snapshot(db: AsyncSession, ws_id: str) -> dict:
     ).all()
     refund_cnt = 0
     total_orders = 0
+    valid_orders = 0
     total_rev = 0.0
     daily_rev: dict[str, float] = {}
     daily_ord: dict[str, int] = {}
@@ -75,33 +80,39 @@ async def _tenant_health_snapshot(db: AsyncSession, ws_id: str) -> dict:
     for created_at, total, status, platform in order_rows:
         if created_at is None:
             continue
-        day = created_at.date().isoformat()
-        is_excluded = status in _EXCLUDED
+        dt = created_at.date()
+        day = dt.isoformat()
         total_orders += 1
-        if status == OrderStatus.REFUNDED:
+        if status in metrics.REFUND_STATUSES:
             refund_cnt += 1
-        if is_excluded:
+        if status in metrics.EXCLUDED_STATUSES:
             continue
+        valid_orders += 1
         amt = float(total or 0)
         daily_rev[day] = daily_rev.get(day, 0.0) + amt
         daily_ord[day] = daily_ord.get(day, 0) + 1
         total_rev += amt
-        dt = created_at.date()
         key = platform or "manual"
-        if dt >= (now - timedelta(days=7)).date():
+        if dt >= last7_start:
             platform_rev[key] = platform_rev.get(key, 0.0) + amt
-        else:
+        elif dt >= prev7_start:
             platform_prev[key] = platform_prev.get(key, 0.0) + amt
 
-    last7 = sum(v for k, v in daily_rev.items() if k >= (now - timedelta(days=7)).date().isoformat())
-    prev7 = sum(v for k, v in daily_rev.items() if k < (now - timedelta(days=7)).date().isoformat())
+    last7 = sum(v for k, v in daily_rev.items() if k >= last7_start.isoformat())
+    prev7 = sum(
+        v
+        for k, v in daily_rev.items()
+        if prev7_start.isoformat() <= k < last7_start.isoformat()
+    )
     growth = _pct(last7 - prev7, prev7) if prev7 > 0 else (100.0 if last7 > 0 else 0.0)
-    refund_rate = _pct(refund_cnt, total_orders) if total_orders else 0.0
+    refund_rate = metrics.refund_rate(refund_cnt, valid_orders)
 
-    # 库存
+    # 库存（日均销量用近 7 天有效订单，与体检同口径 —— 此前是 14 天累计 ÷ 7）
     products = (await db.execute(select(Product).where(Product.workspace_id == ws_id))).scalars().all()
-    last7_orders = sum(daily_ord.values())
-    daily_sales = last7_orders / 7.0 / max(len(products), 1) if last7_orders else 0.0
+    last7_order_count = sum(
+        cnt for k, cnt in daily_ord.items() if k >= last7_start.isoformat()
+    )
+    daily_sales = metrics.daily_sales_per_product(last7_order_count, 7, len(products))
     overstock = 0
     stockout_risk = 0
     for p in products:

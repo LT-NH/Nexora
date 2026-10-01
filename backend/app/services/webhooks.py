@@ -22,6 +22,7 @@ from app.database import async_session_factory
 from app.models.store import Store, StorePlatform
 from app.services.platforms.base import SyncResult
 from app.services.platforms.shopify import ShopifyIntegration
+from app.services.store import StoreService
 from app.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -120,12 +121,10 @@ async def handle_shopify_webhook(
             upsert = integration.upsert_order_from_payload
 
         for store in matched:
-            config = {
-                "store_url": store.store_url,
-                "api_key": store.api_key,
-                "api_secret": store.api_secret,
-                "access_token": store.access_token,
-            }
+            # 必须走解密：ORM 上的 api_secret / access_token 存的是 Fernet 密文，
+            # 直接传给适配器会让 Shopify 回调的协作鉴权必然失败（密文 ≠ 真实密钥）。
+            # 对照 stores.py 的读取路径，那里一直是对的。
+            config = await StoreService.get_plain_credentials(store)
             try:
                 # Reuse the open session to avoid a nested checkout on a
                 # single-connection (SQLite) pool.

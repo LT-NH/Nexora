@@ -9,6 +9,7 @@
 
 import asyncio
 from datetime import datetime, timezone
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from fastapi.responses import JSONResponse
@@ -17,8 +18,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.database import get_db
-from app.middleware.auth import require_superadmin
+from app.middleware.auth import get_current_active_user, require_superadmin
 from app.middleware.observability import metrics_response
+from app.models.user import User
 from app.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -57,22 +59,36 @@ async def _check_redis() -> bool:
     summary="Health check",
     tags=["System"],
 )
-async def health_check(session: AsyncSession = Depends(get_db)) -> dict:
+async def health_check(session: AsyncSession = Depends(get_db)) -> JSONResponse:
     """Health check endpoint for monitoring and load balancers.
 
-    Checks database and Redis connectivity and returns service metadata.
+    HTTP 状态码只由数据库决定：DB 不可用即返回 503，让编排层能真实发现故障。
+    此前该端点恒返回 200，导致 render.yaml 的 ``healthCheckPath: /health``
+    形同虚设 —— 数据库挂掉时实例仍被判为健康，不会被重启。
+
+    Redis 是可选加速器（不可用时自动降级到内存限流/缓存），若把它计入状态码，
+    Redis 抖动会导致实例被误重启；因此只作为 body 里的附加信息。
     """
     db_ok = await _check_db(session)
     redis_ok = await _check_redis()
-    healthy = db_ok and redis_ok
-    return {
-        "status": "healthy" if healthy else "degraded",
-        "version": settings.APP_VERSION,
-        "service": "nexora-api",
-        "database": "connected" if db_ok else "unavailable",
-        "redis": "connected" if redis_ok else "unavailable",
-        "timestamp": datetime.now(timezone.utc).isoformat()
-    }
+    if not db_ok:
+        status_label = "unhealthy"
+    elif not redis_ok:
+        status_label = "degraded"
+    else:
+        status_label = "healthy"
+
+    return JSONResponse(
+        status_code=200 if db_ok else 503,
+        content={
+            "status": status_label,
+            "version": settings.APP_VERSION,
+            "service": "nexora-api",
+            "database": "connected" if db_ok else "unavailable",
+            "redis": "connected" if redis_ok else "unavailable",
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        },
+    )
 
 
 @router.get(
@@ -132,12 +148,22 @@ async def metrics(
 
     If ``settings.METRICS_TOKEN`` is configured, the request must carry
     ``Authorization: Bearer <token>``.
+
+    SECURITY: 生产环境必须配置 METRICS_TOKEN，否则直接拒绝。该端点会暴露
+    路由清单、延迟分布与错误率，对攻击者是零成本的侦察信息。
+    （提醒：render.yaml 历史上写的是后端并不存在的 ``METRICS_AUTH`` 键，
+    等于「以为关掉了、其实从未生效」。）
     """
     token = settings.METRICS_TOKEN
     if token:
         expected = f"Bearer {token}"
         if authorization != expected:
             raise HTTPException(status_code=401, detail="Invalid metrics token")
+    elif settings.ENVIRONMENT == "production":
+        raise HTTPException(
+            status_code=403,
+            detail="Metrics endpoint disabled: METRICS_TOKEN is not configured.",
+        )
     return metrics_response()
 
 
@@ -149,8 +175,13 @@ async def metrics(
     tags=["System"],
     response_model=dict,
 )
-async def process_metrics_api():
-    """API-prefixed alias of /metrics/process for the dashboard card."""
+async def process_metrics_api(
+    current_user: Annotated[User, Depends(get_current_active_user)],
+):
+    """API-prefixed alias of /metrics/process for the dashboard card.
+
+    需要登录：该端点暴露进程内存、CPU 与连接数，不应匿名可读。
+    """
     return await process_metrics()
 
 
@@ -160,8 +191,13 @@ async def process_metrics_api():
     tags=["System"],
     response_model=dict,
 )
-async def process_metrics():
-    """Return process-level performance metrics (memory, CPU, connections)."""
+async def process_metrics(
+    current_user: Annotated[User, Depends(get_current_active_user)],
+):
+    """Return process-level performance metrics (memory, CPU, connections).
+
+    需要登录：该端点暴露进程内存、CPU 与连接数，不应匿名可读。
+    """
     try:
         import psutil
         import os as _os

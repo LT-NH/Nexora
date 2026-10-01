@@ -34,13 +34,16 @@ from app.models.health_snapshot import HealthSnapshot
 from app.models.order import Order, OrderItem, OrderStatus
 from app.models.product import Product
 from app.models.workspace import WorkspaceRole
+from app.services import metrics
+from app.utils.memory_cache import cache
 
 router = APIRouter(prefix="/workspaces/{slug}/health", tags=["E-Commerce - Health"])
 
-_EXCLUDED = (
-    OrderStatus.CANCELLED,
-    OrderStatus.REFUNDED,
-)
+# 体检结果缓存时长（秒）：一次体检 = 7 次 DB 读 + 1 次千问调用（实测 10~35s），
+# 而前端每次切回概览 tab 都会重新挂载组件再请求一次。5 分钟与「快照 30 分钟防抖」
+# 天然对齐：这段时间内重算也不会产生新快照，所以复用完全等价。
+# 用户点「重新体检」时走 refresh=1 绕过缓存。
+HEALTH_CACHE_TTL = 300
 
 
 def _level(score: float) -> str:
@@ -61,17 +64,26 @@ async def workspace_health(
     principal: Annotated[AuthContext, Depends(get_principal)],
     db: Annotated[AsyncSession, Depends(get_db)],
     ai: int = Query(1, description="默认 1：千问基于六维画像生成 AI 经营总结（失败自动回落规则总结）；传 0 强制规则版"),
+    refresh: int = Query(0, description="传 1 强制重新体检（跳过缓存），用于「重新体检」按钮"),
 ) -> dict:
     """Compute the workspace health diagnosis and persist a snapshot (real data)."""
     workspace, _ = await _require_member(slug, principal, db, WorkspaceRole.VIEWER)
     ws_id = workspace.id
+
+    # 命中缓存直接返回：省掉 7 次 DB 读与一次千问调用（用户切 tab 回来是最常见的触发源）
+    cache_key = f"health:{ws_id}:{1 if ai else 0}"
+    if not refresh:
+        cached = cache.get(cache_key)
+        if cached is not None:
+            cached["cached"] = True
+            return cached
     # SQLite 存 naive datetime —— 统一用 naive UTC 避免 aware/naive 比较错误
     now = datetime.utcnow()
 
     # ------------------------------------------------------------------
     # 1. 订单按天聚合（近 14 天）
     # ------------------------------------------------------------------
-    since = now - timedelta(days=14)
+    since = metrics.since_days(14, now)
     order_rows = (
         await db.execute(
             select(
@@ -86,43 +98,54 @@ async def workspace_health(
             )
         )
     ).all()
+    # 「近 7 天」= 含今天的 7 个自然日（today-6 ~ today），「前 7 天」与之严格等长。
+    # 此前写成 now-7d，实际取到 8 天，与别处的「7 天」又差一天。
+    last7_start = (now - timedelta(days=6)).date()
+    prev7_start = (now - timedelta(days=13)).date()
     daily_rev: dict[str, float] = {}
     daily_ord: dict[str, int] = {}
     refund_cnt = 0
     refund_amt = 0.0
     recent_order_ids: list[str] = []
     total_orders = 0
+    valid_orders = 0
     total_rev = 0.0
     platform_rev: dict[str, float] = {}
     platform_prev: dict[str, float] = {}
     for oid, created_at, total, status, platform in order_rows:
         if created_at is None:
             continue
-        day = created_at.date().isoformat()
-        is_excluded = status in _EXCLUDED
+        dt = created_at.date()
+        day = dt.isoformat()
         total_orders += 1
-        if status == OrderStatus.REFUNDED:
+        if status in metrics.REFUND_STATUSES:
             refund_cnt += 1
             refund_amt += float(total or 0)
-        if is_excluded:
+        if status in metrics.EXCLUDED_STATUSES:
             continue
+        valid_orders += 1
         recent_order_ids.append(oid)
         amt = float(total or 0)
         daily_rev[day] = daily_rev.get(day, 0.0) + amt
         daily_ord[day] = daily_ord.get(day, 0) + 1
         total_rev += amt
-        dt = created_at.date()
         key = platform or "manual"
-        if dt >= (now - timedelta(days=7)).date():
+        if dt >= last7_start:
             platform_rev[key] = platform_rev.get(key, 0.0) + amt
-        else:
+        elif dt >= prev7_start:
             platform_prev[key] = platform_prev.get(key, 0.0) + amt
 
-    # 环比：近 7 天 vs 前 7 天
-    last7 = sum(v for k, v in daily_rev.items() if k >= (now - timedelta(days=7)).date().isoformat())
-    prev7 = sum(v for k, v in daily_rev.items() if k < (now - timedelta(days=7)).date().isoformat())
+    # 环比：近 7 天 vs 前 7 天（等长窗口，口径定义见 app/services/metrics.py）
+    last7 = sum(v for k, v in daily_rev.items() if k >= last7_start.isoformat())
+    prev7 = sum(
+        v
+        for k, v in daily_rev.items()
+        if prev7_start.isoformat() <= k < last7_start.isoformat()
+    )
     growth = _pct(last7 - prev7, prev7) if prev7 > 0 else (100.0 if last7 > 0 else 0.0)
-    refund_rate = _pct(refund_cnt, total_orders) if total_orders else 0.0
+    # 退款率分母统一为「有效订单数」（退款单不是成交，不该进分母）——
+    # 此前用的是含取消单的全部订单，与 AI 助手的口径不一致。
+    refund_rate = metrics.refund_rate(refund_cnt, valid_orders)
 
     # ------------------------------------------------------------------
     # 2. 商品库存
@@ -132,9 +155,13 @@ async def workspace_health(
             select(Product).where(Product.workspace_id == ws_id)
         )
     ).scalars().all()
-    # 日均销量按近 7 天订单量近似
-    last7_orders = sum(daily_ord.values())
-    daily_sales = last7_orders / 7.0 / max(len(products), 1) if last7_orders else 0.0
+    # 日均销量：近 7 天**有效**订单数 / 7 / 商品数。
+    # 此前用 sum(daily_ord.values())（14 天累计）除以 7 —— 销量被放大一倍，
+    # 库存还能撑的天数被砍半，滞销/断货判定整条链路跟着偏。
+    last7_order_count = sum(
+        cnt for k, cnt in daily_ord.items() if k >= last7_start.isoformat()
+    )
+    daily_sales = metrics.daily_sales_per_product(last7_order_count, 7, len(products))
     overstock: list[dict] = []
     stockout_risk: list[dict] = []
     total_inventory_value = 0.0
@@ -264,11 +291,11 @@ async def workspace_health(
 
     worst = min(dims, key=lambda d: d["score"])
     if score >= 80:
-        summary = "经营状态良好，保持当前节奏，重点维护高复购客户。"
+        summary = "经营状态良好，保持现在的节奏，重点照顾好会回头买的老客户。"
     elif score >= 60:
-        summary = f"整体健康，但「{worst['name']}」维度正在拖累评分，可前往 AI 决策助手查看对应处方。"
+        summary = f"整体还算健康，只是「{worst['name']}」这项拖了后腿，去 AI 决策助手看看今天该先做哪件事。"
     else:
-        summary = f"「{worst['name']}」健康度偏低，建议尽快在 AI 决策助手中执行处置处方，避免风险扩大。"
+        summary = f"「{worst['name']}」这项明显偏低，建议尽快去 AI 决策助手把该做的事做掉，别让问题拖大。"
 
     anomalies = _scan_anomalies(daily_ord, daily_rev, order_rows, stockout_risk, platform_rev, platform_prev, now)
 
@@ -327,7 +354,7 @@ async def workspace_health(
             "computed_at": prev_snap.created_at.isoformat() if prev_snap.created_at else None,
         }
 
-    return {
+    result = {
         "workspace_id": ws_id,
         "score": score,
         "level": level,
@@ -335,9 +362,12 @@ async def workspace_health(
         "dimensions": dims,
         "anomalies": anomalies,
         "ai_generated": ai_generated,
+        "cached": False,
         "prev": prev_block,
         "computed_at": now.isoformat(),
     }
+    cache.set(cache_key, result, ttl=HEALTH_CACHE_TTL)
+    return result
 
 
 @router.get("/history", summary="体检历史趋势（持久化快照，刷新不丢）")
@@ -401,12 +431,16 @@ async def _ai_health_summary(score: float, dims: list[dict], anomalies: list[dic
             "rule_summary": rule_summary,
         }
         prompt = (
-            "你是资深电商运营专家。下面是店铺『经营健康六维画像』与『异常雷达』（真实数据，score 0-100，"
+            "你是店主自己信得过的资深运营搭档。下面是店铺『经营健康六维画像』与『异常雷达』（真实数据，score 0-100，"
             "level: green健康/yellow需关注/red需干预）。\n"
             + json.dumps(payload, ensure_ascii=False)
             + "\n请写一段 3~4 句的『今日经营总结』：①整体状态一句话（结合总分与最突出维度）；"
             "②指出最需要优先处理的 1~2 个薄弱维度，用数据说明为什么是短板；③给一条最优先的可执行行动建议。"
-            "语气专业务实，不要空话套话，只输出总结正文，不要标题与 Markdown。"
+            "\n【说人话】读者是不懂运营术语的小店主：不要出现「环比、同比、SKU、归因、置信度、转化率、"
+            "履约、动销、客单价、GMV、ROI、矩阵、闭环」这类词。同一件事换日常说法，例如"
+            "「环比 +12%」→「比上一周多了 12%」、「6 个 SKU 滞销」→「6 款商品卖不动」、"
+            "「成本归因覆盖不足」→「有些商品还没填成本价，利润算不准」。数字照给，但要用半句话说明它意味着什么。"
+            "\n语气像朋友提醒，不要空话套话，只输出总结正文，不要标题与 Markdown。"
         )
         async with _httpx.AsyncClient(timeout=30, trust_env=False) as _client:
             _resp = await _client.post(
@@ -415,7 +449,7 @@ async def _ai_health_summary(score: float, dims: list[dict], anomalies: list[dic
                 json={
                     "model": model,
                     "messages": [
-                        {"role": "system", "content": "你是资深电商运营专家，全程使用中文，直接输出结果。"},
+                        {"role": "system", "content": "你是店主信任的运营搭档，全程使用中文，说人话，不用运营术语，直接输出结果。"},
                         {"role": "user", "content": prompt},
                     ],
                     "temperature": 0.5,
@@ -436,38 +470,42 @@ async def _ai_health_summary(score: float, dims: list[dict], anomalies: list[dic
 
 
 def _cashflow_reasons(refund_rate: float, growth: float) -> list[str]:
+    """现金流：退款与营收变化，全部用「比上周多/少」的日常说法（不用「环比」）。"""
     reasons = []
     if refund_rate >= 5:
-        reasons.append(f"退款率 {refund_rate:.1f}% 偏高")
+        reasons.append(f"近 14 天每 100 单有 {refund_rate:.1f} 单退款，偏高")
     if refund_rate < 3:
-        reasons.append(f"退款率 {refund_rate:.1f}%，现金流稳健")
+        if refund_rate < 0.05:
+            reasons.append("近 14 天没有退款，进账稳")
+        else:
+            reasons.append(f"退款很少（每 100 单只有 {refund_rate:.1f} 单），进账稳")
     if growth >= 10:
-        reasons.append(f"近 7 天营收环比 +{growth:.0f}%")
+        reasons.append(f"近 7 天营收比上一周多了 {growth:.0f}%")
     elif growth <= -15:
-        reasons.append(f"近 7 天营收环比 {growth:.0f}%，回款承压")
-    return reasons or ["近 14 天资金流入平稳"]
+        reasons.append(f"近 7 天营收比上一周少了 {abs(growth):.0f}%，进账在变慢")
+    return reasons or ["近 14 天资金进出平稳"]
 
 
 def _inventory_reasons(overstock: list[dict], stockout_risk: list[dict]) -> list[str]:
     reasons = []
     if overstock:
-        reasons.append(f"{len(overstock)} 个 SKU 滞销（库存覆盖超 120 天）")
+        reasons.append(f"{len(overstock)} 款商品压着卖不动（按现在的速度要 120 天以上才卖完）")
     if stockout_risk:
-        reasons.append(f"{len(stockout_risk)} 个 SKU 有断货风险")
+        reasons.append(f"{len(stockout_risk)} 款商品快卖断了")
     if not overstock and not stockout_risk:
-        reasons.append("库存结构合理，无滞销与断货风险")
+        reasons.append("库存不多不少，既没压货也没断货风险")
     return reasons
 
 
 def _customer_reasons(repeat_rate: float, churn_rate: float, total: int, repeat: int, churn: int) -> list[str]:
     reasons = []
     if total:
-        reasons.append(f"复购率 {repeat_rate:.0f}%（{repeat}/{total} 人）")
+        reasons.append(f"老客户回头率 {repeat_rate:.0f}%（{total} 位客户里有 {repeat} 位买过两次以上）")
     if churn_rate >= 10:
-        reasons.append(f"{churn} 位客户超 30 天未复购")
+        reasons.append(f"{churn} 位客户超过 30 天没再来下单")
     elif churn:
-        reasons.append(f"{churn} 位客户需关注，流失率 {churn_rate:.0f}%")
-    return reasons or ["客户基础待积累"]
+        reasons.append(f"{churn} 位客户最近不怎么来了（占 {churn_rate:.0f}%）")
+    return reasons or ["客户还不多，先把回头客养起来"]
 
 
 def _channel_reasons(platform_rev: dict, platform_prev: dict) -> list[str]:
@@ -477,36 +515,37 @@ def _channel_reasons(platform_rev: dict, platform_prev: dict) -> list[str]:
         if prev > 0:
             g = (cur - prev) / prev * 100.0
             if g <= -20:
-                reasons.append(f"{key} 渠道近 7 天营收 {g:.0f}%")
+                reasons.append(f"{key} 渠道这周比上周少了 {abs(g):.0f}%")
             elif g >= 10:
-                reasons.append(f"{key} 渠道环比 +{g:.0f}%")
-    return reasons or ["渠道分布暂无显著异常"]
+                reasons.append(f"{key} 渠道这周比上周多了 {g:.0f}%")
+    return reasons or ["各渠道表现平稳，没有大起大落"]
 
 
 def _growth_reasons(growth: float, last7: float, prev7: float) -> list[str]:
     if prev7 > 0:
-        return [f"近 7 天营收 {last7:.0f} 元，环比 {growth:+.0f}%"]
-    return [f"近 7 天营收 {last7:.0f} 元，需持续积累基线"]
+        trend = "多了" if growth >= 0 else "少了"
+        return [f"近 7 天营收 ¥{last7:,.0f}，比上一周{trend} {abs(growth):.0f}%"]
+    return [f"近 7 天营收 ¥{last7:,.0f}，还在积累可对比的上周数据"]
 
 
 def _profit_reasons(
     gross_margin: float, refund_loss_rate: float, item_count: int, coverage: float
 ) -> list[str]:
-    """利润健康归因：毛利率 / 退款损耗 / 成本数据覆盖度。"""
+    """利润：赚多少 / 退掉多少 / 成本价填了没有（避免「毛利率」「归因」等词）。"""
     reasons = []
     if item_count:
-        reasons.append(f"近 14 天毛利率 {gross_margin:.1f}%")
+        reasons.append(f"近 14 天每收 100 元赚 {gross_margin:.0f} 元")
     else:
-        reasons.append("近 14 天无订单行数据，利润按收入与退款估算")
+        reasons.append("近 14 天没有订单明细，利润是按营收和退款估的")
     if refund_loss_rate >= 3:
-        reasons.append(f"退款损耗占收入 {refund_loss_rate:.1f}%")
+        reasons.append(f"退款退掉了 {refund_loss_rate:.1f}% 的收入")
     if coverage < 0.8:
-        reasons.append(f"成本归因覆盖 {coverage * 100:.0f}%（部分商品未设成本价）")
+        reasons.append(f"{100 - coverage * 100:.0f}% 的商品还没填成本价，利润算不准")
     if gross_margin >= 45 and refund_loss_rate < 3:
-        reasons.append("毛利结构健康，定价有空间")
+        reasons.append("利润结构健康，价格上有空间")
     elif gross_margin < 35:
-        reasons.append("毛利率偏低，建议核查定价与成本价")
-    return reasons or ["毛利结构未见明显异常"]
+        reasons.append("利润偏薄，建议核对一下定价和成本价")
+    return reasons or ["利润结构没有明显异常"]
 
 
 # ----------------------------------------------------------------------
@@ -526,7 +565,6 @@ def _scan_anomalies(
     anomalies: list[dict] = []
     from datetime import date as _date
 
-    today = now.date().isoformat()
     yesterday = (now - timedelta(days=1)).date().isoformat()
 
     # 1. 订单量突降/突增（昨日 vs 前 7 天日均）
@@ -539,14 +577,14 @@ def _scan_anomalies(
         if diff <= -30:
             anomalies.append({
                 "severity": 3, "tag": "orders_drop",
-                "title": f"昨日订单量 {y_orders} 单，环比 7 日均值下降 {abs(diff):.0f}%",
-                "detail": "建议检查流量入口、活动是否结束或商品是否下架。",
+                "title": f"昨天只卖了 {y_orders} 单，比最近一周平均少了 {abs(diff):.0f}%",
+                "detail": "建议检查进店人数、活动是不是结束了、商品有没有被下架。",
             })
         elif diff >= 60:
             anomalies.append({
                 "severity": 1, "tag": "orders_surge",
-                "title": f"昨日订单量 {y_orders} 单，环比 7 日均值增长 {diff:.0f}%",
-                "detail": "增长可能是活动或爆款带动，建议关注库存是否跟得上。",
+                "title": f"昨天卖了 {y_orders} 单，比最近一周平均多了 {diff:.0f}%",
+                "detail": "可能是活动或爆款带来的，记得确认库存跟不跟得上。",
             })
 
     # 2. 退款率异常（近 3 天 vs 近 30 天基线）
@@ -569,17 +607,19 @@ def _scan_anomalies(
     if t3 >= 5 and rate3 - rate30 >= 5:
         anomalies.append({
             "severity": 2, "tag": "refund_spike",
-            "title": f"近 3 天退款率 {rate3:.1f}%（基线 {rate30:.1f}%）",
-            "detail": "退款率显著上升，建议检查最近发货商品质量与物流。",
+            "title": f"最近 3 天退款率 {rate3:.1f}%，明显高于平时的 {rate30:.1f}%",
+            "detail": "建议检查最近发出的商品质量和物流情况。",
         })
 
-    # 3. 断货风险
+    # 3. 断货风险（已卖光的与快卖完的要用不同说法：「预计 0 天后断货」不像人话）
     for so in stockout_risk[:2]:
-        anomalies.append({
-            "severity": 3, "tag": "stockout",
-            "title": f"「{so['name']}」库存告急（剩 {so['stock']} 件）",
-            "detail": f"预计 {so['days']} 天后断货，请尽快补货。",
-        })
+        if (so.get("stock") or 0) <= 0:
+            title = f"「{so['name']}」已经卖光了"
+            detail = "现在顾客下单也发不出货，赶紧补货。"
+        else:
+            title = f"「{so['name']}」快没货了（只剩 {so['stock']} 件）"
+            detail = f"按最近的卖货速度，大约 {so['days']} 天后就会断货，尽快补货。"
+        anomalies.append({"severity": 3, "tag": "stockout", "title": title, "detail": detail})
 
     # 4. 渠道单日大幅下滑（昨日 vs 前 7 天渠道日均）
     for key, cur in platform_rev.items():
@@ -590,8 +630,8 @@ def _scan_anomalies(
         if g <= -25:
             anomalies.append({
                 "severity": 2, "tag": "channel_drop",
-                "title": f"{key} 渠道近 7 天营收环比 {g:.0f}%",
-                "detail": "该渠道流量或转化下滑，建议核查活动投放与商品排名。",
+                "title": f"{key} 渠道这周比上周少了 {abs(g):.0f}%",
+                "detail": "这个渠道的进店人数或下单人数在下降，建议检查活动和商品排名。",
             })
 
     anomalies.sort(key=lambda a: -a["severity"])
@@ -614,29 +654,30 @@ async def weekly_review(
     changes: list[dict] = []
     mom = data.get("mom_change_pct")
     if mom is not None:
+        trend = "多了" if mom >= 0 else "少了"
         changes.append({
             "tone": "good" if mom >= 0 else "bad",
-            "title": f"周营收环比 {mom:+.1f}%",
-            "detail": f"本周 ¥{data['total_revenue']:,.0f} vs 上周 ¥{data['prev_revenue']:,.0f}",
+            "title": f"本周营收比上周{trend} {abs(mom):.1f}%",
+            "detail": f"本周 ¥{data['total_revenue']:,.0f}，上周 ¥{data['prev_revenue']:,.0f}",
         })
     refund_rate = data.get("refund_rate_pct", 0.0)
     changes.append({
         "tone": "good" if refund_rate < 5 else "bad",
-        "title": f"退款率 {refund_rate:.1f}%",
-        "detail": f"本周退款 {data.get('refund_count', 0)} 笔（订单 {data['total_orders']} 笔）",
+        "title": f"每 100 单退款 {refund_rate:.1f} 单",
+        "detail": f"本周退了 {data.get('refund_count', 0)} 单（共 {data['total_orders']} 单）",
     })
     top = data.get("top_products", [])
     if top:
         t = top[0]
         changes.append({
             "tone": "good",
-            "title": f"热销冠军：{t['name']}",
-            "detail": f"贡献 ¥{t['revenue']:,.0f} · {t['quantity']} 件",
+            "title": f"卖得最好：{t['name']}",
+            "detail": f"卖出 {t['quantity']} 件，收进 ¥{t['revenue']:,.0f}",
         })
     elif data.get("total_orders", 0) == 0:
-        changes.append({"tone": "bad", "title": "本周暂无订单", "detail": "建议核查流量与商品上架状态"})
+        changes.append({"tone": "bad", "title": "本周还没有订单", "detail": "建议检查进店人数和商品上架状态"})
 
-    # ---- 下周 3 件事（取自 AI 决策助手待处理处方——职责切分后，处方唯一来源）----
+    # ---- 下周 3 件事（取自 AI 决策助手的待办——职责切分后，待办唯一来源）----
     from app.models.ai_insight import AiInsight
     pending = (
         await db.execute(
@@ -657,7 +698,7 @@ async def weekly_review(
         next_actions = [{
             "type": "keep",
             "title": "保持当前节奏",
-            "impact": "经营各项指标健康，持续关注复购与库存周转",
+            "impact": "各项指标都健康，继续保持；重点盯住老客户回头，别让货压太久",
         }]
 
     # ---- 下周营收预测（本周日均 × 7 × 增长半衰保守系数）----

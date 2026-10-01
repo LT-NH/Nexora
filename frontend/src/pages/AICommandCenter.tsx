@@ -332,7 +332,12 @@ export const AICommandCenter: React.FC = () => {
                   <TrendingUp size={12} />
                   {sales.trend === 'upward' ? '上升' : sales.trend === 'downward' ? '下行' : '平稳'}
                 </span>
-                <span className="text-xs text-gray-400">置信度 {sales.forecast?.confidence || '-'}</span>
+                <span className="text-xs text-gray-400">
+                  把握{' '}
+                  {({ high: '很大', medium: '一般', low: '不大' } as Record<string, string>)[
+                    sales.forecast?.confidence || ''
+                  ] || '-'}
+                </span>
               </div>
               <div className="mt-3 space-y-1.5">
                 {(sales.recommendations || []).slice(0, 2).map((r: string, i: number) => (

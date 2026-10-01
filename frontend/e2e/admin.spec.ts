@@ -79,7 +79,7 @@ test.describe('超管管理台', () => {
     await expect(activeCard).toBeVisible({ timeout: 30_000 });
     await expect(activeCard).toContainText('当前生效模型');
     // 当前模型必须是可解析的 qwen 模型名
-    expect(await activeCard.innerText()).toMatch(/qwen[\w.\-]+/);
+    expect(await activeCard.innerText()).toMatch(/qwen[\w.-]+/);
 
     // 凭证与端点区块
     await expect(page.getByText('凭证与端点')).toBeVisible();
@@ -104,7 +104,7 @@ test.describe('超管管理台', () => {
 
     const activeCard = page.locator('div.border-violet-200').first();
     await expect(activeCard).toBeVisible({ timeout: 30_000 });
-    const original = (await activeCard.innerText()).match(/qwen[\w.\-]+/)?.[0] ?? '';
+    const original = (await activeCard.innerText()).match(/qwen[\w.-]+/)?.[0] ?? '';
     expect(original, '应能读出当前模型').toMatch(/^qwen/);
 
     // 挑一个不是当前的模型作为切换目标

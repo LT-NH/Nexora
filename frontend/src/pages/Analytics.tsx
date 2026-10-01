@@ -27,6 +27,7 @@ import { useToast } from '@/components/ui/Toast';
 import { workspaceService } from '@/services/workspace';
 import api from '@/services/api';
 import { usePageT, type Lang } from '@/i18n';
+import { formatCurrency } from '@/lib/format';
 
 const D = {
   zh: {
@@ -42,7 +43,7 @@ const D = {
     alert_surge_prefix: '今日订单量异常活跃，高于周均 ',
     alert_surge_suffix: '%以上',
     alert_analyzed_prefix: '累计分析 ',
-    alert_analyzed_suffix: ' 笔订单，置信度 ',
+    alert_analyzed_suffix: ' 笔订单，把握 ',
     conf_low: '低',
     conf_medium: '中',
     vs_yesterday: '昨日',
@@ -71,11 +72,11 @@ const D = {
     no_smart_alerts: '数据不足，积累更多订单后将生成智能预警',
     stat_total_revenue: '总销售额',
     stat_total_orders: '订单总数',
-    aov_label: '客单价',
+    aov_label: '平均每单',
     stat_total_customers: '客户总数',
     vip_share: 'VIP 占比',
     stat_total_products: '商品总数',
-    conversion_rate: '转化率',
+    conversion_rate: '下单比例',
     today: '今日',
     week: '本周',
     month: '本月',
@@ -111,7 +112,7 @@ const D = {
     trend_down: '下降趋势',
     trend_stable: '稳定趋势',
     forecast_label: '趋势预测',
-    forecast_7d_prefix: '未来 7 天预期（置信度',
+    forecast_7d_prefix: '未来 7 天预期（把握',
     forecast_7d_suffix: '）',
     peak_day_title: '高峰日',
     peak_day_desc: '建议提前备货和安排客服',
@@ -127,7 +128,7 @@ const D = {
     sales_insight_orders_prefix: '共完成',
     sales_insight_orders_suffix: ' 笔订单，',
     sales_insight_rev_prefix: '总营收',
-    sales_insight_aov_prefix: '，客单价 ',
+    sales_insight_aov_prefix: '，平均每单 ',
     sales_insight_champion_prefix: '。销售冠军贡献了 ',
     sales_insight_champion_suffix: ' 的营收最高',
     insight_customer_structure: '客户结构',
@@ -145,26 +146,26 @@ const D = {
     insight_operations: '运营建议',
     ops_prefix: '订单高峰集中在 ',
     ops_suffix: ' 时段。建议在高峰前 1-2 小时安排客服值班、提前推送优惠活动，并对 VIP 客户做定向复购召回。',
-    aov_trend_title: '客单价趋势',
-    aov_trend_subtitle: '每日平均客单价变化曲线',
-    aov_trend_aria: '客单价趋势图表',
+    aov_trend_title: '每单平均金额趋势',
+    aov_trend_subtitle: '每天平均每单收了多少钱',
+    aov_trend_aria: '每单平均金额趋势图表',
     btn_export_report: '导出报表',
     export_formats: '支持 CSV / Excel / PDF 格式',
     ai_deep_title: 'AI 深度洞察',
     ai_deep_subtitle: '企业级专属预测与优化建议',
     demand_forecast: '需求预测',
     df_prefix: '未来 7 天预估营收',
-    df_conf: '，置信度: ',
+    df_conf: '，把握: ',
     df_end: '）',
     df_trend_down: '当前呈下降趋势，建议加强促销力度。',
     df_trend_up: '当前呈增长趋势，建议保持运营节奏。',
     df_trend_stable: '趋势稳定，可维持现有策略。',
     pricing_optimization: '定价优化',
-    po_prefix: '当前客单价为',
+    po_prefix: '当前平均每单为',
     po_mid: '，已分析',
     po_suffix: '笔订单',
     po_low_prefix: '建议设置',
-    po_low_suffix: ' 元包邮以提升客单价。',
+    po_low_suffix: ' 元包邮，让每单多收一点。',
     po_high_aov: '建议对高价值客户推送组合优惠包，提升复购率。',
     platform_manual: '手动',
     unknown: '未知',
@@ -588,11 +589,7 @@ export const Analytics: React.FC = () => {
     return () => { cancelled = true; };
   }, [currentWorkspace]);
 
-  const formatCurrency = (v: number) => {
-    if (v >= 100000) return `¥${(v / 10000).toFixed(1)}${t('unit_wan')}`;
-    if (v >= 10000) return `¥${(v / 10000).toFixed(2)}${t('unit_wan')}`;
-    return `¥${v.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-  };
+  // formatCurrency 已统一到 lib/format
 
   // ── Enterprise: forecast data (A) ──
   const forecastData = (() => {

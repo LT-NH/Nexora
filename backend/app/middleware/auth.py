@@ -17,6 +17,7 @@ from app.database import get_db
 from app.models.apikey import ApiKey
 from app.models.user import User
 from app.models.workspace import Workspace, WorkspaceMember, WorkspaceRole
+from app.utils.redis import is_token_blacklisted
 from app.utils.security import decode_token, hash_api_key
 
 # Security scheme for OpenAPI docs
@@ -67,6 +68,18 @@ async def get_current_user(
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid token type. Expected an access token.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    # 吊销校验：登出 / 改密会把该令牌的 jti 写入黑名单。两个鉴权入口
+    # （get_current_user 与 get_principal）都必须做这一步，否则可从另一个入口绕过。
+    # 权衡：Redis 不可用时 is_token_blacklisted 返回 False（fail-open）—— 有意为之，
+    # 缓存故障不应把全部用户踢下线，代价是吊销能力暂时退化。
+    jti = payload.get("jti")
+    if jti and await is_token_blacklisted(jti):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token has been revoked. Please sign in again.",
             headers={"WWW-Authenticate": "Bearer"},
         )
 
@@ -402,6 +415,18 @@ async def get_principal(
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid token type. Expected an access token.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    # 吊销校验：登出 / 改密会把该令牌的 jti 写入黑名单。两个鉴权入口
+    # （get_current_user 与 get_principal）都必须做这一步，否则可从另一个入口绕过。
+    # 权衡：Redis 不可用时 is_token_blacklisted 返回 False（fail-open）—— 有意为之，
+    # 缓存故障不应把全部用户踢下线，代价是吊销能力暂时退化。
+    jti = payload.get("jti")
+    if jti and await is_token_blacklisted(jti):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token has been revoked. Please sign in again.",
             headers={"WWW-Authenticate": "Bearer"},
         )
 

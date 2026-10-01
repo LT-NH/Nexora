@@ -15,8 +15,15 @@ from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.utils.audit import create_audit_log
+from app.config import settings
 from app.models.customer import Customer
-from app.models.order import Order, OrderItem, OrderStatus, PaymentStatus
+from app.models.order import (
+    Order,
+    OrderItem,
+    OrderDataSource,
+    OrderStatus,
+    PaymentStatus,
+)
 from app.models.product import Product, ProductVariant
 from app.models.user import User
 from app.models.workspace import Workspace, WorkspaceMember, WorkspaceRole
@@ -82,14 +89,49 @@ class OrderService:
             ts = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
             order_data.order_number = f"ORD-{ts}-{random.randint(1000, 9999)}"
 
-        # Check order_number uniqueness
+        # 订单号唯一性按**工作空间**校验（复合唯一约束见 Order.__table_args__）。
+        # 此前这里漏了 workspace_id 过滤 —— A 空间用过的订单号会阻塞 B 空间，
+        # 跨租户互相干扰。
         existing = await db.execute(
-            select(Order).where(Order.order_number == order_data.order_number)
+            select(Order.id).where(
+                Order.workspace_id == workspace.id,
+                Order.order_number == order_data.order_number,
+            )
         )
         if existing.scalar_one_or_none() is not None:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail=f"Order number '{order_data.order_number}' already exists.",
+            )
+
+        data_source = OrderDataSource(order_data.data_source)
+
+        # 平台单号幂等：同一空间下同一平台订单只允许一行。
+        # 这是平台同步的去重依据 —— 比 order_number 可靠（Shopify 的订单号
+        # 在每个店铺独立编号，两家店的 #1001 会撞车）。
+        if order_data.platform_order_id:
+            dup = await db.execute(
+                select(Order.id).where(
+                    Order.workspace_id == workspace.id,
+                    Order.platform_order_id == order_data.platform_order_id,
+                )
+            )
+            if dup.scalar_one_or_none() is not None:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="该平台订单已存在（platform_order_id 重复）。",
+                )
+
+        # 非真实来源（仿真 / 沙箱）只允许在非生产环境写入。
+        # 演示与联调需要它们，但真实客户的生产库绝不能混入 —— 一旦混入，
+        # 利润分析、健康评分、AI 建议就全部不可信了。
+        if (
+            data_source is not OrderDataSource.REAL
+            and settings.ENVIRONMENT == "production"
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="生产环境不允许写入非真实来源（sandbox / simulated）的订单。",
             )
 
         # ── Server-side price recalculation (security) ────────────────────
@@ -185,6 +227,8 @@ class OrderService:
             notes=order_data.notes,
             payment_status=PaymentStatus(order_data.payment_status),
             platform=order_data.platform,
+            platform_order_id=order_data.platform_order_id,
+            data_source=data_source,
         )
         db.add(order)
         await db.flush()

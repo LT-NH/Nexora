@@ -2,6 +2,11 @@
 export default {
   content: ['./index.html', './src/**/*.{js,ts,jsx,tsx}'],
   darkMode: 'class',
+  // 触摸设备上 :hover 会在首次点按后「粘住」（卡片抬升不落回）。
+  // 开启后全站 hover: 变体只在真正支持悬停指针的设备（鼠标 / 触控板）生效。
+  future: {
+    hoverOnlyWhenSupported: true,
+  },
   theme: {
     extend: {
       colors: {
@@ -85,6 +90,27 @@ export default {
       fontSize: {
         xs: ['0.8125rem', { lineHeight: '1.125rem' }], // 12px → 13px
         sm: ['0.9375rem', { lineHeight: '1.4rem' }],   // 14px → 15px
+      },
+      // ── 动效 token：统一「时长」与「缓动」分级 ──────────────────────
+      // 此前时长散落在 className 与内联 style 里，全站出现了 15 种不同值
+      // （0.15s 到 42s 都有），缓动也混用三套 —— 没有分级就没有协调感，
+      // 视觉上表现为「每个元素各自为政」，这是「不够高级」最常见的原因。
+      transitionDuration: {
+        instant: '90ms', // 状态反馈：hover / active
+        fast: '180ms',   // 小控件入场
+        base: '260ms',   // 默认
+        slow: '420ms',   // 区块入场
+        slower: '700ms', // 首屏序列
+      },
+      transitionTimingFunction: {
+        // 弹簧近似：起步快、末段轻微过冲 —— 比 ease-out 更有物理感
+        spring: 'cubic-bezier(0.34, 1.56, 0.64, 1)',
+        // 长距离位移的默认选择（expo-out）
+        smooth: 'cubic-bezier(0.22, 1, 0.36, 1)',
+        // 标准减速（material）
+        standard: 'cubic-bezier(0.25, 0.1, 0.25, 1)',
+        // 入场强调：起步慢、中段快
+        emphasized: 'cubic-bezier(0.16, 1, 0.3, 1)',
       },
       animation: {
         'fade-in': 'fadeIn 0.3s ease-in-out',

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Link } from 'react-router-dom';
+import { TransitionLink } from '@/components/ui/TransitionLink';
 import { Mail, ArrowLeft, CheckCircle } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
@@ -38,11 +38,11 @@ export const ForgotPassword: React.FC = () => {
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-primary-50 flex items-center justify-center px-4">
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
-          <Link to="/" className="inline-block mb-4">
+          <TransitionLink to="/" className="inline-block mb-4">
             <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-primary-600 to-purple-600 flex items-center justify-center mx-auto">
               <span className="text-white font-bold text-xl">S</span>
             </div>
-          </Link>
+          </TransitionLink>
           <h1 className="text-2xl font-bold text-slate-900 dark:text-gray-100">忘记密码</h1>
           <p className="text-sm text-gray-500 mt-2">
             {isSent ? '重置令牌已生成' : '输入您的邮箱地址以重置密码'}
@@ -63,14 +63,14 @@ export const ForgotPassword: React.FC = () => {
                   <p className="text-sm font-mono text-gray-900 break-all">{resetToken}</p>
                 </div>
               )}
-              <Link to={`/reset-password${resetToken ? `?token=${resetToken}` : ''}`}>
+              <TransitionLink to={`/reset-password${resetToken ? `?token=${resetToken}` : ''}`}>
                 <Button variant="primary" className="w-full">
                   前往重置密码
                 </Button>
-              </Link>
-              <Link to="/login" className="inline-flex items-center gap-1 text-sm text-primary-600 hover:text-primary-500">
+              </TransitionLink>
+              <TransitionLink to="/login" className="inline-flex items-center gap-1 text-sm text-primary-600 hover:text-primary-500">
                 <ArrowLeft size={14} /> 返回登录
-              </Link>
+              </TransitionLink>
             </div>
           ) : (
             <form onSubmit={handleSubmit} className="space-y-5">
@@ -86,9 +86,9 @@ export const ForgotPassword: React.FC = () => {
               <Button type="submit" variant="primary" size="lg" isLoading={isLoading} className="w-full">
                 发送重置链接              </Button>
               <p className="text-center">
-                <Link to="/login" className="inline-flex items-center gap-1 text-sm text-gray-500 hover:text-primary-600 transition-colors">
+                <TransitionLink to="/login" className="inline-flex items-center gap-1 text-sm text-gray-500 hover:text-primary-600 transition-colors">
                   <ArrowLeft size={14} /> 返回登录
-                </Link>
+                </TransitionLink>
               </p>
             </form>
           )}

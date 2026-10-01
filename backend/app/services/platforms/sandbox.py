@@ -18,7 +18,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.customer import Customer
-from app.models.order import Order, OrderItem, OrderStatus, PaymentStatus
+from app.models.order import Order, OrderItem, OrderStatus, PaymentStatus, OrderDataSource
 from app.models.product import Product, ProductStatus
 from app.database import async_session_factory
 from app.services.platforms.base import PlatformIntegration, SyncResult
@@ -275,6 +275,10 @@ class SandboxIntegration(PlatformIntegration):
                     else PaymentStatus.UNPAID
                 ),
                 platform="sandbox",
+                data_source=OrderDataSource.SANDBOX,
+                # TODO(真实接入时补): platform_order_id —— 该平台适配器尚未对真实
+                # 接口验证过，单号字段名与语义未经确认，不凭猜测填写。
+                # 补上后即可用它做跨次同步的幂等键。
                 shipping_address={"name": customer_name, "city": "深圳"},
                 created_at=created,
             )

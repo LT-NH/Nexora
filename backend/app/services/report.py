@@ -73,7 +73,10 @@ async def generate_weekly_report(workspace_id: str, workspace_name: str) -> str:
             f"<li>{p.name} — 仅剩{p.stock}件</li>" for p in low_stock
         ) if low_stock else "<li>库存充足</li>"
 
-        html = f"""
+        # 局部变量不能叫 html —— 会遮蔽模块级的 `import html`，并在自己的初始化
+        # 表达式里引用尚未绑定的局部名，抛 UnboundLocalError。
+        # 此前这个函数一被调用就崩，周报功能实际从未成功生成过。
+        html_body = f"""
         <div style="font-family:sans-serif;max-width:600px;margin:0 auto;">
           <h2 style="color:#2560eb;">Nexora 周报 — {html.escape(workspace_name)}</h2>
           <p>{datetime.now(timezone.utc).strftime('%Y年%m月%d日')} | 过去7天汇总</p>
@@ -94,7 +97,7 @@ async def generate_weekly_report(workspace_id: str, workspace_name: str) -> str:
           <p style="margin-top:24px;"><a href="{settings.SITE_URL}/dashboard" style="background:#2560eb;color:#fff;padding:10px 20px;border-radius:8px;text-decoration:none;">查看完整仪表盘</a></p>
         </div>
         """
-        return html
+        return html_body
 
 
 async def collect_weekly_report_data(db, workspace_id: str) -> dict:
@@ -217,37 +220,42 @@ def _rule_based_ai_summary(report_data: dict) -> str:
     refund_count = int(report_data.get("refund_count", 0))
 
     top = top_products[0] if top_products else None
-    mom_text = f"{mom_change_pct:+.1f}%" if mom_change_pct is not None else "暂无上周对比数据"
+    if mom_change_pct is None:
+        mom_sentence = "上周数据还不够，暂时比不了"
+    elif mom_change_pct >= 0:
+        mom_sentence = f"比上周多了 {mom_change_pct:.1f}%"
+    else:
+        mom_sentence = f"比上周少了 {abs(mom_change_pct):.1f}%"
 
     # ── 3 highlights ──
     highlights = [
-        f"本周营收 ¥{total_revenue:,.2f}，较上周{mom_text}，共 {total_orders} 笔有效订单。",
+        f"本周收了 ¥{total_revenue:,.2f}（{total_orders} 单），{mom_sentence}。",
     ]
     if top:
         highlights.append(
-            f"热销榜首「{top['name']}」贡献 ¥{top['revenue']:,.2f}，售出 {top['quantity']} 件。"
+            f"卖得最好的是「{top['name']}」：卖出 {top['quantity']} 件，收进 ¥{top['revenue']:,.2f}。"
         )
     else:
-        highlights.append("本周暂无销售数据，建议加强引流与推广。")
-    highlights.append(f"本周发生退款 {refund_count} 笔，退款率 {refund_rate_pct}%。")
+        highlights.append("本周还没有订单，建议先做点引流活动。")
+    highlights.append(f"本周退了 {refund_count} 单（每 100 单退 {refund_rate_pct} 单）。")
 
     # ── 1 risk ──
     if refund_rate_pct > 5:
-        risk = f"退款率 {refund_rate_pct}% 偏高，需重点关注商品质量与售后体验。"
+        risk = f"每 100 单退 {refund_rate_pct} 单，偏高——重点查一下商品质量和售后。"
     elif low_stock_count > 0:
-        risk = f"{low_stock_count} 个商品库存低于预警线，存在断货风险。"
+        risk = f"{low_stock_count} 款商品快没货了，有断货风险。"
     elif mom_change_pct is not None and mom_change_pct < 0:
-        risk = "本周营收环比下滑，需警惕销售走弱趋势。"
+        risk = "本周收入比上周少，要留意是不是在走下坡。"
     else:
-        risk = "本周经营整体平稳，暂无明显风险。"
+        risk = "本周经营整体平稳，没发现明显问题。"
 
     # ── 1 suggestion ──
     if low_stock_count > 0:
-        suggestion = f"尽快为 {low_stock_count} 个低库存商品安排补货，优先保障热销款不断货。"
+        suggestion = f"尽快给 {low_stock_count} 款快没货的商品补货，先保住热销款。"
     elif top:
-        suggestion = f"围绕热销款「{top['name']}」策划组合促销，提升客单价与连带销售。"
+        suggestion = f"围绕「{top['name']}」做个组合套餐，让客户顺手多买一件。"
     else:
-        suggestion = "建议增加引流活动并优化商品详情页，拉动首单转化。"
+        suggestion = "多做点引流活动，把商品详情页改得更有说服力，让人敢下第一单。"
 
     return (
         "【本周亮点】\n"
@@ -283,9 +291,11 @@ async def generate_ai_summary(db, workspace_id: str, report_data: dict) -> str:
             "以下是系统采集到的本周经营数据（JSON）：\n"
             f"{payload}\n\n"
             "请生成一份简洁、自然的周报摘要，包含 3 个亮点、1 个风险提示和 1 条运营建议。"
+            "读者是不懂运营术语的小店主：不要用「环比、同比、SKU、归因、置信度、转化率、"
+            "履约、动销、客单价、GMV、ROI」这类词，换成日常说法（比上周多了多少 / 哪几款商品）。"
         )
         ai_text = await _call_qwen_generation(
-            "你是一位专业的电商运营分析助手，输出要简洁、准确、易读。",
+            "你是店主信任的运营搭档，说人话，输出要简洁、准确、易读。",
             prompt,
             temperature=0.5,
         )

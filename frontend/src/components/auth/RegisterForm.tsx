@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
+import { TransitionLink } from '@/components/ui/TransitionLink';
 import { Mail, Lock, User, Eye, EyeOff } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { Button } from '@/components/ui/Button';
@@ -141,13 +142,13 @@ export const RegisterForm: React.FC = () => {
           />
           <span className="text-sm text-gray-600">
             我同意{' '}
-            <Link to="/terms" className="text-primary-600 hover:underline">
+            <TransitionLink to="/terms" className="text-primary-600 hover:underline">
               服务条款
-            </Link>{' '}
+            </TransitionLink>{' '}
             和{' '}
-            <Link to="/privacy" className="text-primary-600 hover:underline">
+            <TransitionLink to="/privacy" className="text-primary-600 hover:underline">
               隐私政策
-            </Link>
+            </TransitionLink>
           </span>
         </label>
         {errors.terms && (
@@ -167,12 +168,12 @@ export const RegisterForm: React.FC = () => {
 
       <p className="text-center text-sm text-gray-500">
         已有账户？{' '}
-        <Link
+        <TransitionLink
           to="/login"
           className="font-medium text-primary-600 hover:text-primary-500 transition-colors"
         >
           登录
-        </Link>
+        </TransitionLink>
       </p>
     </form>
   );

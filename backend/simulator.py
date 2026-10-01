@@ -74,7 +74,11 @@ def run():
             "shipping": 0 if total > 39 else round(random.uniform(5, 10), 2),
             "discount": 0,
             "notes": random.choice(["","请放快递柜","联系我取件","","","加急"]),
-            "platform": random.choice(["manual","manual","manual","douyin"]),
+            # 不再伪造平台标签 —— 模拟数据不该冒充「从抖音同步来的订单」。
+            # 这正是此前库里 941 笔标注 douyin/taobao/wechat 却没有任何对应平台
+            # 店铺的假订单的来源。来源改由 data_source 字段显式声明，平台一律 manual。
+            "platform": "manual",
+            "data_source": "simulated",
         }
         order["total"] = round(total + order["shipping"], 2)
         try:
@@ -86,15 +90,16 @@ def run():
     maybe_create_customer(client, token, slug)
 
     if created > 0:
-        rev = sum(o["total"] for o in [{}] * created)  # (approximation)
+        # 原先这里有一行 `rev = sum(o["total"] for o in [{}] * created)` —— 既未使用，
+        # 又必然抛 KeyError（对空 dict 取 "total"），导致每次创建订单后模拟器就崩。
         print(f"{datetime.now().strftime('%H:%M:%S')} | {created} new orders | "
               f"{'BUSY' if is_busy else 'NORMAL'} mode")
 
     return created
 
 if __name__ == "__main__":
-    print(f"  Nexora 数据模拟器已启动 (间隔=30分钟, 周末活跃)")
-    print(f"  按 Ctrl+C 停止")
+    print("  Nexora 数据模拟器已启动 (间隔=30分钟, 周末活跃)")
+    print("  按 Ctrl+C 停止")
     while True:
         try:
             run()

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
 import { Cookie, X } from 'lucide-react';
+import { TransitionLink } from '@/components/ui/TransitionLink';
 
 const STORAGE_KEY = 'nexora_cookie_consent';
 
@@ -43,12 +43,12 @@ export const CookieBanner: React.FC = () => {
               </p>
             </div>
             <div className="flex items-center gap-3 flex-shrink-0">
-              <Link
+              <TransitionLink
                 to="/privacy"
                 className="text-sm text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 transition-colors underline underline-offset-2"
               >
                 隐私政策
-              </Link>
+              </TransitionLink>
               <button
                 onClick={handleAccept}
                 className="px-5 py-2 rounded-lg bg-primary-600 text-white text-sm font-medium hover:bg-primary-700 transition-colors shadow-sm"

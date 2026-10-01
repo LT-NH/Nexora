@@ -6,6 +6,7 @@ import {
   Check,
   Cpu,
   Gauge,
+  ListChecks,
   Plus,
   RefreshCw,
   Trash2,
@@ -97,6 +98,17 @@ interface TestResult {
   reply?: string;
   error?: string;
   quota_status?: string;
+}
+
+/** 一键检测全部模型的返回体 */
+interface BatchTestResult {
+  total: number;
+  ok_count: number;
+  /** 状态 → 模型数（如 { exhausted: 20, ok: 5 }） */
+  summary: Record<string, number>;
+  /** 状态 → 中文文案（后端给，避免两边各写一套映射） */
+  summary_labels?: Record<string, string>;
+  results: TestResult[];
 }
 
 /** 状态 → 徽章配色（ok 绿 / 未开通·限流 琥珀 / 耗尽·Key 无效 红 / 未检测 灰） */
@@ -228,6 +240,8 @@ export const AdminAIModels: React.FC = () => {
   const [switching, setSwitching] = useState<string | null>(null);
   const [testing, setTesting] = useState<string | null>(null);
   const [testResult, setTestResult] = useState<TestResult | null>(null);
+  const [testingAll, setTestingAll] = useState(false);
+  const [batchResult, setBatchResult] = useState<BatchTestResult | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
   const [showCustom, setShowCustom] = useState(false);
   const [newModel, setNewModel] = useState({ model_id: '', label: '', note: '' });
@@ -294,6 +308,30 @@ export const AdminAIModels: React.FC = () => {
       addToast('error', '自检失败', e?.response?.data?.detail || '');
     } finally {
       setTesting(null);
+    }
+  };
+
+  const testAllModels = async () => {
+    setTestingAll(true);
+    setBatchResult(null);
+    try {
+      // 逐个真实探测（后端顺序执行 + 极短间隔），模型多时可能十几秒
+      const res: any = await api.post('/admin/ai/models/test-all', {}, { timeout: 180_000 });
+      setBatchResult(res.data);
+      const okCount = res.data?.ok_count ?? 0;
+      const total = res.data?.total ?? 0;
+      addToast(
+        okCount > 0 ? 'success' : 'error',
+        `检测完成：${okCount}/${total} 个可用`,
+        okCount > 0
+          ? '状态已刷新，可在列表中切换到有额度的模型'
+          : '当前没有任何可用模型，请检查 Key / 额度',
+      );
+      await fetchModels(true);
+    } catch (e: any) {
+      addToast('error', '批量检测失败', e?.response?.data?.detail || '');
+    } finally {
+      setTestingAll(false);
     }
   };
 
@@ -444,16 +482,65 @@ export const AdminAIModels: React.FC = () => {
             「支持工具」= 实测可返回 tool_calls（巡店 Agent 依赖）
           </p>
         </div>
-        <Button
-          variant="outline"
-          size="sm"
-          leftIcon={<RefreshCw size={14} />}
-          onClick={() => fetchModels()}
-          isLoading={loading}
-        >
-          刷新
-        </Button>
+        <div className="flex items-center gap-2 shrink-0">
+          <Button
+            variant="outline"
+            size="sm"
+            leftIcon={<ListChecks size={14} />}
+            onClick={testAllModels}
+            isLoading={testingAll}
+            title="逐个真实探测全部模型并刷新额度状态（探测本身会消耗少量额度）"
+          >
+            {testingAll ? '检测中…' : '检测全部'}
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            leftIcon={<RefreshCw size={14} />}
+            onClick={() => fetchModels()}
+            isLoading={loading}
+          >
+            刷新
+          </Button>
+        </div>
       </div>
+
+      {/* 一键检测结果：把「哪些还能用」一次说清 */}
+      {batchResult && (
+        <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 px-5 py-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+              <span className="text-sm font-semibold text-gray-700 dark:text-gray-200">
+                检测完成：
+                <b className={batchResult.ok_count > 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'}>
+                  {' '}{batchResult.ok_count}
+                </b>
+                /{batchResult.total} 个可用
+              </span>
+              {Object.entries(batchResult.summary || {})
+                .filter(([k]) => k !== 'ok')
+                .map(([k, v]) => (
+                  <span
+                    key={k}
+                    className={`text-xs font-medium px-2 py-0.5 rounded-full border ${STATUS_STYLE[k] || STATUS_STYLE.unknown}`}
+                  >
+                    {batchResult.summary_labels?.[k] || k} {v}
+                  </span>
+                ))}
+            </div>
+            <button
+              className="text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+              onClick={() => setBatchResult(null)}
+            >
+              收起
+            </button>
+          </div>
+          <p className="mt-2 text-xs text-gray-400">
+            「额度耗尽」= 该模型的免费额度已用完（百炼免费额度**按模型分别计算**），不是模型下线；
+            换用上方「可用」的模型即可，或到百炼控制台充值/等待额度重置。
+          </p>
+        </div>
+      )}
 
       {/* 当前生效模型 */}
       {active && (

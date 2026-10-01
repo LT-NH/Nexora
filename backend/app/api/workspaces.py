@@ -33,6 +33,7 @@ from app.schemas.workspace import (
 from app.services.workspace import WorkspaceService
 from app.utils.logging import get_logger
 from app.utils.pagination import PaginatedResponse, PaginationParams
+from app.utils.uploads import detect_image_extension, ensure_upload_dir, safe_upload_name
 
 router = APIRouter(prefix="/workspaces")
 logger = get_logger(__name__)
@@ -373,12 +374,19 @@ async def get_audit_logs(
     )
     logs = result.scalars().all()
 
-    # Build response with user info
+    # Build response with user info.
+    # 一次性取出这批日志涉及的全部用户。原实现是循环内逐条 select(User)，
+    # 100 条日志就要发 101 次 SQL（N+1）；同类写法在 permissions.py / order.py
+    # 早已改成批量查询，这里漏了。
+    user_ids = {log.user_id for log in logs if log.user_id}
+    users_by_id: dict[str, User] = {}
+    if user_ids:
+        user_rows = await db.execute(select(User).where(User.id.in_(user_ids)))
+        users_by_id = {u.id: u for u in user_rows.scalars().all()}
+
     items = []
     for log in logs:
-        # Get user name
-        user_result = await db.execute(select(User).where(User.id == log.user_id))
-        log_user = user_result.scalar_one_or_none()
+        log_user = users_by_id.get(log.user_id) if log.user_id else None
         items.append(AuditLogResponse(
             id=log.id,
             action=log.action,
@@ -407,7 +415,8 @@ async def upload_workspace_logo(
     """Upload a logo image for the workspace. Max 2MB, PNG/JPG/WebP only."""
     workspace, _ = await _require_member(slug, current_user, db, WorkspaceRole.ADMIN)
 
-    # Validate file type
+    # 第一层：快速拒绝「声明类型」明显不对的请求（Content-Type 由客户端控制，
+    # 不能作为安全依据）
     allowed_types = {"image/png", "image/jpeg", "image/webp", "image/gif"}
     if file.content_type not in allowed_types:
         raise HTTPException(
@@ -423,12 +432,18 @@ async def upload_workspace_logo(
             detail="File size must be under 2MB.",
         )
 
-    # Save file
-    upload_dir = os.path.join("uploads", "workspaces", workspace.id)
-    os.makedirs(upload_dir, exist_ok=True)
+    # 第二层（权威判定）：按 magic bytes 识别类型，扩展名由服务端白名单决定，
+    # 避免上传 HTML 后在同源 /uploads 下被当作页面执行（存储型 XSS）。
+    detected_ext = detect_image_extension(contents)
+    if detected_ext is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="File content is not a valid PNG/JPEG/WebP/GIF image.",
+        )
 
-    ext = file.filename.split(".")[-1] if file.filename else "png"
-    filename = f"logo.{ext}"
+    # Save file
+    upload_dir = ensure_upload_dir("workspaces", workspace.id)
+    filename = safe_upload_name("logo", detected_ext)
     filepath = os.path.join(upload_dir, filename)
 
     with open(filepath, "wb") as f:
@@ -534,5 +549,3 @@ async def send_test_email(
             detail="SMTP 未配置或发送失败，请检查邮件服务器设置",
         )
     return {"sent": True, "to": current_user.email}
-
-    return results

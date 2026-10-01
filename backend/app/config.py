@@ -5,18 +5,26 @@ with sensible defaults for local development.
 """
 
 import secrets
+from pathlib import Path
 from typing import List
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from app.version import APP_VERSION as _APP_VERSION
 
+# .env 必须用**绝对路径**解析。
+# 默认值 ".env" 是相对**当前工作目录**的 —— 只要不是从 backend/ 目录启动
+# （例如从仓库根启动 uvicorn、systemd 配了别的 WorkingDirectory、
+# 或在别的目录跑脚本），.env 就**静默不加载**：AI Key 变空、base_url 回落
+# 到默认值，表现为「模型全部不可用」而看不出原因。实测踩过这个坑。
+_BACKEND_DIR = Path(__file__).resolve().parent.parent
+
 
 class Settings(BaseSettings):
     """Application settings loaded from environment variables."""
 
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=str(_BACKEND_DIR / ".env"),
         env_file_encoding="utf-8",
         case_sensitive=False,
     )
@@ -36,12 +44,22 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
 
+    # 是否在 /auth/forgot-password 响应里回显密码重置令牌。
+    # 仅供本地联调（没有邮件通道时）使用，**默认关闭**。
+    # 此前判断条件是 `DEBUG or ENVIRONMENT == "development"`，而这两个配置的默认值
+    # 恰好都是宽松的 —— 部署时只要忘记显式设置，就会向任意邮箱泄露重置令牌，
+    # 攻击者拿到即可直接接管账号。改为显式开关，让「忘记配置」落在安全的一侧。
+    EXPOSE_RESET_TOKEN: bool = False
+
     # WeChat Pay Native v3（可选）。凭据齐备 = 真实微信通道；未配置 = sandbox 模式。
     WXPAY_APPID: str = ""
     WXPAY_MCHID: str = ""
     WXPAY_MCH_SERIAL_NO: str = ""
     WXPAY_APIV3_KEY: str = ""
     WXPAY_PRIVATE_KEY_PATH: str = ""
+    # 微信平台证书（用于回调验签）。留空则自动调用 /v3/certificates 下载并缓存 12 小时；
+    # 内网/离线部署可显式指定证书文件路径。
+    WXPAY_PLATFORM_CERT_PATH: str = ""
     WXPAY_NOTIFY_URL: str = ""  # 回调地址；空则用 PUBLIC_BASE_URL 拼装
     # Alipay Page Pay（电脑网站支付 / AI 网页应用收款）。凭据齐备走真实支付宝；否则 sandbox 演示。
     ALIPAY_APP_ID: str = ""

@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Link } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
 import {
   Shield,
@@ -30,6 +29,8 @@ import { Button } from '@/components/ui/Button';
 import { Modal } from '@/components/ui/Modal';
 import { TransitionLink } from '@/components/ui/TransitionLink';
 import { CountUp } from '@/components/ui/CountUp';
+import { HealthRadarHero } from '@/components/landing/HealthRadarHero';
+import { MagneticButton } from '@/components/landing/MagneticButton';
 import { useReveal, shouldSkipReveal } from '@/hooks/useReveal';
 import { useTilt } from '@/hooks/useTilt';
 import { useTheme } from '@/contexts/ThemeContext';
@@ -888,8 +889,13 @@ const HeroConsole: React.FC = () => (
 );
 
 /* ─── Main ─── */
-/** 背景粒子场：确定性坐标，避免重渲染抖动（GPU transform 动画） */
-const PARTICLES = Array.from({ length: 24 }, (_, i) => {
+/** 背景粒子场：确定性坐标，避免重渲染抖动（GPU transform 动画）。
+ *
+ * 数量从 24 降到 8 —— 背景同时跑着极光 / 点阵 / 三层光斑 / 玻璃光泽，
+ * 再加 24 个粒子属于「动效预算全花在装饰上」：画面很热闹，但眼睛不知道该看哪。
+ * 降低密度后视觉更克制，省下的合成层预算留给主角（见 HealthRadarHero）。
+ */
+const PARTICLES = Array.from({ length: 8 }, (_, i) => {
   const seed = (i * 37 + 11) % 100;
   return {
     left: `${(seed * 3.7) % 100}%`,
@@ -1019,12 +1025,8 @@ export const Landing: React.FC = () => {
             style={{ background: 'linear-gradient(135deg, #a855f7, #d946ef)' }}
           />
         </div>
-        <div className="parallax-layer" style={{ transform: 'translate(calc(var(--mx) * 90px), calc(var(--my) * 90px))' }}>
-          <div
-            className="absolute w-[620px] h-[620px] rounded-full opacity-20 animate-blob-3"
-            style={{ background: 'linear-gradient(135deg, #8b5cf6, #a855f7)' }}
-          />
-        </div>
+        {/* 原先这里还有第三层 blob（620px，同一色系）。三层光斑叠加后
+            边界互相糊在一起，反而看不出层次 —— 保留两层，对比更清晰。 */}
       </div>
       {/* ============ 液态玻璃光泽层（流动光线） ============ */}
       <div className="pointer-events-none fixed inset-0 z-[1] glass-sheen" aria-hidden="true" />
@@ -1276,7 +1278,7 @@ export const Landing: React.FC = () => {
               <Reveal>
                 <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-white/70 border border-violet-100 text-violet-700 text-sm font-medium shadow-sm backdrop-blur">
                   <span className="w-2 h-2 rounded-full bg-gradient-to-r from-violet-500 to-fuchsia-500 animate-pulse-glow" />
-                  v5.11 现已发布
+                  v5.12 现已发布
                   <span className="text-violet-300">·</span>
                   <span className="text-[#8e8e93]">6 大平台已接入</span>
                 </div>
@@ -1359,6 +1361,91 @@ export const Landing: React.FC = () => {
         >
           <ChevronDown size={26} />
         </a>
+      </section>
+
+      {/* ============ 六维健康引擎 · 产品能力即演示 ============ */}
+      {/*
+        为什么把它放在首屏正下方：原页面有 6 层背景动效同时运行（极光 / 点阵 /
+        粒子 / 三层光斑 / 玻璃光泽），而**真正要卖的产品界面是静止的** ——
+        注意力被发光的光斑抢走，产品反而成了配角。
+
+        这一段的思路是把动效预算从「装饰」搬到「主角」：雷达六轴展开、数据点
+        依次点亮、分数滚动、洞察浮入，全部在讲产品能力本身。
+        入场由 IntersectionObserver 触发（滚到才播），reduced-motion 时直接给终态。
+      */}
+      <section className="relative py-20 sm:py-24 bg-white/80 backdrop-blur-2xl overflow-hidden">
+        <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-[900px] h-[500px] bg-violet-200/20 rounded-full blur-[120px] pointer-events-none" />
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
+          <div className="grid lg:grid-cols-[1fr_auto] gap-12 lg:gap-16 items-center">
+            <div>
+              <Reveal>
+                <span className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-violet-50 border border-violet-100 text-violet-700 text-xs font-semibold">
+                  经营健康引擎
+                </span>
+              </Reveal>
+              <Reveal delay={80}>
+                <h2 className="mt-5 text-3xl sm:text-4xl lg:text-[2.75rem] font-semibold tracking-tight text-[#1d1d1f] leading-tight">
+                  六个维度，
+                  <br className="hidden sm:block" />
+                  一次看清店铺底子
+                </h2>
+              </Reveal>
+              <Reveal delay={160}>
+                <p className="mt-5 text-base text-[#515154] leading-relaxed max-w-lg">
+                  盈利、增长、库存、客户、履约、风险 —— 每一维都由真实订单与库存数据算出，
+                  不给演示数、不编占位数。分数只是入口，AI 会告诉你
+                  <span className="font-semibold text-[#1d1d1f]">下一步该动哪里</span>。
+                </p>
+              </Reveal>
+              <Reveal delay={240}>
+                <ul className="mt-7 space-y-3">
+                  {[
+                    '实时体检：接入店铺后即时出分，不等周报',
+                    'AI 归因：拖累项定位到具体 SKU 与天数',
+                    '可执行：直接给出清库动作与预期现金流',
+                  ].map((item) => (
+                    <li key={item} className="flex items-start gap-3 text-sm text-[#4b5563]">
+                      <span className="mt-0.5 w-5 h-5 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center shrink-0">
+                        <Check size={11} strokeWidth={3} />
+                      </span>
+                      {item}
+                    </li>
+                  ))}
+                </ul>
+              </Reveal>
+              <Reveal delay={320}>
+                <div className="mt-8 flex flex-wrap items-center gap-4">
+                  <TransitionLink
+                    to="/register"
+                    className="inline-block transition-transform duration-base ease-spring hover:-translate-y-0.5"
+                  >
+                    <Button
+                      variant="primary"
+                      size="lg"
+                      rightIcon={<ArrowRight size={18} />}
+                      className="shadow-lg shadow-violet-500/25 hover:shadow-xl hover:shadow-violet-500/30"
+                    >
+                      免费体检我的店铺
+                    </Button>
+                  </TransitionLink>
+                  <MagneticButton
+                    type="button"
+                    strength={5}
+                    onClick={scrollToFeatures}
+                    className="rounded-xl border border-gray-200 bg-white px-5 py-3 text-sm font-semibold text-[#1d1d1f] shadow-sm hover:border-violet-200 hover:text-violet-700"
+                  >
+                    看看六个维度怎么算
+                  </MagneticButton>
+                </div>
+              </Reveal>
+            </div>
+
+            {/* 雷达卡：滚到视口内才播放「开机」序列 */}
+            <Reveal delay={200} className="w-full max-w-[440px] justify-self-center lg:justify-self-end">
+              <HealthRadarHero />
+            </Reveal>
+          </div>
+        </div>
       </section>
 
       {/* ============ Trust Anchors (Stripe-style big numbers) ============ */}
@@ -1777,9 +1864,9 @@ export const Landing: React.FC = () => {
                   </a>
                 </li>
                 <li>
-                  <Link to="/changelog" className="text-sm hover:text-white transition-colors">
+                  <TransitionLink to="/changelog" className="text-sm hover:text-white transition-colors">
                     更新日志
-                  </Link>
+                  </TransitionLink>
                 </li>
               </ul>
             </div>
@@ -1787,19 +1874,19 @@ export const Landing: React.FC = () => {
               <h4 className="text-sm font-semibold text-white mb-4">资源</h4>
               <ul className="space-y-2.5">
                 <li>
-                  <Link to="/status" className="text-sm hover:text-white transition-colors">
+                  <TransitionLink to="/status" className="text-sm hover:text-white transition-colors">
                     系统状态
-                  </Link>
+                  </TransitionLink>
                 </li>
                 <li>
-                  <Link to="/terms" className="text-sm hover:text-white transition-colors">
+                  <TransitionLink to="/terms" className="text-sm hover:text-white transition-colors">
                     服务条款
-                  </Link>
+                  </TransitionLink>
                 </li>
                 <li>
-                  <Link to="/privacy" className="text-sm hover:text-white transition-colors">
+                  <TransitionLink to="/privacy" className="text-sm hover:text-white transition-colors">
                     隐私政策
-                  </Link>
+                  </TransitionLink>
                 </li>
               </ul>
             </div>
@@ -1807,12 +1894,12 @@ export const Landing: React.FC = () => {
               <h4 className="text-sm font-semibold text-white mb-4">公司</h4>
               <ul className="space-y-2.5">
                 <li>
-                  <Link
+                  <TransitionLink
                     to="/about"
                     className="text-sm hover:text-white transition-colors text-left cursor-pointer"
                   >
                     关于我们
-                  </Link>
+                  </TransitionLink>
                 </li>
                 <li>
                   <button
@@ -1840,12 +1927,12 @@ export const Landing: React.FC = () => {
               {new Date().getFullYear()} Nexora. 保留所有权利。
             </p>
             <div className="flex items-center gap-6 mt-4 sm:mt-0">
-              <Link to="/privacy" className="text-sm hover:text-white transition-colors">
+              <TransitionLink to="/privacy" className="text-sm hover:text-white transition-colors">
                 隐私政策
-              </Link>
-              <Link to="/terms" className="text-sm hover:text-white transition-colors">
+              </TransitionLink>
+              <TransitionLink to="/terms" className="text-sm hover:text-white transition-colors">
                 服务条款
-              </Link>
+              </TransitionLink>
             </div>
           </div>
         </div>

@@ -29,6 +29,8 @@ import { customerService } from '@/services/ecommerce';
 import api from '@/services/api';
 import type { Customer, CustomerTag, RFMAnalysis } from '@/types/ecommerce';
 import { usePageT, type Lang } from '@/i18n';
+import { formatDate } from '@/lib/format';
+import { Pagination } from '@/components/ui/Pagination';
 
 type T = (key: string, fallback?: string) => string;
 
@@ -232,12 +234,7 @@ const getTagConfig = (t: T): Record<CustomerTag, { label: string; variant: 'succ
 const allTags: CustomerTag[] = ['vip', 'high_value', 'regular', 'new', 'at_risk'];
 
 const formatPrice = (price: number) => `¥${price.toFixed(2)}`;
-const formatDate = (dateStr: string | null, t: T) => {
-  if (!dateStr) return t('no_date');
-  const d = new Date(dateStr);
-  if (isNaN(d.getTime())) return t('invalid_date');
-  return d.toLocaleDateString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit' });
-};
+// formatDate 已统一到 lib/format
 
 const rfmSegmentColors: Record<string, string> = {
   '高价值客户': '#10b981',
@@ -744,42 +741,16 @@ export const Customers: React.FC = () => {
               emptyTitle={t('empty_title')}
               emptyDescription={t('empty_desc')}
             />
-            {/* Pagination */}
+            {/* Pagination —— 共享组件；本页字典用的是 {pages}，转成组件约定的 {totalPages} */}
             {totalPages > 1 && (
-              <div className="flex items-center justify-between px-4 py-3 border-t border-gray-300 dark:border-gray-600">
-                <span className="text-sm text-gray-500 dark:text-gray-400">
-                  {t('pager_total').replace('{total}', String(total)).replace('{page}', String(page)).replace('{pages}', String(totalPages))}
-                </span>
-                <div className="flex items-center gap-1">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    disabled={page <= 1}
-                    onClick={() => setPage((p) => Math.max(1, p - 1))}
-                    aria-label={t('aria_prev')}
-                  >
-                    <ChevronLeft size={16} />
-                  </Button>
-                  {Array.from({ length: totalPages }, (_, i) => i + 1).map((p) => (
-                    <Button
-                      key={p}
-                      variant={p === page ? 'primary' : 'ghost'}
-                      size="sm"
-                      onClick={() => setPage(p)}
-                    >
-                      {p}
-                    </Button>
-                  ))}
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    disabled={page >= totalPages}
-                    onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-                    aria-label={t('aria_next')}
-                  >
-                    <ChevronRight size={16} />
-                  </Button>
-                </div>
+              <div className="px-4 py-3 border-t border-gray-300 dark:border-gray-600">
+                <Pagination
+                  page={page}
+                  totalPages={totalPages}
+                  total={total}
+                  onPageChange={setPage}
+                  label={t('pager_total').replace('{pages}', '{totalPages}')}
+                />
               </div>
             )}
           </Card>

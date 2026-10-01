@@ -10,6 +10,7 @@ outage.  Includes periodic cleanup of stale in-memory entries and
 """
 
 import asyncio
+import ipaddress
 import time
 from collections import defaultdict
 from typing import Callable
@@ -27,6 +28,20 @@ _CLEANUP_INTERVAL_SECONDS = 300  # 5 minutes
 _STALE_THRESHOLD_SECONDS = 600  # 10 minutes
 # When Redis is unreachable, skip trying it again for this long (seconds)
 _REDIS_RETRY_COOLDOWN_SECONDS = 5
+
+# Trusted proxy networks. X-Forwarded-For / X-Real-IP headers are only
+# honoured when the direct connection originates from one of these networks,
+# preventing IP-spoofing by untrusted clients.
+TRUSTED_PROXY_NETWORKS: tuple = tuple(
+    ipaddress.ip_network(n)
+    for n in (
+        "127.0.0.1/32",
+        "::1/128",
+        "10.0.0.0/8",
+        "172.16.0.0/12",
+        "192.168.0.0/16",
+    )
+)
 
 # Module-level cooldown shared across middleware instances: once Redis
 # fails we avoid re-attempting (and re-paying the connect timeout) for a
@@ -79,7 +94,13 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
 
         client_ip = self._get_client_ip(request)
-        if client_ip in ("127.0.0.1", "::1", "unknown"):
+        # 不再无条件放行 loopback：nginx 与本服务同机反代时（最常见部署形态），
+        # request.client.host 恒为 127.0.0.1，若此时直接返回则全站限流——包括
+        # /auth/login 的撞库防护——完全失效。仅在非生产环境保留豁免，
+        # 方便本地 dev server 与 seed 脚本。
+        if client_ip == "unknown":
+            return await call_next(request)
+        if client_ip in ("127.0.0.1", "::1") and settings.ENVIRONMENT != "production":
             return await call_next(request)
         now = time.time()
 
@@ -186,10 +207,27 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         return max(1, int(self.window_seconds - (now - oldest)))
 
     @staticmethod
-    def _get_client_ip(request: Request) -> str:
+    def _is_trusted_proxy(ip_str: str) -> bool:
+        """Return True if *ip_str* belongs to a trusted proxy network.
+
+        Args:
+            ip_str: The direct (peer) IP address of the connection.
+
+        Returns:
+            True when the IP falls within any configured trusted proxy CIDR.
+        """
+        try:
+            ip = ipaddress.ip_address(ip_str)
+        except ValueError:
+            return False
+        return any(ip in net for net in TRUSTED_PROXY_NETWORKS)
+
+    def _get_client_ip(self, request: Request) -> str:
         """Extract the client IP address from the request.
 
-        Handles X-Forwarded-For and X-Real-IP headers for proxy support.
+        Only trusts ``X-Forwarded-For`` / ``X-Real-IP`` headers when the
+        direct connection originates from a trusted proxy, preventing
+        IP-spoofing by arbitrary clients.
 
         Args:
             request: The incoming HTTP request.
@@ -197,16 +235,17 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         Returns:
             The client IP address string.
         """
-        forwarded = request.headers.get("X-Forwarded-For")
-        if forwarded:
+        direct_ip = request.client.host if request.client else ""
+
+        forwarded = request.headers.get("X-Forwarded-For", "")
+        if forwarded and self._is_trusted_proxy(direct_ip):
             return forwarded.split(",")[0].strip()
 
         real_ip = request.headers.get("X-Real-IP")
-        if real_ip:
+        if real_ip and self._is_trusted_proxy(direct_ip):
             return real_ip.strip()
 
-        client = request.client
-        if client:
-            return client.host
+        if direct_ip:
+            return direct_ip
 
         return "unknown"

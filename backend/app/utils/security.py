@@ -7,6 +7,7 @@ import asyncio
 import hashlib
 import secrets
 import string
+import uuid
 from datetime import datetime, timedelta, timezone
 
 import bcrypt
@@ -87,6 +88,9 @@ def create_access_token(
         "iat": now,
         "exp": now + expires_delta,
         "type": "access",
+        # jti 是吊销机制的锚点：登出 / 改密时把 jti 写入 Redis 黑名单，
+        # 鉴权中间件据此拒绝仍在有效期内的旧令牌。
+        "jti": uuid.uuid4().hex,
     }
     if extra_claims:
         to_encode.update(extra_claims)
@@ -120,6 +124,7 @@ def create_refresh_token(
         "iat": now,
         "exp": now + expires_delta,
         "type": "refresh",
+        "jti": uuid.uuid4().hex,
     }
 
     return jwt.encode(
@@ -147,6 +152,30 @@ def decode_token(token: str) -> dict | None:
         return payload
     except JWTError:
         return None
+
+
+def get_token_jti(token: str) -> tuple[str | None, int]:
+    """Extract the JWT ID and its remaining lifetime from an encoded token.
+
+    Args:
+        token: The encoded JWT string.
+
+    Returns:
+        ``(jti, ttl_seconds)``；令牌无效/已过期或没有 ``jti`` 声明时返回
+        ``(None, 0)``。TTL 用于决定黑名单条目的存活时间 —— 令牌本身过期后
+        就无需再吊销了。
+    """
+    payload = decode_token(token)
+    if not payload:
+        return None, 0
+    jti = payload.get("jti")
+    if not isinstance(jti, str) or not jti:
+        return None, 0
+    exp = payload.get("exp")
+    ttl = 0
+    if isinstance(exp, (int, float)):
+        ttl = max(0, int(exp - datetime.now(timezone.utc).timestamp()))
+    return jti, ttl
 
 
 def generate_api_key() -> str:

@@ -126,6 +126,22 @@ def _write_excel(
     return output
 
 
+# Excel 会把以这些字符开头的单元格当作公式执行（CSV 公式注入 / DDE）
+_CSV_FORMULA_PREFIXES = ("=", "+", "-", "@", "\t", "\r")
+
+
+def _sanitize_csv_cell(value):
+    """中和 CSV 公式注入（OWASP CSV Injection）。
+
+    商品名、客户名等都是用户可控字段。导出后商家用 Excel 打开时，
+    形如 ``=cmd|'/c calc'!A0`` 的单元格会被当作公式执行。按建议加前导
+    单引号，让单元格退化为纯文本。
+    """
+    if isinstance(value, str) and value.startswith(_CSV_FORMULA_PREFIXES):
+        return "'" + value
+    return value
+
+
 def _write_csv(rows: list[list], headers: list[str]) -> io.BytesIO:
     """Build a CSV file in memory (synchronous).
 
@@ -135,7 +151,7 @@ def _write_csv(rows: list[list], headers: list[str]) -> io.BytesIO:
     text_buf = io.StringIO()
     writer = csv.writer(text_buf)
     writer.writerow(headers)
-    writer.writerows(rows)
+    writer.writerows([[_sanitize_csv_cell(v) for v in row] for row in rows])
     output = io.BytesIO()
     output.write(text_buf.getvalue().encode("utf-8-sig"))
     output.seek(0)

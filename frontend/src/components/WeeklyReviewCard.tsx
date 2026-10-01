@@ -33,8 +33,8 @@ const D = {
     forecast: '下周营收预测',
     export: '导出周报',
     exported: '周报已导出',
-    confidence_high: '高置信',
-    confidence_medium: '中置信',
+    confidence_high: '把握很大',
+    confidence_medium: '把握一般',
     week_range: '{s} ~ {e}',
   },
   en: {

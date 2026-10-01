@@ -3,6 +3,7 @@
 Provides async SQLAlchemy engine, session factory, and a shared declarative base.
 """
 
+import logging
 import os
 
 from sqlalchemy import event
@@ -10,6 +11,12 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from sqlalchemy.orm import DeclarativeBase
 
 from app.config import settings
+
+# 用标准库 logging 而不是 app.utils.logging.get_logger：
+# 后者会先执行 app/utils/__init__.py，进而 import app.utils.audit → models →
+# 回到本模块取 Base，形成循环导入。基础层不该依赖应用层的日志封装。
+# setup_logging() 配置的是 root logger，这里依然会继承到同样的 JSON 格式。
+logger = logging.getLogger(__name__)
 
 # Resolve database URL to absolute path if using SQLite
 _database_url = settings.DATABASE_URL
@@ -118,12 +125,51 @@ async def get_db() -> AsyncSession:  # type: ignore[misc]
 
 
 async def init_db() -> None:
-    """Create all tables in the database. Safe to call on startup."""
+    """确保所有表存在，并补齐历史遗留的列。
+
+    schema 写入职责划分（此前三者混用导致漂移，这里明确下来）：
+
+      * ``create_all``  —— 只负责「表不存在就建」。幂等，不碰已存在的表。
+      * Alembic         —— **列/约束变更的唯一来源**，容器启动时由 entrypoint 执行。
+      * 下面的轻量 ALTER —— 历史遗留的补列逻辑，保留是为了兼容尚未走迁移的旧库；
+        新增的 schema 变更一律写 Alembic revision，不要再往这两个列表里加。
+    """
     import app.models  # noqa: F401  — 确保所有模型注册到 metadata
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
         await _ensure_store_columns(conn)
         await _ensure_light_migrations(conn)
+        await _ensure_performance_indexes(conn)
+
+
+async def _ensure_performance_indexes(conn) -> None:
+    """补齐时间窗聚合依赖的索引（create_all 不会给已存在的表加索引）。
+
+    orders 上的时间窗聚合（体检 / 报表 / 巡检 / AI 摘要）都是
+    ``WHERE workspace_id = ? AND created_at >= ?``，而此前只有 workspace_id
+    单列索引 —— 大租户下要先取出该空间的全部历史订单再过滤时间。
+    索引同时声明在 models/order.py 的 __table_args__（新库由 create_all 直接建好），
+    这里兜住已经建好的旧库。
+    """
+    from sqlalchemy import text
+
+    ddl_list = [
+        ("orders", "ix_orders_workspace_created", "workspace_id, created_at"),
+    ]
+    for table, index, columns in ddl_list:
+        try:
+            await conn.execute(
+                text(f"CREATE INDEX IF NOT EXISTS {index} ON {table} ({columns})")
+            )
+        except Exception as exc:  # noqa: BLE001
+            # 建索引失败不该阻断启动（超大表可能需要离线补），但必须留痕
+            logger.warning("性能索引创建失败：%s(%s) — %s", index, table, exc)
+
+
+def _is_duplicate_column_error(exc: Exception) -> bool:
+    """判断异常是否只是「列已存在」（跨 SQLite / PostgreSQL 驱动）。"""
+    msg = str(exc).lower()
+    return "duplicate column" in msg or "already exists" in msg
 
 
 async def _ensure_light_migrations(conn) -> None:
@@ -151,9 +197,15 @@ async def _ensure_light_migrations(conn) -> None:
     for table, column, ddl in migrations:
         try:
             await conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {column} {ddl}"))
-        except Exception:
-            # 列已存在（或库不可写）→ 忽略；真正的建表错误由 create_all 负责
-            pass
+        except Exception as exc:  # noqa: BLE001
+            if _is_duplicate_column_error(exc):
+                continue  # 列已存在 —— 这是唯一可以静默忽略的情况
+            # 其余错误（权限不足 / SQL 语法 / 类型不兼容 / 库不可写）此前被无条件
+            # `pass` 吞掉，代价是「迁移没生效」永远不会被发现。这里让它冒出来。
+            logger.error(
+                "轻量迁移失败：ALTER TABLE %s ADD COLUMN %s — %s", table, column, exc
+            )
+            raise
 
 
 async def _ensure_store_columns(conn) -> None:
@@ -174,6 +226,8 @@ async def _ensure_store_columns(conn) -> None:
     for name, ddl in columns:
         try:
             await conn.execute(text(f"ALTER TABLE stores ADD COLUMN {name} {ddl}"))
-        except Exception:
-            # 列已存在（或库不可写）→ 忽略；真正的建表错误由 create_all 负责
-            pass
+        except Exception as exc:  # noqa: BLE001
+            if _is_duplicate_column_error(exc):
+                continue  # 列已存在 —— 唯一可以静默忽略的情况
+            logger.error("stores 补列失败：%s — %s", name, exc)
+            raise

@@ -41,8 +41,13 @@ services:
         sync: false                                  # 部署时填你的千问 Key
       - key: CORS_ORIGINS
         value: https://nexora.vercel.app             # ← 改成你的 Vercel 前端域名
-      - key: METRICS_AUTH
-        value: "false"
+      # 注意：此前这里写的是 METRICS_AUTH，而后端只有 METRICS_TOKEN ——
+      # 变量名不匹配，等于「以为关掉了、其实从未生效」，/metrics 一直公开可读。
+      # 生产环境若不配置 METRICS_TOKEN，/metrics 会直接返回 403。
+      - key: METRICS_TOKEN
+        sync: false                                  # 部署时填一个随机串
+      - key: EXPOSE_RESET_TOKEN
+        value: "false"                               # 生产必须关闭，否则重置令牌会回显给调用方
 
   # ---------- PostgreSQL ----------
   - type: postgres

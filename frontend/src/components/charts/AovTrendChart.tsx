@@ -11,7 +11,7 @@ export const AovTrendChart: React.FC<AovTrendChartProps> = ({ data }) => {
     backgroundColor: 'transparent',
     tooltip: {
       trigger: 'axis',
-      formatter: (p: any) => `${p[0].axisValue}<br/>客单价: ¥${p[0].value.toFixed(2)}`,
+      formatter: (p: any) => `${p[0].axisValue}<br/>平均每单: ¥${p[0].value.toFixed(2)}`,
     },
     grid: { left: '3%', right: '4%', bottom: '8%', top: '5%', containLabel: true },
     xAxis: {
@@ -19,7 +19,7 @@ export const AovTrendChart: React.FC<AovTrendChartProps> = ({ data }) => {
       data: data.map(d => d.date),
       axisLabel: { rotate: 30, fontSize: 10 },
     },
-    yAxis: { type: 'value', name: '客单价(¥)' },
+    yAxis: { type: 'value', name: '平均每单(¥)' },
     series: [
       {
         type: 'line',

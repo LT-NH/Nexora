@@ -153,7 +153,7 @@ export const AdminHealth: React.FC = () => {
                         <div>
                           <p className="font-semibold text-slate-900 dark:text-gray-100">{t.name}</p>
                           <p className="text-xs text-gray-400">
-                            近 7 天营收 ¥{(t.metrics.revenue_7d ?? 0).toLocaleString()} · 退款率 {t.metrics.refund_rate}% · 环比 {t.metrics.growth > 0 ? '+' : ''}{t.metrics.growth}%
+                            近 7 天营收 ¥{(t.metrics.revenue_7d ?? 0).toLocaleString()} · 退款率 {t.metrics.refund_rate}% · 比上周 {t.metrics.growth > 0 ? '+' : ''}{t.metrics.growth}%
                           </p>
                         </div>
                       </div>
@@ -240,11 +240,11 @@ export const AdminHealth: React.FC = () => {
 
           <Card title="关于评分" subtitle="口径与业务端经营健康引擎一致">
             <ul className="space-y-2.5 text-sm text-gray-500 pt-1">
-              <li className="flex gap-2"><span className="text-[#0071E3] font-bold">·</span>现金流 25% — 退款率与营收环比</li>
-              <li className="flex gap-2"><span className="text-[#0071E3] font-bold">·</span>库存 25% — 滞销 / 断货 SKU 占比</li>
+              <li className="flex gap-2"><span className="text-[#0071E3] font-bold">·</span>现金流 25% — 退款率与营收比上周的变化</li>
+              <li className="flex gap-2"><span className="text-[#0071E3] font-bold">·</span>库存 25% — 卖不动 / 快断货的商品占比</li>
               <li className="flex gap-2"><span className="text-[#0071E3] font-bold">·</span>客户 20% — 复购率与流失率</li>
-              <li className="flex gap-2"><span className="text-[#0071E3] font-bold">·</span>渠道 15% — 集中度与渠道环比</li>
-              <li className="flex gap-2"><span className="text-[#0071E3] font-bold">·</span>增长 15% — 近 7 天营收环比</li>
+              <li className="flex gap-2"><span className="text-[#0071E3] font-bold">·</span>渠道 15% — 集中度与各渠道变化</li>
+              <li className="flex gap-2"><span className="text-[#0071E3] font-bold">·</span>增长 15% — 近 7 天营收比上周的变化</li>
             </ul>
           </Card>
         </div>

@@ -8,11 +8,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import _require_member
 from app.database import get_db
+from app.middleware.auth import get_current_active_user
 from app.models.product import Product
 from app.models.user import User
 from app.models.workspace import WorkspaceRole
 
 router = APIRouter(prefix="/workspaces/{workspace_slug}/import", tags=["import"])
+
+# 单次导入的大小上限。CSV 是纯文本，5MB 已能容纳数十万行商品。
+_MAX_IMPORT_BYTES = 5 * 1024 * 1024
 
 
 @router.post("/products")
@@ -20,7 +24,9 @@ async def import_products_csv(
     workspace_slug: str,
     file: UploadFile = File(...),
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(),
+    # 原写法是 `Depends()`（没有依赖函数）—— FastAPI 会按类型注解实例化出一个
+    # 空 User，随后 _require_member 必然 403，等于这个端点从来没被真正跑通。
+    current_user: User = Depends(get_current_active_user),
 ):
     """Import products from a CSV file.
 
@@ -35,7 +41,15 @@ async def import_products_csv(
     if not file.filename or not file.filename.endswith(".csv"):
         raise HTTPException(status_code=400, detail="\u4ec5\u652f\u6301 CSV \u683c\u5f0f")
 
+    # 限制大小：此前无条件 await file.read() 把整个文件读进内存，
+    # 单个请求就能把进程内存打满。
     content = await file.read()
+    if len(content) > _MAX_IMPORT_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail=f"CSV 文件过大（上限 {_MAX_IMPORT_BYTES // 1024 // 1024}MB）。",
+        )
+
     reader = csv.DictReader(io.StringIO(content.decode("utf-8-sig")))
     imported = 0
     skipped = 0

@@ -31,7 +31,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import async_session_factory
 from app.models.customer import Customer
-from app.models.order import Order, OrderItem, OrderStatus, PaymentStatus
+from app.models.order import Order, OrderItem, OrderStatus, PaymentStatus, OrderDataSource
 from app.models.product import Product, ProductStatus
 from app.services.platforms.base import (
     PlatformCapability,
@@ -558,6 +558,10 @@ class TaobaoIntegration(RpcSignedIntegration):
                 subtotal=round(total - shipping + discount, 2),
                 payment_status=payment_status,
                 platform="taobao",
+                data_source=OrderDataSource.REAL,
+                # TODO(真实接入时补): platform_order_id —— 该平台适配器尚未对真实
+                # 接口验证过，单号字段名与语义未经确认，不凭猜测填写。
+                # 补上后即可用它做跨次同步的幂等键。
                 shipping_address=address,
             )
             db.add(order)

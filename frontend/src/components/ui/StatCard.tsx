@@ -37,7 +37,10 @@ export const StatCard: React.FC<StatCardProps> = ({
       : value;
   return (
   <div
-    className={`group bg-white dark:bg-gray-800 rounded-2xl border border-gray-200 dark:border-gray-700 shadow-sm p-6 hover:shadow-lg hover:shadow-slate-900/10 hover:border-gray-300 dark:hover:border-gray-600 transition-all duration-200 card-lift spotlight-card spotlight-soft ${className}`}
+    // 统一到 surface-2 + grain：此前这里是「纯白 bg-white + border-gray-200 +
+    // shadow-sm」，与 Card 的玻璃拟态是两套材质语言，放在同一屏里会显得杂乱。
+    // spotlight-card（鼠标跟随光斑）保留 —— 它是加分项。
+    className={`group surface-2 is-interactive grain p-6 spotlight-card spotlight-soft ${className}`}
     onMouseMove={(e) => {
       const r = e.currentTarget.getBoundingClientRect();
       e.currentTarget.style.setProperty('--sx', `${(((e.clientX - r.left) / r.width) * 100).toFixed(1)}%`);

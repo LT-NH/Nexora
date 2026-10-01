@@ -177,10 +177,10 @@ class AuthService:
             details={"email": user.email},
         )
 
-        access_token = create_access_token(
-            subject=user.id,
-            expires_delta=timedelta(days=30) if login_data.remember_me else None,
-        )
+        # remember_me 只延长 refresh token，access token 始终保持短寿命。
+        # 此前它把 access token 也一并延长到 30 天，配合「登出无吊销」（现已接通）
+        # 等于一张 30 天不可撤销的全权凭证。
+        access_token = create_access_token(subject=user.id)
         refresh_token = create_refresh_token(
             subject=user.id,
             expires_delta=timedelta(days=90) if login_data.remember_me else None,
@@ -348,9 +348,9 @@ class AuthService:
         response: dict = {
             "message": "If the email is registered, a reset link has been sent.",
         }
-        # Only return the reset_token in development / debug mode.
-        # In production, the token should be delivered via a secure channel (e.g. email).
-        if settings.DEBUG or settings.ENVIRONMENT == "development":
+        # 仅在显式打开 EXPOSE_RESET_TOKEN 时回显（本地联调用，默认关闭）。
+        # 生产环境必须通过邮件等安全通道下发令牌。
+        if settings.EXPOSE_RESET_TOKEN:
             response["reset_token"] = reset_token
         return response
 

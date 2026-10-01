@@ -48,6 +48,7 @@ import { useSearchParams } from 'react-router-dom';
 import type { PaginatedResult } from '@/services/ecommerce';
 import type { Product, ProductVariant, ProductCategory, ReviewStats, Review } from '@/types/ecommerce';
 import { usePageT, type Lang } from '@/i18n';
+import { htmlToPlainText } from '@/lib/text';
 
 const PAGE_SIZE = 10;
 
@@ -866,7 +867,7 @@ export const Products: React.FC = () => {
     }
     setVariantSubmitting(true);
     try {
-      let attributes: Record<string, string> = {};
+      const attributes: Record<string, string> = {};
       if (variantAttr.trim()) {
         variantAttr.split(',').forEach((pair) => {
           const [k, v] = pair.split(':').map((s) => s.trim());
@@ -1111,19 +1112,6 @@ export const Products: React.FC = () => {
     )});
   };
 
-  if (error) {
-    return (
-      <div className="flex flex-col items-center justify-center min-h-[400px] text-center animate-fade-in">
-        <div className="w-12 h-12 rounded-full bg-red-100 flex items-center justify-center mb-4">
-          <X size={24} className="text-red-500" />
-        </div>
-        <h3 className="text-lg font-semibold text-slate-900 dark:text-gray-100">{t('load_failed')}</h3>
-        <p className="text-sm text-gray-500 mt-1">{error}</p>
-        <Button variant="outline" className="mt-4" onClick={fetchProducts}>{t('retry')}</Button>
-      </div>
-    );
-  }
-
   const handleSort = (key: string, direction: 'asc' | 'desc' | null) => {
     setSortKey(direction ? key : null);
     setSortDirection(direction);
@@ -1146,6 +1134,22 @@ export const Products: React.FC = () => {
     });
     return sorted;
   }, [products, sortKey, sortDirection]);
+
+  // 错误状态必须在所有 Hook 调用之后才能早退：否则 error 由有到无时
+  // 两次渲染的 Hook 数量不一致，React 会抛
+  // "Rendered more hooks than during the previous render"。
+  if (error) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[400px] text-center animate-fade-in">
+        <div className="w-12 h-12 rounded-full bg-red-100 flex items-center justify-center mb-4">
+          <X size={24} className="text-red-500" />
+        </div>
+        <h3 className="text-lg font-semibold text-slate-900 dark:text-gray-100">{t('load_failed')}</h3>
+        <p className="text-sm text-gray-500 mt-1">{error}</p>
+        <Button variant="outline" className="mt-4" onClick={fetchProducts}>{t('retry')}</Button>
+      </div>
+    );
+  }
 
   const columns = [
     { key: 'name', header: t('col_name'), sortable: true, render: (p: Product) => (
@@ -1173,7 +1177,12 @@ export const Products: React.FC = () => {
       <span className="text-sm text-gray-600 font-mono">{p.sku || '-'}</span>
     )},
     { key: 'description', header: t('col_desc'), render: (p: Product) => (
-      <div className="prose dark:prose-invert text-xs max-w-[200px] truncate" dangerouslySetInnerHTML={{ __html: p.description || '-' }} />
+      // 商品描述是富文本 HTML，必须降级为纯文本后交给 React 转义渲染。
+      // 直接 dangerouslySetInnerHTML 会让任何能写描述的人（含 CSV 导入）
+      // 在管理台上下文里执行脚本。
+      <div className="text-xs text-gray-600 dark:text-gray-400 max-w-[200px] truncate">
+        {htmlToPlainText(p.description) || '-'}
+      </div>
     )},
     { key: 'stock', header: t('col_stock'), sortable: true, render: (p: Product) => {
       const isLow = (p.stock ?? 0) <= (p.low_stock_threshold ?? 10);

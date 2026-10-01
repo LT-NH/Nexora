@@ -1,12 +1,14 @@
 import React, { useEffect } from 'react';
 import ReactDOM from 'react-dom/client';
 import { BrowserRouter, HashRouter } from 'react-router-dom';
+import { QueryClientProvider } from '@tanstack/react-query';
 import * as Sentry from '@sentry/react';
 import { ErrorBoundaryFallback } from '@/components/ErrorBoundary';
 import { AuthProvider } from '@/contexts/AuthContext';
 import { WorkspaceProvider } from '@/contexts/WorkspaceContext';
 import { ThemeProvider } from '@/contexts/ThemeContext';
 import { ToastProvider, useToast } from '@/components/ui/Toast';
+import { queryClient } from '@/lib/queryClient';
 import App from './App';
 import './index.css';
 
@@ -77,16 +79,19 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
     >
       {/* ThemeProvider 放在最外层：主题是全局单例，且错误兜底 UI 也需要正确主题 */}
       <ThemeProvider>
-        <Router>
-          <ToastProvider>
-            <AppUpdateNotifier />
-            <AuthProvider>
-              <WorkspaceProvider>
-                <App />
-              </WorkspaceProvider>
-            </AuthProvider>
-          </ToastProvider>
-        </Router>
+        {/* 数据获取层：放在 Router 外层，让所有路由共享同一份缓存 */}
+        <QueryClientProvider client={queryClient}>
+          <Router>
+            <ToastProvider>
+              <AppUpdateNotifier />
+              <AuthProvider>
+                <WorkspaceProvider>
+                  <App />
+                </WorkspaceProvider>
+              </AuthProvider>
+            </ToastProvider>
+          </Router>
+        </QueryClientProvider>
       </ThemeProvider>
     </Sentry.ErrorBoundary>
   </React.StrictMode>

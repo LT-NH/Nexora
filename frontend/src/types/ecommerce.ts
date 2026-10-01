@@ -114,6 +114,13 @@ export interface Order {
   notes: string | null;
   payment_status: PaymentStatus;
   platform: string | null;
+  /** 平台侧订单 ID（跨次同步的幂等键），历史数据可能为空 */
+  platform_order_id?: string | null;
+  /**
+   * 数据来源：real = 平台真实同步或手工真实录入；sandbox = 沙箱；simulated = 模拟/测试。
+   * 非 real 的行在界面上必须显式标注 —— 否则用户会把演示数据当成真实经营数据。
+   */
+  data_source?: 'real' | 'sandbox' | 'simulated';
   created_at: string;
   updated_at: string;
   items?: OrderItem[];

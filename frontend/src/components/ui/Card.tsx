@@ -22,18 +22,19 @@ export const Card: React.FC<CardProps> = ({
   className = '',
   padding = true,
   hover = false,
-  glass = true,
+  glass = false,
   style,
   'aria-label': ariaLabel,
   role,
 }) => {
   return (
     <div
-      className={`overflow-hidden rounded-2xl transition-shadow duration-300
-        ${glass ? 'glass-card' : 'bg-white dark:bg-gray-800 border border-black/[0.04] dark:border-white/[0.06] shadow-sm'}
-        ${hover ? 'hover:shadow-md' : ''}
-        ${className}
-      `}
+      // 默认走统一的 surface-2（圆角/边框/阴影/内高光全部来自 index.css 的
+      // 设计 token），而不是每个页面各写一套 bg-white + border + shadow。
+      // 同时保留 glass 开关 —— 显式传 glass 的页面仍然可拿到玻璃拟态。
+      className={`overflow-hidden ${
+        glass ? 'glass-card' : `surface-2 ${hover ? 'is-interactive' : ''}`
+      } ${className}`}
       style={style}
       role={role}
       aria-label={ariaLabel}

@@ -1,13 +1,14 @@
 # Nexora —— 下一代电商助手平台
 
 [![CI](https://github.com/LT-NH/Nexora/actions/workflows/ci.yml/badge.svg)](https://github.com/LT-NH/Nexora/actions/workflows/ci.yml)
-![version](https://img.shields.io/badge/version-5.4.0-534AB7)
+![version](https://img.shields.io/badge/version-5.12.0-534AB7)
 ![python](https://img.shields.io/badge/python-3.13-3776AB)
 ![react](https://img.shields.io/badge/react-18-61DAFB)
-![tests](https://img.shields.io/badge/tests-39%20passed-3B6D11)
+![tests](https://img.shields.io/badge/tests-210%20passed-3B6D11)
 ![license](https://img.shields.io/badge/license-Proprietary-A32D2D)
 
-多租户电商 SaaS：一个面板管理 Shopify / 抖音 / 淘宝 / 拼多多 / 京东 / Amazon 全渠道订单、库存、客户、优惠券、退款售后，经营健康引擎 + 千问 AI 深度分析 + 超级管理台（租户健康雷达 / 营收运营 / 反馈中心 / 公告广播）。
+多租户电商 SaaS：一个面板管理 Shopify / 抖音 / 淘宝 / 拼多多 / 京东 全渠道订单、库存、客户、优惠券、退款售后，经营健康引擎 + 千问 AI 深度分析 + 超级管理台（租户健康雷达 / 营收运营 / 反馈中心 / 公告广播）。
+（Amazon 适配器仍在规划中，尚未实现 —— 以 `backend/app/services/platforms/catalog.py` 的 `implemented` 标记为准。）
 
 > **v5.4 核心能力 —— 自主经营 Agent 闭环**：
 > **① 自主巡店 Agent** 每日自主当班（感知 → 大模型决策 → 分级执行 → 审计 → 通知 → 经验沉淀）；
@@ -71,7 +72,7 @@ npm run dev      # http://localhost:3000（端口被占用时 vite 自动 +1，�
 ## 核心功能
 
 ### 真实数据引擎（v4.0）
-- **多平台适配器**：Shopify（真实 Admin REST API）/ 抖音 / 淘宝 / 京东 / 拼多多 / Amazon / 沙箱，统一 `PlatformIntegration` 接口，分页/限流/凭证校验内置
+- **多平台适配器**：Shopify（真实 Admin REST API）/ 抖音 / 淘宝 / 京东 / 拼多多 / 沙箱，统一 `PlatformIntegration` 接口，分页/限流/凭证校验内置（Amazon 规划中，见 `platforms/catalog.py`）
 - **一键同步**：店铺管理页「测试连接 + 同步」，自动拾取商品 / 订单 / 客户 / 优惠券 / 退款 / 库存并落库
 - **真实优惠券同步**：Shopify price rules + discount codes → 优惠券页（买一送一 / 免运费 / 折扣码）
 - **真实退款同步**：订单退款事件自动进入退款售后页（金额/原因/订单号关联）
@@ -125,7 +126,7 @@ npm run dev      # http://localhost:3000（端口被占用时 vite 自动 +1，�
 
 ```bash
 cd backend
-pytest -q        # 39 项测试（离线可跑）
+pytest -q        # 210 项测试（离线可跑）
 ```
 
 ## 目录结构

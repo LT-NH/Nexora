@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { Mail, Lock, Eye, EyeOff, Shield } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
+import { TransitionLink } from '@/components/ui/TransitionLink';
 import { useToast } from '@/components/ui/Toast';
 import { extractErrorMessage } from '@/services/api';
 import { withViewTransition } from '@/lib/viewTransition';
@@ -150,12 +151,12 @@ export const LoginForm: React.FC = () => {
           />
           <span className="text-sm text-gray-600">记住我</span>
         </label>
-        <Link
+        <TransitionLink
           to="/forgot-password"
           className="text-sm font-medium text-primary-600 hover:text-primary-500 transition-colors"
         >
           忘记密码？
-        </Link>
+        </TransitionLink>
       </div>
 
       <Button
@@ -170,12 +171,12 @@ export const LoginForm: React.FC = () => {
 
       <p className="text-center text-sm text-gray-500">
         还没有账户？{' '}
-        <Link
+        <TransitionLink
           to="/register"
           className="font-medium text-primary-600 hover:text-primary-500 transition-colors"
         >
           创建账户
-        </Link>
+        </TransitionLink>
       </p>
     </form>
   );

@@ -14,7 +14,21 @@ import sys
 import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
+from app.config import settings
 from app.database import Base
+
+# ── 用应用配置覆盖 alembic.ini 里硬编码的 sqlalchemy.url ──────────────────
+# 不这样做的话：容器里 DATABASE_URL 指向 PostgreSQL 时，alembic 会去连
+# alembic.ini 写死的 `sqlite+aiosqlite:///./data/nexora.db`（容器内一个无关的
+# 空文件），于是生产库**一个迁移都不会执行** —— 而 entrypoint 又把失败吞掉，
+# 表面上"迁移成功"。这正是本项目 schema 一直靠 create_all + 手写 ALTER
+# 撑着、三套机制并存的原因。
+#
+# 驱动无需转换：env.py 用的是 async_engine_from_config，DATABASE_URL 里的
+# asyncpg / aiosqlite 驱动本身就能跑迁移。
+# 注意 configparser 会对值做 %-插值，URL 中出现的 % 必须转义成 %%。
+config.set_main_option("sqlalchemy.url", settings.DATABASE_URL.replace("%", "%%"))
+
 # Import all model modules to ensure they are loaded
 from app.models import (user, workspace, product, order, customer, store, 
                         subscription, apikey, coupon, refund, review, 

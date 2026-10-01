@@ -1,10 +1,10 @@
 import React from 'react';
-import { Link } from 'react-router-dom';
+import { TransitionLink } from '@/components/ui/TransitionLink';
 
 export const Privacy: React.FC = () => (
   <div className="min-h-screen bg-gray-50 dark:bg-gray-950">
     <div className="max-w-3xl mx-auto px-4 py-16">
-      <Link to="/" className="text-primary-600 hover:text-primary-500 text-sm mb-8 inline-block">&larr; 返回首页</Link>
+      <TransitionLink to="/" className="text-primary-600 hover:text-primary-500 text-sm mb-8 inline-block">&larr; 返回首页</TransitionLink>
       <h1 className="text-3xl font-bold text-slate-900 dark:text-gray-100 mb-8">隐私政策</h1>
       <div className="prose prose-gray max-w-none space-y-6 text-gray-600 dark:text-gray-400">
         <p className="text-sm text-gray-500 dark:text-gray-400">最后更新：2026年7月12日</p>

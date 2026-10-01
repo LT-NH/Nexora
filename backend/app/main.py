@@ -13,6 +13,7 @@
 
 import os
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.responses import FileResponse, JSONResponse
@@ -117,8 +118,15 @@ app.mount("/uploads", StaticFiles(directory=_UPLOADS_DIR), name="uploads")
 _FRONTEND_DIR = os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "..", "..", "frontend", "dist"
 )
+# 只有**真的有 index.html** 时才挂载 SPA 回退。
+# 此前只判断目录存在：若 dist 是残留的半成品（有 assets 但没 index.html —— 例如
+# 构建被中断），任何未匹配路由都会落到 catch-all 并抛
+# `RuntimeError: File ... does not exist`，客户端拿到 500 而不是干净的 404。
+_FRONTEND_INDEX = os.path.join(_FRONTEND_DIR, "index.html")
 
-if os.path.isdir(_FRONTEND_DIR):
+if os.path.isfile(_FRONTEND_INDEX):
+    # 解析后的真实根目录，用于 catch-all 路由的越界归属校验（防止 `..` / 软链逃逸）。
+    _FRONTEND_ROOT = Path(_FRONTEND_DIR).resolve()
     _assets_dir = os.path.join(_FRONTEND_DIR, "assets")
     if os.path.isdir(_assets_dir):
         app.mount("/assets", StaticFiles(directory=_assets_dir), name="assets")
@@ -129,20 +137,45 @@ if os.path.isdir(_FRONTEND_DIR):
 
         IMPORTANT: This catch-all route MUST NOT intercept API, docs, or health paths.
         Requests for those paths that reach here are genuine 404s, not SPA routes.
+
+        SECURITY: ``full_path`` is attacker-controlled. It is resolved to a real
+        path and must stay inside ``_FRONTEND_ROOT``; anything that escapes
+        (``../..``, URL-encoded variants, symlinks, absolute paths) falls back to
+        the SPA entrypoint instead of being served. Without this check a single
+        request like ``/..%2f..%2fbackend%2f.env`` would disclose arbitrary files.
         """
         # Never intercept API, docs, or health-check paths
         _RESERVED_PREFIXES = ("api/", "docs", "redoc", "openapi.json", "health")
         if full_path.startswith(_RESERVED_PREFIXES):
             return JSONResponse(status_code=404, content={"detail": "Not found"})
 
-        file_path = os.path.join(_FRONTEND_DIR, full_path) if full_path else ""
-        if full_path and os.path.isfile(file_path):
-            return FileResponse(file_path)
-        return FileResponse(os.path.join(_FRONTEND_DIR, "index.html"))
+        target: Path | None = None
+        if full_path:
+            try:
+                candidate = (_FRONTEND_ROOT / full_path).resolve()
+                if candidate.is_relative_to(_FRONTEND_ROOT) and candidate.is_file():
+                    target = candidate
+            except (OSError, ValueError):
+                # 非法路径段（空字节、超长路径、平台拒绝的字符等）：按 SPA 路由处理
+                target = None
+
+        if target is not None:
+            return FileResponse(target)
+        # 运行期 index.html 被删也要给干净的 404，而不是 500
+        if not os.path.isfile(_FRONTEND_INDEX):
+            return JSONResponse(
+                status_code=404,
+                content={
+                    "detail": "前端构建产物缺失（frontend/dist/index.html）。"
+                    "请在 frontend 目录执行 npm run build，或改用 dev server 运行前端。"
+                },
+            )
+        return FileResponse(_FRONTEND_ROOT / "index.html")
 
     logger.info("Frontend static files mounted from %s", _FRONTEND_DIR)
 else:
     logger.warning(
-        "Frontend dist directory not found at %s. Run 'npm run build' in the frontend directory.",
+        "Frontend static files NOT mounted: %s 不存在或不含 index.html。"
+        "请在 frontend 目录执行 npm run build（未挂载时未匹配路由会返回干净的 404）。",
         _FRONTEND_DIR,
     )

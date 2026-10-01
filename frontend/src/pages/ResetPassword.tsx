@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Link, useSearchParams, useNavigate } from 'react-router-dom';
+import { useSearchParams, useNavigate } from 'react-router-dom';
+import { TransitionLink } from '@/components/ui/TransitionLink';
 import { Lock, ArrowLeft, CheckCircle } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
@@ -35,7 +36,9 @@ export const ResetPassword: React.FC = () => {
       addToast('error', '密码太短', '密码至少需要 8 个字符');
       return;
     }
-    if (!/(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[!@#$%^&*()\-_=+\[\]{}|;:,.<>?\/~`])/.test(newPassword)) {
+    // 字符类内的 `/` 与 `[` 无需转义（正则字面量中 `/` 在字符类里不终止字面量），
+    // 去掉多余反斜杠，语义完全不变。
+    if (!/(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[!@#$%^&*()\-_=+[\]{}|;:,.<>?/~`])/.test(newPassword)) {
       addToast('error', '密码强度不足', '密码需包含大小写字母、数字和特殊字符');
       return;
     }
@@ -60,11 +63,11 @@ export const ResetPassword: React.FC = () => {
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-primary-50 flex items-center justify-center px-4">
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
-          <Link to="/" className="inline-block mb-4">
+          <TransitionLink to="/" className="inline-block mb-4">
             <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-primary-600 to-purple-600 flex items-center justify-center mx-auto">
               <span className="text-white font-bold text-xl">S</span>
             </div>
-          </Link>
+          </TransitionLink>
           <h1 className="text-2xl font-bold text-slate-900 dark:text-gray-100">重置密码</h1>
           <p className="text-sm text-gray-500 mt-2">
             {isDone ? '密码已重置成功' : '输入重置令牌和新密码'}
@@ -78,9 +81,9 @@ export const ResetPassword: React.FC = () => {
                 <CheckCircle size={32} className="text-green-500" />
               </div>
               <p className="text-sm text-gray-600">密码已成功重置，正在跳转到登录页...</p>
-              <Link to="/login">
+              <TransitionLink to="/login">
                 <Button variant="primary" className="w-full">立即登录</Button>
-              </Link>
+              </TransitionLink>
             </div>
           ) : (
             <form onSubmit={handleSubmit} className="space-y-5">
@@ -111,9 +114,9 @@ export const ResetPassword: React.FC = () => {
                 重置密码
               </Button>
               <p className="text-center">
-                <Link to="/login" className="inline-flex items-center gap-1 text-sm text-gray-500 hover:text-primary-600">
+                <TransitionLink to="/login" className="inline-flex items-center gap-1 text-sm text-gray-500 hover:text-primary-600">
                   <ArrowLeft size={14} /> 返回登录
-                </Link>
+                </TransitionLink>
               </p>
             </form>
           )}

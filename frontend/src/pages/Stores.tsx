@@ -38,6 +38,7 @@ import type {
   WriteOpResult,
 } from '@/types/ecommerce';
 import { usePageT, type Lang } from '@/i18n';
+import { formatDateTime as formatDate } from '@/lib/format';
 
 type T = (key: string, fallback?: string) => string;
 
@@ -286,14 +287,8 @@ const getSyncStatusConfig = (t: T): Record<StoreStatus, { label: string; variant
   error: { label: t('st_error'), variant: 'danger', icon: <XCircle size={14} /> },
 });
 
-const formatDate = (dateStr: string | null, t: T) => {
-  if (!dateStr) return t('never_synced');
-  const d = new Date(dateStr);
-  if (isNaN(d.getTime())) return t('invalid_date');
-  // 后端存 naive UTC —— 按 UTC 解析后再转本地时区显示（避免差 8 小时）
-  const utcMs = Date.UTC(d.getFullYear(), d.getMonth(), d.getDate(), d.getHours(), d.getMinutes(), d.getSeconds());
-  return new Date(utcMs).toLocaleDateString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
-};
+// formatDate 已统一到 lib/format（其中的 naive UTC → 本地时区逻辑已上收到公共层，
+// 其余五个页面此前没做这个转换，统一后时区显示才一致）
 
 export const Stores: React.FC = () => {
   const t = usePageT(D);

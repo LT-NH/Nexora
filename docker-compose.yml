@@ -9,7 +9,9 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: nexora
-      POSTGRES_PASSWORD: nexora
+      # 强制外部注入：`:?` 在变量缺失时直接让 compose 报错退出。
+      # 此前是明文默认值 nexora，「忘记改」就会以弱口令上线。
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}"
       POSTGRES_DB: nexora
     volumes:
       - postgres_data:/var/lib/postgresql/data
@@ -36,9 +38,10 @@ services:
       dockerfile: Dockerfile.backend
     restart: unless-stopped
     environment:
-      DATABASE_URL: postgresql+asyncpg://nexora:nexora@postgres:5432/nexora
+      DATABASE_URL: "postgresql+asyncpg://nexora:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres:5432/nexora"
       REDIS_URL: redis://redis:6379/0
-      SECRET_KEY: "${SECRET_KEY:-change-me-in-production-use-a-strong-random-secret-key-123}"
+      # 同样强制注入：弱默认密钥 = JWT 可被离线伪造
+      SECRET_KEY: "${SECRET_KEY:?SECRET_KEY is required (generate a strong random value)}"
       CORS_ORIGINS: '["http://localhost:3000","http://localhost:8000"]'
       SITE_URL: http://localhost:3000
     ports:
@@ -52,6 +55,11 @@ services:
       # Persistent uploads/data (e.g. SQLite fallback, backups).
       - ./backend/data:/app/data
       - ./backend/uploads:/app/uploads
+    deploy:
+      resources:
+        limits:
+          cpus: "1.5"
+          memory: 1g
 
   frontend:
     build:

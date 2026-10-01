@@ -72,6 +72,8 @@ async def websocket_notifications(websocket: WebSocket, token: str):
         4003 — user does not belong to any workspace.
     """
     from app.utils.security import decode_token
+    from app.utils.redis import is_token_blacklisted
+    from app.models.user import User
     from app.models.workspace import WorkspaceMember
     from sqlalchemy import select
     from app.database import async_session_factory
@@ -82,6 +84,18 @@ async def websocket_notifications(websocket: WebSocket, token: str):
         await websocket.close(code=4001)
         return
 
+    # 与 HTTP 鉴权保持同一套校验：必须是 access 类型、未被吊销的令牌。
+    # 此前只取 sub —— refresh token（寿命更长）或已登出的 token 都能直接建连，
+    # 相当于从 WebSocket 这条路绕过了 HTTP 侧的令牌类型与吊销检查。
+    if payload.get("type") != "access":
+        await websocket.close(code=4001)
+        return
+
+    jti = payload.get("jti")
+    if jti and await is_token_blacklisted(jti):
+        await websocket.close(code=4001)
+        return
+
     user_id = payload.get("sub")
     if not user_id:
         await websocket.close(code=4001)
@@ -89,6 +103,12 @@ async def websocket_notifications(websocket: WebSocket, token: str):
 
     # Get user's workspaces
     async with async_session_factory() as db:
+        # 账号被停用后不应继续接收实时事件
+        active_row = await db.execute(select(User.is_active).where(User.id == user_id))
+        if not active_row.scalar_one_or_none():
+            await websocket.close(code=4001)
+            return
+
         result = await db.execute(
             select(WorkspaceMember.workspace_id).where(
                 WorkspaceMember.user_id == user_id

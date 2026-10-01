@@ -13,6 +13,7 @@ import type { Payment, PaymentCreateResponse, PaymentMethod } from '@/services/p
 import { orderService } from '@/services/ecommerce';
 import type { Order } from '@/types/ecommerce';
 import { extractErrorMessage } from '@/services/api';
+import { formatDateTime as formatDate } from '@/lib/format';
 
 const D = {
   zh: {
@@ -231,16 +232,7 @@ export const Payments: React.FC = () => {
   };
 
   const formatPrice = (price: number) => `¥${price.toFixed(2)}`;
-  const formatDate = (dateStr: string) => {
-    const d = new Date(dateStr);
-    if (isNaN(d.getTime())) return '-';
-    return d.toLocaleDateString('zh-CN', {
-      month: '2-digit',
-      day: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit',
-    });
-  };
+  // formatDate 已统一到 lib/format
 
   return (
     <div className="space-y-6 animate-fade-in">

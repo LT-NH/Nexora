@@ -1,6 +1,7 @@
 import React from 'react';
 import { LayoutDashboard, Users, CreditCard, ScrollText, ShieldCheck, ArrowLeft, Sparkles, Activity, Building2, MessageSquare, TrendingUp, Megaphone, Cpu } from 'lucide-react';
-import { NavLink, Link } from 'react-router-dom';
+import { NavLink } from 'react-router-dom';
+import { TransitionLink } from '@/components/ui/TransitionLink';
 
 const nav = [
   { to: '/admin', label: '平台总览', icon: LayoutDashboard, end: true },
@@ -17,9 +18,15 @@ const nav = [
 
 export const AdminLayout: React.FC = () => {
   return (
-    <div className="min-h-screen flex" style={{ background: '#F6F7F1' }}>
-      {/* 侧边栏 */}
-      <aside className="hidden lg:flex w-60 bg-[#0b1023] text-white flex-col flex-shrink-0">
+    /*
+      h-screen + overflow-hidden：外壳不滚动，滚动条只属于右侧内容区。
+      此前用 min-h-screen —— 列表一长，整个文档（含左侧导航）就被推着一起滚，
+      导航会随着页面上下移动，切模块时还得先把它拨回来。
+      侧栏因此保持满高固定，只有 main 内部滚动。
+    */
+    <div className="h-screen overflow-hidden flex" style={{ background: '#F6F7F1' }}>
+      {/* 侧边栏（固定：只在自己内部滚动） */}
+      <aside className="hidden lg:flex w-60 h-full bg-[#0b1023] text-white flex-col flex-shrink-0">
         <div className="h-1 w-full brand-accent-bar" />
         <div className="flex items-center gap-2.5 px-5 h-16 border-b border-white/10 flex-shrink-0">
           <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-violet-500 to-fuchsia-500 flex items-center justify-center">
@@ -50,19 +57,19 @@ export const AdminLayout: React.FC = () => {
           ))}
         </nav>
         <div className="px-4 py-4 border-t border-white/10 flex-shrink-0">
-          <Link
+          <TransitionLink
             to="/dashboard"
             className="flex items-center gap-2 text-xs text-[#8e8e93] hover:text-white transition-colors"
           >
             <ArrowLeft size={14} />
             返回业务端
-          </Link>
+          </TransitionLink>
           <p className="mt-2 text-[10px] text-white/30">操作全部留痕 · Superadmin 专属</p>
         </div>
       </aside>
 
-      {/* 主区 */}
-      <div className="flex-1 flex flex-col min-w-0">
+      {/* 主区：min-h-0 让内部滚动容器正确收缩（否则 flex 子项会被内容撑高） */}
+      <div className="flex-1 flex flex-col min-w-0 min-h-0">
         {/* 顶栏 */}
         <header className="h-14 bg-white border-b border-[#E4E6DC] flex items-center justify-between gap-3 px-4 sm:px-6 flex-shrink-0">
           <div className="hidden sm:flex items-center gap-2 text-sm text-[#6B7280]">
@@ -79,7 +86,7 @@ export const AdminLayout: React.FC = () => {
           管理台是桌面优先工具，但窄屏也不该出现横向溢出 ——
           固定 240px 侧栏在 390px 视口下会直接撑破文档宽度。
         */}
-        <nav className="lg:hidden flex items-center gap-1 px-3 py-2 bg-white border-b border-[#E4E6DC] overflow-x-auto">
+        <nav className="lg:hidden flex items-center gap-1 px-3 py-2 bg-white border-b border-[#E4E6DC] overflow-x-auto flex-shrink-0">
           {nav.map((item) => (
             <NavLink
               key={item.to}
@@ -97,8 +104,8 @@ export const AdminLayout: React.FC = () => {
           ))}
         </nav>
 
-        {/* 内容区：子路由 */}
-        <main className="flex-1 overflow-y-auto p-4 sm:p-6">
+        {/* 内容区：唯一滚动容器 */}
+        <main className="flex-1 min-h-0 overflow-y-auto p-4 sm:p-6">
           {/* 子页面通过路由渲染 */}
           <div id="admin-outlet">
             {/* 各管理页面在此渲染 */}

@@ -22,6 +22,10 @@ from app.schemas.subscription import (
     SubscriptionCreate,
     SubscriptionResponse,
 )
+from app.utils.logging import get_logger
+from app.utils.timeutils import to_naive_utc
+
+logger = get_logger(__name__)
 
 
 class SubscriptionService:
@@ -340,12 +344,25 @@ class SubscriptionService:
             current_sub.current_period_start = now
             current_sub.current_period_end = now + timedelta(days=30)
         else:
-            # Downgrade -- instant switch, keep current paid period
+            # 降级必须是「已付费订阅」的自助操作。原先此处无条件把 INCOMPLETE
+            # 订阅写成 ACTIVE + VERIFIED，导致「先升 enterprise（→INCOMPLETE/PENDING）
+            # 再降 pro」两次调用即可零支付开通付费能力。
+            period_end = to_naive_utc(current_sub.current_period_end)
+            is_currently_paid = (
+                current_sub.payment_status == PaymentStatus.VERIFIED
+                and period_end is not None
+                and period_end > datetime.utcnow()
+            )
+            if not is_currently_paid:
+                raise HTTPException(
+                    status_code=status.HTTP_402_PAYMENT_REQUIRED,
+                    detail=(
+                        "当前订阅尚未完成支付或已过期，无法降级。"
+                        "请先完成付款，或等待当前周期结束后再切换套餐。"
+                    ),
+                )
+            # 已付费且在有效期内：保留当前付费周期，仅切换套餐档位
             current_sub.plan_id = target_plan.id
-            # If current sub was INCOMPLETE, mark as ACTIVE
-            if current_sub.status == SubscriptionStatus.INCOMPLETE:
-                current_sub.status = SubscriptionStatus.ACTIVE
-                current_sub.payment_status = PaymentStatus.VERIFIED
 
         await db.flush()
 
@@ -367,63 +384,6 @@ class SubscriptionService:
             stripe_subscription_id=current_sub.stripe_subscription_id,
             payment_status=current_sub.payment_status.value,
             created_at=current_sub.created_at,
-        )
-
-    @staticmethod
-    async def verify_payment(
-        db: AsyncSession,
-        workspace: Workspace,
-    ) -> SubscriptionResponse:
-        """Verify payment and activate the subscription.
-
-        Args:
-            db: Async database session.
-            workspace: The workspace.
-
-        Returns:
-            SubscriptionResponse with activated subscription.
-
-        Raises:
-            HTTPException 404: If no pending subscription is found.
-        """
-        result = await db.execute(
-            select(Subscription)
-            .where(
-                Subscription.workspace_id == workspace.id,
-                Subscription.status == SubscriptionStatus.INCOMPLETE,
-                Subscription.payment_status == PaymentStatus.PENDING,
-            )
-        )
-        subscription = result.scalar_one_or_none()
-
-        if subscription is None:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="No pending payment subscription found for this workspace.",
-            )
-
-        subscription.payment_status = PaymentStatus.VERIFIED
-        subscription.status = SubscriptionStatus.ACTIVE
-        await db.flush()
-
-        # Fetch plan separately to avoid greenlet issues
-        plan_result = await db.execute(
-            select(SubscriptionPlan).where(SubscriptionPlan.id == subscription.plan_id)
-        )
-        plan = plan_result.scalar_one()
-
-        return SubscriptionResponse(
-            id=subscription.id,
-            workspace_id=subscription.workspace_id,
-            plan_id=subscription.plan_id,
-            plan=PlanResponse.model_validate(plan),
-            status=subscription.status.value,
-            trial_ends_at=subscription.trial_ends_at,
-            current_period_start=subscription.current_period_start,
-            current_period_end=subscription.current_period_end,
-            stripe_subscription_id=subscription.stripe_subscription_id,
-            payment_status=subscription.payment_status.value,
-            created_at=subscription.created_at,
         )
 
     @staticmethod
@@ -487,3 +447,268 @@ class SubscriptionService:
             if subscription.current_period_end
             else None,
         }
+
+    # ------------------------------------------------------------------
+    # 周期到期处理
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    async def _superadmin_workspace_ids(db: AsyncSession) -> set[str]:
+        """所有「OWNER 是超级管理员」的工作空间 id。
+
+        超管不参与任何计费与降级：既不该被过期处理，也不该因缺订阅记录被拦。
+        这里一次查全，避免在处理循环里逐个查询。
+        """
+        from app.models.user import User
+        from app.models.workspace import WorkspaceMember, WorkspaceRole
+
+        rows = (
+            await db.execute(
+                select(WorkspaceMember.workspace_id)
+                .join(User, User.id == WorkspaceMember.user_id)
+                .where(
+                    User.is_superadmin.is_(True),
+                    WorkspaceMember.role == WorkspaceRole.OWNER,
+                )
+            )
+        ).scalars().all()
+        return set(rows)
+
+    @staticmethod
+    async def expire_due_subscriptions(db: AsyncSession) -> dict:
+        """把「周期已走完但状态仍是 ACTIVE」的订阅置为 EXPIRED。
+
+        ## 为什么需要这个任务
+
+        在此之前，``trial_ends_at`` / ``current_period_end`` 只被写入、从未被读取
+        做判断，定时任务里也没有任何到期处理。于是试用期结束后：
+        ``status`` 仍是 ACTIVE → ``get_ws_plan_tier`` 照常返回 pro →
+        用户可**无限期使用付费功能且不会被扣费**。
+
+        （档位判断那边已加了周期过滤作为兜底；这个任务负责把状态**落库纠正**，
+        让后台列表、统计报表里的数据也是真实的。）
+
+        ## 超管豁免
+
+        超管工作空间直接跳过，不置 EXPIRED、不降级 —— 超管账号是无限期的。
+
+        :return: 处理统计，供日志与手工排查使用。
+        """
+        from app.api.billing import _is_subscription_live
+
+        now = to_naive_utc(datetime.now(timezone.utc))
+        subs = (
+            await db.execute(
+                select(Subscription).where(
+                    Subscription.status == SubscriptionStatus.ACTIVE
+                )
+            )
+        ).scalars().all()
+
+        superadmin_ws = await SubscriptionService._superadmin_workspace_ids(db)
+
+        expired = 0
+        skipped_admin = 0
+        for sub in subs:
+            if sub.workspace_id in superadmin_ws:
+                skipped_admin += 1
+                continue
+            if _is_subscription_live(sub, now):
+                continue
+            sub.status = SubscriptionStatus.EXPIRED
+            expired += 1
+
+        if expired:
+            await db.commit()
+
+        return {
+            "scanned": len(subs),
+            "expired": expired,
+            "skipped_admin": skipped_admin,
+        }
+
+    # ------------------------------------------------------------------
+    # 到期前提醒
+    # ------------------------------------------------------------------
+
+    #: 提醒用的通知类型，同时作为**幂等键**（见 notify_expiring_subscriptions）
+    EXPIRING_NOTIFICATION_TYPE = "subscription_expiring"
+
+    @staticmethod
+    async def _workspace_owner(db: AsyncSession, ws_id: str):
+        """工作空间的 OWNER 用户（可能为 None）。"""
+        from app.models.user import User
+        from app.models.workspace import WorkspaceMember, WorkspaceRole
+
+        return (
+            await db.execute(
+                select(User)
+                .join(WorkspaceMember, WorkspaceMember.user_id == User.id)
+                .where(
+                    WorkspaceMember.workspace_id == ws_id,
+                    WorkspaceMember.role == WorkspaceRole.OWNER,
+                )
+                .limit(1)
+            )
+        ).scalars().first()
+
+    @staticmethod
+    async def notify_expiring_subscriptions(db: AsyncSession, within_days: int = 3) -> dict:
+        """给「还有 within_days 天到期」的订阅发提醒（站内信 + 邮件）。
+
+        ## 幂等设计
+
+        任务每天跑一次，而「到期前 3 天」是一个**持续 3 天的窗口** ——
+        不做去重的话同一条订阅会被提醒 3 次。
+
+        这里用 ``notification_type`` 做幂等键：发之前先查这个工作空间**今天**
+        是否已经发过同类型通知。好处是不用给 subscription 表加
+        ``reminder_sent_at`` 字段（省一次迁移），而且「同一自然日只提醒一次」
+        这个语义比「只提醒一次」更合理 —— 万一任务某天没跑，第二天还能补上。
+
+        ## 超管豁免
+
+        与到期处理一致：超管工作空间不参与计费，不发提醒。
+        """
+        now = to_naive_utc(datetime.now(timezone.utc))
+        window_end = now + timedelta(days=within_days)
+
+        subs = (
+            await db.execute(
+                select(Subscription).where(
+                    Subscription.status == SubscriptionStatus.ACTIVE
+                )
+            )
+        ).scalars().all()
+
+        superadmin_ws = await SubscriptionService._superadmin_workspace_ids(db)
+
+        notified = 0
+        skipped_admin = 0
+        skipped_dupe = 0
+
+        # 今天的时间下界，用于幂等查询
+        today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+
+        for sub in subs:
+            if sub.workspace_id in superadmin_ws:
+                skipped_admin += 1
+                continue
+
+            deadline = to_naive_utc(sub.current_period_end or sub.trial_ends_at)
+            if deadline is None:
+                continue  # Free：无到期概念
+            if not (now < deadline <= window_end):
+                continue  # 不在提醒窗口（已过期或还早）
+
+            # 幂等：今天已提醒过就跳过
+            from app.models.notification import Notification
+
+            already = (
+                await db.execute(
+                    select(Notification.id).where(
+                        Notification.workspace_id == sub.workspace_id,
+                        Notification.notification_type
+                        == SubscriptionService.EXPIRING_NOTIFICATION_TYPE,
+                        Notification.created_at >= today_start,
+                    ).limit(1)
+                )
+            ).first()
+            if already:
+                skipped_dupe += 1
+                continue
+
+            owner = await SubscriptionService._workspace_owner(db, sub.workspace_id)
+            if owner is None:
+                continue
+
+            days_left = max(0, (deadline - now).days)
+            plan = await db.get(SubscriptionPlan, sub.plan_id)
+            plan_name = plan.name if plan else "当前套餐"
+
+            title = f"{plan_name} 还有 {days_left} 天到期"
+            message = (
+                f"你的「{plan_name}」将在 {days_left} 天后到期（{deadline:%Y-%m-%d}）。"
+                f"到期后将无法使用 AI 决策助手、利润归因等付费功能，"
+                f"前往「计费与方案」可继续订阅。"
+            )
+
+            from app.services.notification import NotificationService
+
+            await NotificationService.create_notification(
+                db=db,
+                workspace_id=sub.workspace_id,
+                user_id=owner.id,
+                title=title,
+                message=message,
+                notification_type=SubscriptionService.EXPIRING_NOTIFICATION_TYPE,
+                link="/billing",
+            )
+
+            # 邮件是「锦上添花」：发信失败不该让整批任务回滚或中断
+            if owner.email:
+                try:
+                    from app.services.email import send_email_async
+
+                    await send_email_async(
+                        to_email=owner.email,
+                        subject=f"【Nexora】{title}",
+                        body_html=(
+                            f"<p>{message}</p>"
+                            f'<p><a href="/billing">前往计费与方案</a></p>'
+                        ),
+                    )
+                except Exception as e:  # noqa: BLE001
+                    logger.warning(
+                        "到期提醒邮件发送失败 ws=%s: %s", sub.workspace_id, str(e)[:150]
+                    )
+
+            notified += 1
+
+        if notified:
+            await db.commit()
+
+        return {
+            "scanned": len(subs),
+            "notified": notified,
+            "skipped_admin": skipped_admin,
+            "skipped_duplicate": skipped_dupe,
+        }
+
+
+async def run_expire_subscriptions() -> dict:
+    """调度器入口：处理订阅到期。
+
+    与 ``store_sync.run_due_store_syncs`` 同构 —— 自建 session、自己兜异常，
+    一次失败不影响调度器后续运行（调度器起不来/挂掉不该影响整个服务）。
+    """
+    from app.database import async_session_factory
+
+    try:
+        async with async_session_factory() as db:
+            stats = await SubscriptionService.expire_due_subscriptions(db)
+        if stats["expired"]:
+            logger.info("订阅到期处理完成: %s", stats)
+        else:
+            logger.debug("订阅到期处理：本次无到期订阅 %s", stats)
+        return stats
+    except Exception as e:  # noqa: BLE001
+        logger.warning("订阅到期处理失败: %s", str(e)[:200])
+        return {"error": str(e)[:200]}
+
+
+async def run_notify_expiring_subscriptions() -> dict:
+    """调度器入口：给快到期（默认 3 天内）的订阅发提醒。"""
+    from app.database import async_session_factory
+
+    try:
+        async with async_session_factory() as db:
+            stats = await SubscriptionService.notify_expiring_subscriptions(db, within_days=3)
+        if stats["notified"]:
+            logger.info("订阅到期提醒已发送: %s", stats)
+        else:
+            logger.debug("订阅到期提醒：本次无需发送 %s", stats)
+        return stats
+    except Exception as e:  # noqa: BLE001
+        logger.warning("订阅到期提醒失败: %s", str(e)[:200])
+        return {"error": str(e)[:200]}

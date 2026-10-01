@@ -25,7 +25,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.customer import Customer
-from app.models.order import Order, OrderItem, OrderStatus
+from app.models.order import Order, OrderItem, OrderDataSource, OrderStatus
 from app.models.product import Product, ProductStatus
 from app.database import async_session_factory
 from app.services.platforms.base import PlatformIntegration, SyncResult
@@ -583,16 +583,30 @@ class ShopifyIntegration(PlatformIntegration):
         appended) so re-syncing the same order never duplicates items.
         """
         order_number = str(so.get("order_number", so.get("name", "")))
-        shopify_order_id = str(so.get("id", ""))
+        shopify_order_id = str(so.get("id", "")) or None
+        local_number = f"SP-{order_number}"
 
-        # Load the order together with its line items so we can replace them.
-        existing = await db.execute(
-            select(Order).where(
-                Order.workspace_id == workspace_id,
-                Order.order_number == f"SP-{order_number}",
+        # 去重优先用**平台单号**：它在店铺内唯一，且不像 order_number 那样会
+        # 在不同店铺之间撞车（Shopify 每家的订单号都从 #1001 开始，
+        # 同一工作空间接入两个店铺时旧实现会互相覆盖）。
+        # 历史数据没有 platform_order_id，回退到 order_number 匹配保持兼容。
+        order = None
+        if shopify_order_id:
+            hit = await db.execute(
+                select(Order).where(
+                    Order.workspace_id == workspace_id,
+                    Order.platform_order_id == shopify_order_id,
+                )
             )
-        )
-        order = existing.scalar_one_or_none()
+            order = hit.scalar_one_or_none()
+        if order is None:
+            hit = await db.execute(
+                select(Order).where(
+                    Order.workspace_id == workspace_id,
+                    Order.order_number == local_number,
+                )
+            )
+            order = hit.scalar_one_or_none()
         is_new = order is None
 
         # Map status
@@ -671,6 +685,8 @@ class ShopifyIntegration(PlatformIntegration):
                 total=total,
                 payment_status="paid" if financial_status == "paid" else "unpaid",
                 platform="shopify",
+                platform_order_id=shopify_order_id,
+                data_source=OrderDataSource.REAL,
                 shipping_address=shipping_address,
                 notes=so.get("note") or None,
                 created_at=datetime.fromisoformat(
@@ -681,6 +697,9 @@ class ShopifyIntegration(PlatformIntegration):
             await db.flush()
         else:
             order.status = status
+            # 历史行（迁移前同步的）没有平台单号，这里顺带补上，
+            # 让它们后续也能走幂等键去重。
+            order.platform_order_id = order.platform_order_id or shopify_order_id
             order.total = total
             order.subtotal = subtotal
             order.shipping = shipping
@@ -833,7 +852,9 @@ class ShopifyIntegration(PlatformIntegration):
             "Content-Type": "application/json",
         }
         try:
-            async with httpx.AsyncClient(timeout=30, trust_env=False) as client:
+            # 注意：这个 client 从未被使用 —— 真正的请求由 _fetch_all_pages 内部
+            # 自行创建连接。保留无害，但属于冗余；已用 noqa 标记待清理。
+            async with httpx.AsyncClient(timeout=30, trust_env=False) as _client:  # noqa: F841
                 rules = await self._fetch_all_pages(
                     f"{store_url}/admin/api/{SHOPIFY_API_VERSION}/price_rules.json",
                     headers,

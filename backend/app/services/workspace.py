@@ -79,6 +79,12 @@ class WorkspaceService:
         )
         free_plan = plan_result.scalar_one_or_none()
         if free_plan:
+            # Free 套餐没有到期概念，必须显式无到期时间。
+            #
+            # 此前这里写死 now + 10 年，而计费逻辑把「未过期」当作「可顺延」的
+            # 依据，于是首次购买会把 10 年的虚假周期叠加到付费周期上 ——
+            # 付一次 ¥99 实际拿到约 10 年服务。（另：now.replace(year=+10)
+            # 在 2 月 29 日注册会直接抛 ValueError。）
             now = datetime.now(timezone.utc)
             sub = Subscription(
                 workspace_id=workspace.id,
@@ -86,7 +92,7 @@ class WorkspaceService:
                 status=SubscriptionStatus.ACTIVE,
                 payment_status=PaymentStatus.VERIFIED,
                 current_period_start=now,
-                current_period_end=now.replace(year=now.year + 10),
+                current_period_end=None,
             )
             db.add(sub)
 

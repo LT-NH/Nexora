@@ -32,13 +32,6 @@ export const subscriptionService = {
     return response.data;
   },
 
-  async verifyPayment(workspaceSlug: string): Promise<Subscription> {
-    const response = await api.post<Subscription>(
-      `/subscriptions/workspace/${workspaceSlug}/verify-payment`
-    );
-    return response.data;
-  },
-
   async switchPlan(workspaceSlug: string, planSlug: string): Promise<Subscription> {
     const response = await api.post<Subscription>(
       `/subscriptions/workspace/${workspaceSlug}/switch-plan`,

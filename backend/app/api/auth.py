@@ -7,10 +7,11 @@ import os
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+from fastapi.security import HTTPAuthorizationCredentials
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
-from app.middleware.auth import get_current_active_user
+from app.middleware.auth import get_current_active_user, security_scheme
 from app.models.user import User
 from app.schemas.user import (
     UserCreate,
@@ -23,7 +24,12 @@ from app.schemas.user import (
     PasswordResetConfirm,
 )
 from app.services.auth import AuthService
-from app.utils.security import hash_password, verify_password
+from app.utils.logging import get_logger
+from app.utils.redis import blacklist_token
+from app.utils.security import get_token_jti, hash_password, verify_password
+from app.utils.uploads import detect_image_extension, ensure_upload_dir, safe_upload_name
+
+logger = get_logger(__name__)
 
 router = APIRouter(prefix="/auth")
 
@@ -109,16 +115,28 @@ async def update_me(
 @router.post(
     "/logout",
     status_code=status.HTTP_204_NO_CONTENT,
-    summary="Logout (client-side)",
+    summary="Logout and revoke the current access token",
 )
 async def logout(
     current_user: Annotated[User, Depends(get_current_active_user)],
+    credentials: Annotated[
+        HTTPAuthorizationCredentials | None, Depends(security_scheme)
+    ] = None,
 ) -> None:
     """Logout endpoint.
 
-    Note: JWT tokens are stateless. The client should discard the tokens.
-    This endpoint exists for API completeness and audit logging purposes.
+    把当前 access token 的 jti 写入黑名单（TTL = 令牌剩余寿命），鉴权中间件
+    据此立即拒绝该令牌。此前这里是空实现（仅注明「客户端自行丢弃」），
+    配合 remember_me 曾签发的 30 天长寿命 token，等于一张不可撤销的全权凭证。
+
+    注意：只吊销当前这一个令牌。若需要「全设备登出」，要引入用户级 token
+    版本号（改动模型 + 迁移），已记入后续事项。
     """
+    if credentials is not None:
+        jti, ttl = get_token_jti(credentials.credentials)
+        if jti and ttl > 0:
+            await blacklist_token(jti, ttl)
+            logger.info("Access token revoked for user %s (ttl=%ss)", current_user.id, ttl)
     return None
 
 
@@ -163,7 +181,8 @@ async def upload_avatar(
     file: UploadFile = File(...),
 ) -> UserResponse:
     """Upload a profile avatar image. Max 2MB, PNG/JPG/WebP/GIF only."""
-    # Validate file type
+    # 第一层：快速拒绝「声明类型」明显不对的请求。它只用于早退，
+    # 不作为安全依据 —— Content-Type 完全由客户端控制。
     allowed_types = {"image/png", "image/jpeg", "image/webp", "image/gif"}
     if file.content_type not in allowed_types:
         raise HTTPException(
@@ -179,13 +198,21 @@ async def upload_avatar(
             detail="文件大小不能超过 2MB。",
         )
 
+    # 第二层（权威判定）：按 magic bytes 识别类型，扩展名由服务端白名单决定。
+    # 原实现取 `file.filename.split(".")[-1]` —— 上传 avatar.html 并把
+    # Content-Type 伪造成 image/png，即可在同源 /uploads 下托管 HTML，
+    # 用于钓鱼或窃取同域 localStorage 中的 access token。
+    detected_ext = detect_image_extension(contents)
+    if detected_ext is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="文件内容不是有效的 PNG/JPEG/WebP/GIF 图片。",
+        )
+
     # Save file
     try:
-        upload_dir = os.path.join("uploads", "avatars", current_user.id)
-        os.makedirs(upload_dir, exist_ok=True)
-
-        ext = file.filename.split(".")[-1] if file.filename else "png"
-        filename = f"avatar.{ext}"
+        upload_dir = ensure_upload_dir("avatars", current_user.id)
+        filename = safe_upload_name("avatar", detected_ext)
         filepath = os.path.join(upload_dir, filename)
 
         with open(filepath, "wb") as f:

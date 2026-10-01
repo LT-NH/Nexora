@@ -42,7 +42,7 @@ interface HistoryPoint {
 const D = {
   zh: {
     health_title: '经营健康引擎',
-    health_subtitle: '自动体检 · 归因诊断 · 历史沉淀（处方由 AI 决策助手开具）',
+    health_subtitle: '自动体检 · 找出问题出在哪 · 留档对比（该做什么由 AI 决策助手给出）',
     refresh: '重新体检',
     refresh_hint: '正在重新体检，约需 10~30 秒',
     refresh_done: '体检完成，数据已更新',
@@ -55,10 +55,10 @@ const D = {
     score_method: '评分方法',
     score_method_title: '六个维度 · 自动评分',
     radar_title: '六维健康画像',
-    radar_hint: '凹陷处即薄弱环节，点击维度查看归因',
+    radar_hint: '凹陷处就是薄弱环节，点一下看问题出在哪',
     diagnosis_title: '诊断结论',
     weakest_title: '最薄弱维度',
-    goto_prescription: '去决策助手看处方',
+    goto_prescription: '去决策助手看该做什么',
     computed_at: '最近体检',
     vs_prev: '较上次',
     trend_title: '体检趋势',
@@ -100,8 +100,8 @@ const D = {
 
 /** 维度评分方法说明（专业口径） */
 const DIM_DESC: Record<string, { zh: string; en: string }> = {
-  cashflow: { zh: '现金流：基准 85 分，退款率每 +1% 扣 4 分；营收环比上升加分', en: 'Cashflow: base 85, -4 per +1% refund rate; up on revenue growth' },
-  inventory: { zh: '库存：滞销 SKU 占比 ×1.5 + 断货 SKU 占比 ×2.5 扣分', en: 'Inventory: overstock % ×1.5 + stockout % ×2.5 deducted' },
+  cashflow: { zh: '现金流：基准 85 分，退款率每 +1% 扣 4 分；营收比上周上升加分', en: 'Cashflow: base 85, -4 per +1% refund rate; up on revenue growth' },
+  inventory: { zh: '库存：卖不动的商品占比 ×1.5 + 快断货的商品占比 ×2.5 扣分', en: 'Inventory: overstock % ×1.5 + stockout % ×2.5 deducted' },
   customer: { zh: '客户：复购率 ×0.9 + 45 基准，流失率每 +1% 扣 1.5 分', en: 'Customers: repeat rate ×0.9 + 45 base, -1.5 per +1% churn' },
   channel: { zh: '渠道：单一渠道占比超 60% 或最差渠道负增长扣分', en: 'Channel: high concentration or worst channel negative growth' },
   growth: { zh: '增长：近 7 天对比前 7 天营收增速，负增长按比例扣分', en: 'Growth: 7-day vs prior 7-day revenue growth deduction' },
@@ -154,6 +154,16 @@ const TrendSpark: React.FC<{ points: HistoryPoint[]; color: string }> = ({ point
   );
 };
 
+/**
+ * 体检结果的前端缓存（5 分钟，与后端 HEALTH_CACHE_TTL 对齐）。
+ *
+ * 概览 tab 是条件渲染：切走即卸载、切回即重新挂载，每次都会重跑一次体检请求；
+ * 后端缓存未命中时这次请求含一次千问调用（实测 10~35s）。后端缓存挡「重算」，
+ * 这一层挡「重复请求本身」。「重新体检」按钮传 refresh=1，两端同时绕过。
+ */
+const HEALTH_TTL_MS = 5 * 60 * 1000;
+const healthCache = new Map<string, { data: HealthData; history: HistoryPoint[]; at: number }>();
+
 export const HealthScoreCard: React.FC<{ slug: string }> = ({ slug }) => {
   const t = usePageT(D);
   const { lang } = useI18n();
@@ -166,20 +176,30 @@ export const HealthScoreCard: React.FC<{ slug: string }> = ({ slug }) => {
   const methodRef = useRef<HTMLDivElement>(null);
 
   const fetchHealth = async (manual = false) => {
-    // @ts-ignore 临时探针
-    console.log('[probe] fetchHealth entered, manual=', manual);
+    // 前端缓存：5 分钟内的结果直接复用（概览 tab 是条件渲染，切走会卸载本组件，
+    // 每次切回都重新挂载 → 不加这层就会重跑一次体检）。手动重检走 refresh=1，
+    // 前后端都绕过缓存。
+    const cached = manual ? undefined : healthCache.get(slug);
+    if (cached && Date.now() - cached.at < HEALTH_TTL_MS) {
+      setData(cached.data);
+      setHistory(cached.history);
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     try {
       // 后端默认 ai=1：千问基于六维画像生成 AI 总结（失败自动回落规则版）
-      // ⚠️ 该端点每次都真实重算 + 调千问，耗时 10~35s —— 必须给用户明确反馈
+      // ⚠️ 缓存未命中时该端点会真实重算 + 调千问，耗时 10~35s —— 必须给用户明确反馈
       const [healthRes, historyRes] = await Promise.all([
-        api.get(`/workspaces/${slug}/health?ai=1`, { timeout: 35000 }),
+        api.get(`/workspaces/${slug}/health?ai=1${manual ? '&refresh=1' : ''}`, { timeout: 35000 }),
         api.get(`/workspaces/${slug}/health/history?limit=12`, { timeout: 10000 }),
       ]);
-      setData(healthRes.data);
-      setHistory((historyRes.data?.items || []).map((it: any) => ({
+      const nextHistory: HistoryPoint[] = (historyRes.data?.items || []).map((it: any) => ({
         score: it.score, level: it.level, created_at: it.created_at,
-      })));
+      }));
+      setData(healthRes.data);
+      setHistory(nextHistory);
+      healthCache.set(slug, { data: healthRes.data, history: nextHistory, at: Date.now() });
       // 只在手动「重新体检」时提示；页面首载不弹（否则每次进页面都弹）
       if (manual) addToast('success', t('refresh_done'));
     } catch {
@@ -325,7 +345,7 @@ export const HealthScoreCard: React.FC<{ slug: string }> = ({ slug }) => {
             <Info size={16} />
           </button>
           <button
-            onClick={() => { console.log('[probe] refresh onClick fired'); fetchHealth(true); }}
+            onClick={() => fetchHealth(true)}
             disabled={loading}
             title={loading ? t('refresh_hint') : t('refresh')}
             aria-busy={loading}

@@ -23,8 +23,131 @@
    其余 --color-* / --shadow-* 变量已移除（全站统一使用 Tailwind 工具类
    + .dark class 切换实现主题）。
    ============================================ */
+/* ============================================
+   设计 token · 材质层级（Material / Elevation）
+   ============================================
+   背景：此前「卡片」有三种互不一致的实现 ——
+     · Card      用玻璃拟态（20px 圆角、hover 上浮 4px）
+     · StatCard  用纯白平面（16px 圆角、hover 上浮 2px）
+     · 另有 164 处裸 bg-white div 各写各的圆角与阴影
+   三套语言并存 = 视觉不统一，这是「看起来不高级」最主要的来源，
+   而不是缺设计。这里把「表面」收敛成三档，圆角/阴影/位移/边框全部走同一套变量：
+
+     surface-1  分区容器（最轻）
+     surface-2  标准卡片（默认）
+     surface-3  浮层 / 弹窗（最重）
+   ============================================ */
 :root {
   --shadow-card: 0 1px 3px rgba(124,58,237,0.04), 0 8px 24px rgba(0,0,0,0.04);
+
+  /* 统一圆角：此前 12 / 16 / 20 / 26px 混用 */
+  --radius-surface: 16px;
+  --radius-control: 10px;
+
+  /* 统一悬停位移：4px 偏轻浮，2px 更克制 */
+  --lift: -2px;
+
+  /* 三档阴影（rest → hover → overlay） */
+  --shadow-rest: 0 1px 2px rgba(16, 24, 40, 0.04), 0 1px 3px rgba(16, 24, 40, 0.06);
+  --shadow-hover: 0 4px 8px -2px rgba(16, 24, 40, 0.08), 0 12px 24px -4px rgba(16, 24, 40, 0.10);
+  --shadow-overlay: 0 12px 32px -8px rgba(16, 24, 40, 0.16), 0 32px 64px -16px rgba(16, 24, 40, 0.20);
+
+  /* 表面色：刻意避开纯白 —— 纯白会让所有卡片在浅色主题里「糊」成一片，
+     缺层次。用极浅的冷灰渐变制造轻微体积感。 */
+  --surface-1: linear-gradient(180deg, #ffffff 0%, #fcfcfd 100%);
+  --surface-2: linear-gradient(180deg, #ffffff 0%, #fafafb 100%);
+  --surface-border: rgba(16, 24, 40, 0.06);
+  --surface-border-strong: rgba(16, 24, 40, 0.10);
+  /* 顶部内高光：让卡片上边缘「吃光」，是质感的关键一笔 */
+  --surface-inset: inset 0 1px 0 rgba(255, 255, 255, 0.9);
+
+  --grain-opacity: 0.032;
+}
+
+.dark {
+  --shadow-rest: 0 1px 2px rgba(0, 0, 0, 0.30), 0 1px 3px rgba(0, 0, 0, 0.24);
+  --shadow-hover: 0 4px 8px -2px rgba(0, 0, 0, 0.40), 0 12px 24px -4px rgba(0, 0, 0, 0.44);
+  --shadow-overlay: 0 12px 32px -8px rgba(0, 0, 0, 0.55), 0 32px 64px -16px rgba(0, 0, 0, 0.60);
+
+  --surface-1: linear-gradient(180deg, #131926 0%, #0f1520 100%);
+  --surface-2: linear-gradient(180deg, #161d2b 0%, #121924 100%);
+  --surface-border: rgba(255, 255, 255, 0.07);
+  --surface-border-strong: rgba(255, 255, 255, 0.12);
+  --surface-inset: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+
+  --grain-opacity: 0.045;
+}
+
+/* ── 三档表面：统一圆角 / 边框 / 内高光 / 位移 ────────────────── */
+.surface-1,
+.surface-2,
+.surface-3 {
+  position: relative;
+  border-radius: var(--radius-surface);
+  border: 1px solid var(--surface-border);
+  box-shadow: var(--shadow-rest), var(--surface-inset);
+  transition:
+    box-shadow var(--dur, 260ms) cubic-bezier(0.22, 1, 0.36, 1),
+    transform var(--dur, 260ms) cubic-bezier(0.22, 1, 0.36, 1),
+    border-color var(--dur, 260ms) cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.surface-1 { background: var(--surface-1); box-shadow: var(--surface-inset); }
+.surface-2 { background: var(--surface-2); }
+.surface-3 { background: var(--surface-2); box-shadow: var(--shadow-overlay), var(--surface-inset); }
+
+/* 悬停：只做「轻微抬升 + 阴影加深 + 边框变实」，位移统一 -2px */
+.surface-2.is-interactive:hover,
+.surface-3.is-interactive:hover {
+  transform: translateY(var(--lift));
+  box-shadow: var(--shadow-hover), var(--surface-inset);
+  border-color: var(--surface-border-strong);
+}
+
+/* 焦点可见性：可交互表面必须有键盘焦点环（可访问性硬要求） */
+.surface-2.is-interactive:focus-visible,
+.surface-3.is-interactive:focus-visible {
+  outline: 2px solid var(--color-primary-500, #8b5cf6);
+  outline-offset: 2px;
+}
+
+/* ============================================
+   噪点纹理（Grain）
+   ============================================
+   纯色渐变在大面积上仍会显得「干」。叠一层极低透明度的噪点可以：
+     · 打散渐变的色带（banding）
+     · 给平面注入微弱的「材质感」
+   用内联 SVG feTurbulence 生成，零网络请求、零解码成本。
+   透明度走 --grain-opacity（暗色主题略高，因为暗部更容易显脏）。
+   ============================================ */
+.grain::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  z-index: 0;
+  opacity: var(--grain-opacity);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-repeat: repeat;
+}
+
+/* 页面级噪点：固定铺满视口，营造整体材质（不参与命中测试） */
+.grain-page::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 9999;
+  opacity: calc(var(--grain-opacity) * 0.9);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .surface-2.is-interactive:hover,
+  .surface-3.is-interactive:hover {
+    transform: none;
+  }
 }
 
 /* ============================================
@@ -52,6 +175,34 @@
 .animate-fade-in > *:nth-child(8) { animation-delay: 350ms; }
 .animate-fade-in > *:nth-child(9) { animation-delay: 400ms; }
 .animate-fade-in > *:nth-child(10) { animation-delay: 450ms; }
+
+/* ============================================
+   错开渐显（Stagger）—— 网格子元素依次入场
+   ============================================
+   用法：给网格容器加 .stagger-in，其**直接子元素**（KPI 卡、功能卡等）
+   会自左上向右下依次上滑淡入，每档延迟 70ms。
+   与 .animate-fade-in 的区别：子元素**无需自带 animation 类**。
+   超过 8 个子元素时后续共用 490ms 档（避免长列表等太久）。
+   ============================================ */
+.stagger-in > * {
+  opacity: 0;
+  animation: slideInUp 0.42s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+.stagger-in > *:nth-child(1) { animation-delay: 0ms; }
+.stagger-in > *:nth-child(2) { animation-delay: 70ms; }
+.stagger-in > *:nth-child(3) { animation-delay: 140ms; }
+.stagger-in > *:nth-child(4) { animation-delay: 210ms; }
+.stagger-in > *:nth-child(5) { animation-delay: 280ms; }
+.stagger-in > *:nth-child(6) { animation-delay: 350ms; }
+.stagger-in > *:nth-child(7) { animation-delay: 420ms; }
+.stagger-in > *:nth-child(n + 8) { animation-delay: 490ms; }
+
+@media (prefers-reduced-motion: reduce) {
+  .stagger-in > * {
+    opacity: 1;
+    animation: none;
+  }
+}
 
 /* Scale-in animation for modals（spring 感弹出） */
 @keyframes scaleIn {
@@ -90,6 +241,129 @@
 
 .animate-slide-in-up {
   animation: slideInUp 0.4s ease-out forwards;
+}
+
+/* ============================================
+   卡片堆翻页（方向感知 · 双卡协同 · 堆叠联动）
+   ============================================
+   设计约束，都是实测踩出来的：
+
+   1. **位移必须够大**。初版用 30px，在 1400px 宽的卡片上只占 2%，
+      肉眼看不出横向移动，观感就是「文字闪了一下」，用户会以为没有动画。
+      现在进入 84px / 离开 64px，远超感知阈值。
+
+   2. **时长要 0.3s 以上**。0.26s 对这么大的位移太快，来不及被看清。
+
+   3. **缓动曲线决定「实际可见时长」**，比时长本身更关键。
+      初版用 cubic-bezier(0.22, 1, 0.36, 1)（expo-out），实测前 120ms 就走完
+      90% 的位移，后面全在变透明度 —— 名义 340ms 的动画，能被感知的动作
+      只有约 120ms，反馈依然是「没有切换动画」。
+      改用 cubic-bezier(0.4, 0, 0.2, 1)（标准减速），位移均匀铺在整段时间里。
+
+   4. **旧卡必须一起演**。「新卡滑入 + 旧卡瞬间消失」是两张互不相干的画面，
+      观感像刷新而不是翻页；现在旧卡反向滑出（0.34s，比进入短 0.1s），
+      形成「抽走一张 → 落位一张」的连续动作。
+
+   5. **加一点景深**（进入时去模糊、离开时加模糊 + 微缩）。纯平移是纸片平移，
+      叠上尺度与焦外的变化才有「前后两张卡」的空间关系。
+
+   `both` 保证动画结束停在终态（避免 from 的 opacity:0 残留）。
+   ============================================ */
+@keyframes cardInRight {
+  from { opacity: 0; transform: translate3d(116px, 16px, 0) scale(0.955); filter: blur(3px); }
+  55%  { opacity: 1; }
+  to   { opacity: 1; transform: translate3d(0, 0, 0) scale(1); filter: blur(0); }
+}
+@keyframes cardInLeft {
+  from { opacity: 0; transform: translate3d(-116px, 16px, 0) scale(0.955); filter: blur(3px); }
+  55%  { opacity: 1; }
+  to   { opacity: 1; transform: translate3d(0, 0, 0) scale(1); filter: blur(0); }
+}
+
+/*
+  离开：反向滑走 + 微缩 + 加模糊（被推远），与进入同时起跑、提前收势。
+  45% 处就把透明度压到 0.22 —— 两层交叠的文字重影只出现在前 0.15s，
+  此后旧卡只剩一点焦外残影，视觉中心让给正在落位的新卡（实测 1:1 线性
+  淡出时，两段文字在 140ms 处会被看成「糊在一起」，是「简陋」的直接来源）。
+*/
+@keyframes cardOutLeft {
+  0%   { opacity: 1; transform: translate3d(0, 0, 0) scale(1); filter: blur(0); }
+  45%  { opacity: 0.22; }
+  100% { opacity: 0; transform: translate3d(-104px, -12px, 0) scale(0.95); filter: blur(3.5px); }
+}
+@keyframes cardOutRight {
+  0%   { opacity: 1; transform: translate3d(0, 0, 0) scale(1); filter: blur(0); }
+  45%  { opacity: 0.22; }
+  100% { opacity: 0; transform: translate3d(104px, -12px, 0) scale(0.95); filter: blur(3.5px); }
+}
+
+.animate-card-in-right  { animation: cardInRight  0.44s cubic-bezier(0.4, 0, 0.2, 1) both; }
+.animate-card-in-left   { animation: cardInLeft   0.44s cubic-bezier(0.4, 0, 0.2, 1) both; }
+.animate-card-out-left  { animation: cardOutLeft  0.34s cubic-bezier(0.4, 0, 0.2, 1) both; }
+.animate-card-out-right { animation: cardOutRight 0.34s cubic-bezier(0.4, 0, 0.2, 1) both; }
+
+/*
+  堆叠联动：翻页时背后的两张「虚卡」被带得一颤 —— 主卡动、底下的卡纹丝不动
+  会暴露它们是贴纸。位移同时带上翻页方向（-4px 跟随抽卡方向）与一次上抬，
+  晚一层由内联 animation-delay 延迟 70ms，形成传导感。
+  动画挂在内层元素上：外层仍由 opacity/translate 过渡控制层数增减，两者互不打架
+  （同一元素上 animation 的 transform 会覆盖 transition 的 translate，必须分层）。
+*/
+@keyframes peekNudgeLeft {
+  0%   { transform: translate3d(0, 0, 0); }
+  42%  { transform: translate3d(-4px, -6px, 0); }
+  100% { transform: translate3d(0, 0, 0); }
+}
+@keyframes peekNudgeRight {
+  0%   { transform: translate3d(0, 0, 0); }
+  42%  { transform: translate3d(4px, -6px, 0); }
+  100% { transform: translate3d(0, 0, 0); }
+}
+.animate-peek-nudge-left {
+  animation: peekNudgeLeft 0.52s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.animate-peek-nudge-right {
+  animation: peekNudgeRight 0.52s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+/* 页码数字换页：轻微上滑淡入，让「N / M」也参与翻页 */
+@keyframes countIn {
+  from { opacity: 0; transform: translateY(7px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.animate-count-in {
+  animation: countIn 0.24s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/*
+  reduced-motion 下的降级：**不是**直接 animation:none。
+
+  位移（尤其横向）与模糊确实是眩晕的主要来源，该去掉；但「内容已经换成另一条」这个
+  反馈不该一起消失 —— 否则用户按了按钮会觉得没反应。所以进入/离开保留纯淡入淡出，
+  装饰性的联动（peek 轻抬、数字滑动）才整体关闭。
+*/
+@keyframes cardInFade {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+@keyframes cardOutFade {
+  from { opacity: 1; }
+  to   { opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .animate-card-in-right,
+  .animate-card-in-left {
+    animation: cardInFade 0.2s ease-out both;
+  }
+  .animate-card-out-left,
+  .animate-card-out-right {
+    animation: cardOutFade 0.15s ease-in both;
+  }
+  .animate-peek-nudge-left,
+  .animate-peek-nudge-right,
+  .animate-count-in {
+    animation: none;
+  }
 }
 
 /* Float animation (subtle up/down) */

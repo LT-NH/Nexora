@@ -53,6 +53,12 @@ class OrderCreate(BaseModel):
     notes: Optional[str] = Field(None, max_length=2000)
     payment_status: str = Field(default="unpaid", pattern=r"^(unpaid|paid|partially_refunded|refunded)$")
     platform: Optional[str] = Field(None, max_length=50)
+    # 数据来源。默认 real（商家手工录入是真实经营数据）。
+    # 模拟器 / 种子脚本 / 自动化测试**必须显式传 simulated**，
+    # 否则假数据会被当成真实数据进入利润分析。
+    data_source: str = Field(default="real", pattern=r"^(real|sandbox|simulated)$")
+    # 平台侧订单 ID（幂等键）。平台同步写入时必须提供。
+    platform_order_id: Optional[str] = Field(None, max_length=128)
     items: list[OrderItemCreate] = Field(default_factory=list)
 
 
@@ -95,6 +101,8 @@ class OrderResponse(BaseModel):
     notes: Optional[str] = None
     payment_status: str
     platform: Optional[str] = None
+    platform_order_id: Optional[str] = None
+    data_source: str = "real"
     created_at: datetime
     updated_at: datetime
     items: list[OrderItemResponse] = []

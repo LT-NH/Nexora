@@ -12,6 +12,7 @@
 每次判断和结果都记进经验库"。权限判断以策略表为准，绝不采信模型自报的 risk 字段。
 """
 
+import asyncio
 import json
 from datetime import datetime, timedelta
 from typing import Annotated
@@ -41,6 +42,9 @@ router = APIRouter(prefix="/workspaces/{slug}/ai/agent", tags=["AI - Store Senti
 
 MAX_PLAN = 3
 
+# 每日巡店的并发上限：每个空间要跑一次完整 LLM 调用，并发太高会被模型服务限流
+SENTINEL_CONCURRENCY = 3
+
 # Agent 可决策的动作集（与后端执行能力一一对应）
 VALID_ACTIONS = {"restock", "refund_check", "price_adjust", "create_coupon", "clearance", "keep"}
 
@@ -62,11 +66,13 @@ async def _recent_experiences_text(db: AsyncSession, ws_id: str) -> str:
         return ""
     parts = []
     for r in rows:
-        fb = "命中改善" if r.outcome == "improved" else ("未命中" if r.outcome == "not_improved" else "待观察")
+        fb = "做了有效果" if r.outcome == "improved" else (
+            "做了没效果" if r.outcome == "not_improved" else "效果待观察"
+        )
         metric = ""
         if r.result_before is not None and r.result_after is not None:
-            metric = f"，主指标 {r.result_before}→{r.result_after}"
-        parts.append(f"「{r.title}」[{r.action_type}] 反馈={fb}{metric}")
+            metric = f"，相关数字 {r.result_before}→{r.result_after}"
+        parts.append(f"「{r.title}」[{r.action_type}] 结果：{fb}{metric}")
     return "\n- " + "\n- ".join(parts)
 
 
@@ -91,13 +97,16 @@ async def _qwen_plan(
     from app.api.ai import _qwen_enhance  # 复用真实千问调用（30s 超时，失败返回 None）
 
     prompt = (
-        "你是 Nexora 的『自主巡店经营 Agent』，今天你独立当班。下面是系统采集的店铺真实经营快照。\n"
+        "你是 Nexora 的『自主巡店助手』，今天你独立当班。下面是系统采集的店铺真实经营快照。\n"
         "你的任务：像一位每天到店巡查的运营主管一样，自主判断今天最值得处理的经营问题，并制定巡店计划。\n\n"
         "【硬性要求】\n"
-        "1. 结论与每条计划都必须【基于快照与风险清单中的真实数据】撰写——引用真实商品名、退款率、库存等数字；\n"
+        "1. 结论与每条计划都必须【基于快照与风险清单中的真实数据】撰写——引用真实商品名、退货情况、库存等数字；\n"
         "2. 需要指定商品时，product_id 必须使用风险清单里的真实 id（不要用商品名代替）；\n"
         "3. 不要复述本提示的任何模板文字，直接给出你对今天店铺的真实判断；\n"
         "4. 只输出一个 JSON 对象，不要任何其他文字。\n\n"
+        "【说人话】读你结论的是不懂运营术语的小店主：不要出现「环比、同比、SKU、归因、置信度、"
+        "转化率、履约、动销、客单价、GMV、ROI、策略矩阵」这类词，换成日常说法"
+        "（「6 个 SKU 滞销」→「6 款商品卖不动」）。\n\n"
         "【JSON 结构】\n"
         "对象含两个键：\n"
         " - conclusion: 字符串，今日巡店结论（≤80 字，总结整体状态 + 最优先事项）\n"
@@ -107,18 +116,18 @@ async def _qwen_plan(
         "clearance 需 product_id；restock 需 product_id；refund_check 留空）\n"
         "     reason: 字符串，≤60 字，引用快照数字说明依据\n"
         "\n"
-        "【你可以自主执行的动作（无需店主确认，请积极使用）】\n"
-        " - refund_check：定位高退款商品，产出核查清单（只读）\n"
-        " - restock：为缺货商品生成补货建议（只读）\n"
-        " - create_coupon：面向流失风险客户发放满减券（真实生效，可撤销，每日限 2 张）\n"
-        " - clearance：对滞销积压商品降价 15% 清仓（真实改价，可调回，每日限 3 件）\n"
-        "【你必须交还给店主确认的动作】\n"
-        " - price_adjust：直接调整售价（影响营收，永远需人工确认）\n"
-        "所以：如果问题可以用 clearance / create_coupon 解决，优先用它们——你能自己办掉。\n"
-        "如果店铺没有值得干预的问题，plan 给空数组 []，conclusion 如实说明整体健康。\n\n"
+        "【你可以自己办掉的动作（无需店主确认，请积极使用）】\n"
+        " - refund_check：找出退货多的商品，列一份核查清单（只看不动）\n"
+        " - restock：给快没货的商品写补货建议（只看不动）\n"
+        " - create_coupon：给很久没来的老客户发满减券（真实生效，可撤销，每天最多 2 张）\n"
+        " - clearance：给卖不动的积压货降价 15% 清仓（真实改价，可调回，每天最多 3 件）\n"
+        "【必须交还给店主确认的动作】\n"
+        " - price_adjust：直接改售价（影响收入，永远需要人工确认）\n"
+        "所以：能用 clearance / create_coupon 解决的就自己办掉——不用等店主点头。\n"
+        "如果店铺没有值得动手的问题，plan 给空数组 []，conclusion 如实说明整体健康。\n\n"
         "【店铺真实快照】\n" + snapshot[:2600]
         + (("\n\n【风险商品清单（真实 id）】\n" + products_text) if products_text else "")
-        + (("\n\n【经验库：同类动作历史效果（参考）】" + exp_text) if exp_text else "")
+        + (("\n\n【以前做过类似动作的实际效果（供参考）】" + exp_text) if exp_text else "")
         + (f"\n\n【上次巡店结论】{last_conclusion}" if last_conclusion else "")
     )
     return await _qwen_enhance(prompt)
@@ -127,11 +136,11 @@ async def _qwen_plan(
 def _parse_plan(raw: str | None) -> tuple[str, list[dict]]:
     """解析千问计划 JSON；解析失败给保守空计划（不产生任何动作）。"""
     if not raw:
-        return "巡店完成：AI 未返回有效计划（可能服务不可用），本次未产生动作。", []
+        return "巡店完成：AI 这会儿没给出计划（可能服务不可用），这次没有执行任何动作。", []
     from app.services.ai import _extract_json
     data = _extract_json(raw)
     if not isinstance(data, dict):
-        return "巡店完成：AI 计划格式异常，本次未产生动作。", []
+        return "巡店完成：AI 返回的内容看不懂，这次没有执行任何动作。", []
     conclusion = str(data.get("conclusion") or "今日暂无需紧急干预。")[:200]
     plans = data.get("plan") or []
     plan = []
@@ -266,12 +275,12 @@ _REVIEW_AFTER_HOURS = 1
 
 # 指标语义与改善方向：所有指标均为「数值降低 = 改善」
 _METRIC_META = {
-    "refund_check": ("退款率(%)", "refund_rate"),
-    "restock": ("断货风险商品数", "stockout"),
-    "clearance": ("积压商品数", "overstock"),
-    "retention": ("流失风险客户数", "churn"),
-    "price_adjust": ("积压商品数", "overstock"),
-    "create_coupon": ("流失风险客户数", "churn"),
+    "refund_check": ("每 100 单的退款单数", "refund_rate"),
+    "restock": ("快没货的商品数", "stockout"),
+    "clearance": ("压货的商品数", "overstock"),
+    "retention": ("很久没来的客户数", "churn"),
+    "price_adjust": ("压货的商品数", "overstock"),
+    "create_coupon": ("很久没来的客户数", "churn"),
 }
 
 # 动作 → 经验库基线指标键（执行时记录，供回访对比）
@@ -360,16 +369,16 @@ async def _auto_review_pending(db: AsyncSession, workspace: Workspace) -> list[d
         if after is None or before is None:
             continue
         outcome = "improved" if after < before else ("not_improved" if after > before else "uncertain")
-        verdict = {"improved": "命中", "not_improved": "未命中", "uncertain": "持平"}[outcome]
+        verdict = {"improved": "有效果", "not_improved": "没效果", "uncertain": "没变化"}[outcome]
         exp.outcome = outcome
         exp.result_after = float(after)
         exp.feedback_at = datetime.utcnow()
         exp.lesson = (
-            f"【自动回访】{exp.title[:40]} 执行后 {metric_name} {before:g} → {after:g}（{verdict}）。"
-            + ("该动作方向有效，后续同类问题优先复用此策略。"
+            f"【自动回访】{exp.title[:40]} 做完后，{metric_name} 从 {before:g} 变成 {after:g}（{verdict}）。"
+            + ("这个方向有用，下次同类问题优先这么做。"
                if outcome == "improved"
-               else ("该动作未改善指标，下次需调整执行力度或更换策略。"
-                     if outcome == "not_improved" else "指标持平，效果待继续观察。"))
+               else ("没起效果，下次得加大力度或者换个做法。"
+                     if outcome == "not_improved" else "数字没变，效果还要再看看。"))
         )
         reviews.append({
             "source": "agent_auto", "title": exp.title, "outcome": outcome,
@@ -390,14 +399,14 @@ async def _record_review(
     from app.models.agent_experience import AgentExperience
 
     outcome = "improved" if after < before else ("not_improved" if after > before else "uncertain")
-    verdict = {"improved": "命中", "not_improved": "未命中", "uncertain": "持平"}[outcome]
+    verdict = {"improved": "有效果", "not_improved": "没效果", "uncertain": "没变化"}[outcome]
     metric_name = _METRIC_META.get(action_type, (action_type, ""))[0]
     lesson = (
-        f"【自动回访】{title[:40]} 执行后 {metric_name} {before:g} → {after:g}（{verdict}）。"
-        + ("该动作方向有效，后续同类问题优先复用此策略。"
+        f"【自动回访】{title[:40]} 做完后，{metric_name} 从 {before:g} 变成 {after:g}（{verdict}）。"
+        + ("这个方向有用，下次同类问题优先这么做。"
            if outcome == "improved"
-           else ("该动作未改善指标，下次需调整执行力度或更换策略。"
-                 if outcome == "not_improved" else "指标持平，效果待继续观察。"))
+           else ("没起效果，下次得加大力度或者换个做法。"
+                 if outcome == "not_improved" else "数字没变，效果还要再看看。"))
     )
     now = datetime.utcnow()
     delta_days = max(0, (now - executed_at).days) if executed_at else 0
@@ -724,13 +733,13 @@ async def last_report(
 
 _PHASE_META = [
     {"key": "perceive", "label_zh": "感知", "label_en": "Perceive",
-     "desc_zh": "采集店铺真实经营快照", "desc_en": "Collect real business snapshot"},
+     "desc_zh": "先把店铺的真实数据看一遍", "desc_en": "Collect real business snapshot"},
     {"key": "decide", "label_zh": "决策", "label_en": "Decide",
-     "desc_zh": "千问基于快照自主制定计划", "desc_en": "Qwen drafts the plan from data"},
+     "desc_zh": "AI 根据这些数据想好今天做什么", "desc_en": "Qwen drafts the plan from data"},
     {"key": "act", "label_zh": "执行", "label_en": "Act",
-     "desc_zh": "按风险策略分级处理", "desc_en": "Handle by risk policy"},
+     "desc_zh": "能自己办的自己办，拿不准的交给你", "desc_en": "Handle by risk policy"},
     {"key": "review", "label_zh": "回访", "label_en": "Review",
-     "desc_zh": "对比指标判定命中/未命中", "desc_en": "Compare metrics, judge hit or miss"},
+     "desc_zh": "过一阵回头看数字有没有变好", "desc_en": "Compare metrics, judge hit or miss"},
 ]
 
 
@@ -912,8 +921,11 @@ async def run_daily_store_agents() -> None:
 
     执行模式由 services/autonomy.py 的策略表决定——
     低/中风险动作 Agent 自己办掉（受日限额约束），高风险动作挂起等店主确认。
-    由 main.py 的 AsyncIOScheduler 在每天 09:30 触发。独立开 session，逐空间执行，
-    单空间失败不影响其它空间。
+    由 main.py 的 AsyncIOScheduler 在每天 09:30 触发。
+
+    并发：每个空间独立会话 + 独立任务（信号量限流）。此前是逐个串行跑完 100 个
+    空间，而每个空间都要跑一次完整 LLM 巡店 —— 09:30 之后的一段时间会被彻底占满，
+    同期线上请求跟着变慢。
     """
     from app.database import async_session_factory
     from app.models.workspace import Workspace, WorkspaceMember, WorkspaceRole
@@ -921,37 +933,42 @@ async def run_daily_store_agents() -> None:
     logger.info("store sentinel daily run started")
     try:
         async with async_session_factory() as db:
-            wss = (await db.execute(select(Workspace).limit(100))).scalars().all()
-            ws_ids = [ws.id for ws in wss]
-        # 每个工作空间独立会话执行，避免单个空间异常污染共享会话
-        for ws_id in ws_ids:
-            async with async_session_factory() as db:
-                ws = await db.get(Workspace, ws_id)
-                if ws is None:
-                    continue
-                owner_id = (
-                    await db.execute(
-                        select(WorkspaceMember.user_id).where(
-                            WorkspaceMember.workspace_id == ws.id,
-                            WorkspaceMember.role.in_([WorkspaceRole.OWNER, WorkspaceRole.ADMIN]),
-                        ).limit(1)
-                    )
-                ).scalars().first()
-                if not owner_id:
-                    continue
-                # Enterprise 专属：非 enterprise 工作空间跳过（超管 workspace 单独在端点手动巡店）
+            ws_ids = (await db.execute(select(Workspace.id).limit(100))).scalars().all()
+
+        sem = asyncio.Semaphore(SENTINEL_CONCURRENCY)
+
+        async def _run_one(ws_id: str) -> None:
+            async with sem:
                 try:
-                    if await _ws_plan_tier(db, ws.id) != "enterprise":
-                        continue
-                except Exception:
-                    continue
-                try:
-                    report = await run_store_check(db, ws, owner_id, auto=True)
-                    logger.info(
-                        "sentinel ws=%s auto_exec=%d pending=%d",
-                        ws.id, len(report.get("executed") or []), len(report.get("pending") or []),
-                    )
+                    # 每个工作空间独立会话执行，避免单个空间异常污染其它空间
+                    async with async_session_factory() as db:
+                        ws = await db.get(Workspace, ws_id)
+                        if ws is None:
+                            return
+                        owner_id = (
+                            await db.execute(
+                                select(WorkspaceMember.user_id).where(
+                                    WorkspaceMember.workspace_id == ws.id,
+                                    WorkspaceMember.role.in_([WorkspaceRole.OWNER, WorkspaceRole.ADMIN]),
+                                ).limit(1)
+                            )
+                        ).scalars().first()
+                        if not owner_id:
+                            return
+                        # Enterprise 专属：非 enterprise 工作空间跳过（超管 workspace 单独在端点手动巡店）
+                        try:
+                            if await _ws_plan_tier(db, ws.id) != "enterprise":
+                                return
+                        except Exception:
+                            return
+                        report = await run_store_check(db, ws, owner_id, auto=True)
+                        logger.info(
+                            "sentinel ws=%s auto_exec=%d pending=%d",
+                            ws.id, len(report.get("executed") or []), len(report.get("pending") or []),
+                        )
                 except Exception as e:  # noqa: BLE001
-                    logger.warning("sentinel ws %s failed: %s", ws.id, str(e)[:150])
+                    logger.warning("sentinel ws %s failed: %s", ws_id, str(e)[:150])
+
+        await asyncio.gather(*(_run_one(w) for w in ws_ids))
     except Exception as e:  # noqa: BLE001
         logger.error("store sentinel daily run crashed: %s", str(e)[:200])

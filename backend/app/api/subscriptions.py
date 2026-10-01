@@ -155,34 +155,6 @@ async def check_limits(
 
 
 @router.post(
-    "/workspace/{slug}/verify-payment",
-    response_model=SubscriptionResponse,
-    summary="Verify payment for enterprise plan",
-)
-async def verify_payment(
-    slug: str,
-    current_user: Annotated[User, Depends(get_current_active_user)],
-    db: Annotated[AsyncSession, Depends(get_db)],
-) -> SubscriptionResponse:
-    """Verify payment and activate the enterprise subscription. Requires owner role."""
-    workspace, _ = await _require_member(slug, current_user, db, WorkspaceRole.OWNER)
-    result = await SubscriptionService.verify_payment(db, workspace)
-
-    await create_audit_log(
-        db=db,
-        workspace_id=workspace.id,
-        user_id=current_user.id,
-        action="payment.verified",
-        resource_type="subscription",
-        resource_id=result.id,
-        details={"status": result.status},
-    )
-
-    logger.info("Payment verified for workspace %s", workspace.slug)
-    return result
-
-
-@router.post(
     "/workspace/{slug}/switch-plan",
     response_model=SubscriptionResponse,
     summary="Self-service plan change (upgrade/downgrade)",

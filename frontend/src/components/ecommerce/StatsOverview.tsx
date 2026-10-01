@@ -4,6 +4,7 @@ import { Card } from '@/components/ui/Card';
 import { StatCard } from '@/components/ui/StatCard';
 import type { OrderStats } from '@/types/ecommerce';
 import { usePageT, type Lang } from '@/i18n';
+import { formatCurrency } from '@/lib/format';
 
 interface StatsOverviewProps {
   stats: OrderStats | null;
@@ -97,10 +98,8 @@ export const StatsOverview: React.FC<StatsOverviewProps> = ({ stats, isLoading }
     );
   }
 
-  const formatCurrency = (val: number) => {
-    if (val >= 10000) return `¥${(val / 10000).toFixed(1)}${t('unit_wan')}`;
-    return `¥${val.toLocaleString()}`;
-  };
+  // formatCurrency 已统一到 lib/format（原实现用 toLocaleString() 抹掉小数，
+  // 1234.56 会显示成 ¥1,235 —— 已随统一一并纠正为保留两位小数）
 
   return (
     <div className="space-y-4">

@@ -53,6 +53,7 @@ import { WeeklyReviewCard } from '@/components/WeeklyReviewCard';
 import { SalesTrendChart } from '@/components/charts/SalesTrendChart';
 import { OrderStatusChart } from '@/components/charts/OrderStatusChart';
 import { CustomerInsightChart } from '@/components/charts/CustomerInsightChart';
+import { TopRecommendation } from '@/components/ai/TopRecommendation';
 import { UpgradeCTA } from '@/components/UpgradeCTA';
 import { workspaceService } from '@/services/workspace';
 import { subscriptionService } from '@/services/subscription';
@@ -419,6 +420,18 @@ export const Dashboard: React.FC = () => {
         }
       />
 
+      {/*
+        今天最该做的一件事 —— 把一堆建议收敛成一条。
+
+        放在 PageHeader 之后、Tab 之前：它是「现在做什么」的回答，不属于任何
+        一个 tab，切 tab 也不该让它消失。
+
+        onShowAll 切回 overview 而非 insights：完整的建议列表在 AiDecisionPanel
+        （overview tab），而「数据洞察」tab 里是周报与图表、没有建议列表 ——
+        切到那边用户会找不到「另外 N 条」指的东西。
+      */}
+      <TopRecommendation onShowAll={() => setActiveTab('overview')} />
+
       {/* Tab Navigation */}
       <div className="sticky top-16 z-20 flex items-center gap-1 border-b border-gray-200 dark:border-gray-700 bg-white/90 dark:bg-gray-900/90 backdrop-blur-md pt-3 -mb-px" role="tablist" aria-label={t('tabs_aria')}>
         {[
@@ -504,8 +517,8 @@ export const Dashboard: React.FC = () => {
         </div>
       )}
 
-      {/* 经营 KPI（真实利润数据） */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 animate-fade-in" aria-live="polite">
+      {/* 经营 KPI（真实利润数据）—— stagger-in：三张卡自左向右依次上滑入场 */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 stagger-in" aria-live="polite">
         <StatCard
           className="glass-card"
           icon={<Wallet size={22} className="text-emerald-600" />}
@@ -737,7 +750,7 @@ export const Dashboard: React.FC = () => {
                 {forecastNext ? (
                   <p className="text-[12px] text-gray-400 dark:text-gray-500 mt-1.5">
                     未来 7 天预测 ¥{Number(forecastNext).toLocaleString('zh-CN', { maximumFractionDigits: 0 })}
-                    {aiData?.forecast?.confidence ? ` · 置信度${aiData.forecast.confidence === 'high' ? '高' : aiData.forecast.confidence === 'medium' ? '中' : '低'}` : ''}
+                    {aiData?.forecast?.confidence ? ` · 把握${aiData.forecast.confidence === 'high' ? '很大' : aiData.forecast.confidence === 'medium' ? '一般' : '不大'}` : ''}
                   </p>
                 ) : !aiData && localTrend ? (
                   <p className="text-[11px] text-gray-400 mt-1.5">基于本地订单统计 · AI 分析加载失败</p>

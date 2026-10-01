@@ -8,10 +8,12 @@
   POST   /admin/ai/models/custom          新增/更新自定义模型
   DELETE /admin/ai/models/custom/{id}     删除自定义模型（内置与当前模型不可删）
   POST   /admin/ai/models/test            真实连通性自检（切过去之前先确认能用）
+  POST   /admin/ai/models/test-all        一键检测全部模型并刷新额度状态
 
 全部端点要求 superadmin：QWEN_API_KEY 是**平台级**凭证，不能下放给租户。
 """
 
+import asyncio
 from datetime import datetime
 from typing import Annotated
 
@@ -316,23 +318,14 @@ async def clear_quota(
     return {"ok": True, "model_id": model_id, "message": "已清除校准，回到未校准状态"}
 
 
-@router.post(
-    "/models/test",
-    summary="模型连通性自检（superadmin only）",
-)
-async def test_model(
-    payload: TestPayload,
-    _sa: Annotated[User, Depends(require_superadmin)],
-) -> dict:
-    """对指定模型（默认当前模型）发一次最小真实请求。
+async def _probe_model(model_id: str) -> dict:
+    """对单个模型发一次最小真实请求，并把结果写入额度状态。
 
-    切模型之前先点一下，能立刻知道：key 是否有效、模型名是否正确、
-    额度是否还有 —— 返回真实延迟与真实报错，不做任何包装。
+    **单测与批量自检共用这一份实现** —— 两处各写一份的话，迟早会出现
+    「批量测出来的结论和单测不一致」，那是最难排查的一类 bug。
+
+    返回体即管理台直接消费的字段：ok / latency_ms / error / quota_status。
     """
-    model_id = (payload.model_id or model_registry.get_active_model()).strip()
-    if not model_id:
-        raise HTTPException(status_code=400, detail="未指定模型，且当前没有激活模型")
-
     key = settings.QWEN_API_KEY
     if not key:
         return {
@@ -406,4 +399,68 @@ async def test_model(
         "reply": (reply or "")[:80],
         "usage": model_registry.usage_for(model_id),
         "quota_status": "ok",
+    }
+
+
+@router.post(
+    "/models/test",
+    summary="模型连通性自检（superadmin only）",
+)
+async def test_model(
+    payload: TestPayload,
+    _sa: Annotated[User, Depends(require_superadmin)],
+) -> dict:
+    """对指定模型（默认当前模型）发一次最小真实请求。
+
+    切模型之前先点一下，能立刻知道：key 是否有效、模型名是否正确、
+    额度是否还有 —— 返回真实延迟与真实报错，不做任何包装。
+    """
+    model_id = (payload.model_id or model_registry.get_active_model()).strip()
+    if not model_id:
+        raise HTTPException(status_code=400, detail="未指定模型，且当前没有激活模型")
+    return await _probe_model(model_id)
+
+
+@router.post(
+    "/models/test-all",
+    summary="一键检测全部模型（superadmin only）",
+)
+async def test_all_models(
+    _sa: Annotated[User, Depends(require_superadmin)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> dict:
+    """逐个真实探测注册表里的全部模型，并刷新各自的额度状态。
+
+    为什么要批量：百炼免费额度**按模型分别计算**，一个用完就得换下一个；但额度状态
+    只有被真实调用过才会更新 —— 于是「哪些还能用」很快退化成未知，只能一个个点。
+    这个端点把整件事收敛成一次点击。
+
+    两个实现取舍：
+      - **顺序执行 + 极短间隔**：并发探测容易触发平台限流，把真实结论污染成「被限流」；
+      - 额度耗尽的模型会在几十毫秒内直接返回，因此 20+ 个模型的总耗时通常在数秒级，
+        不需要并发加速。
+    """
+    await model_registry.ensure_seeded(db)
+    rows = (await db.execute(select(AIModel))).scalars().all()
+    model_ids = [r.model_id for r in sorted(rows, key=lambda r: (_FAMILY_ORDER.index(r.family) if r.family in _FAMILY_ORDER else 99, r.model_id))]
+
+    results: list[dict] = []
+    for mid in model_ids:
+        results.append(await _probe_model(mid))
+        await asyncio.sleep(0.15)  # 轻微间隔，避免被平台限流干扰结论
+
+    counts: dict[str, int] = {}
+    for r in results:
+        key_status = str(r.get("quota_status") or "error")
+        counts[key_status] = counts.get(key_status, 0) + 1
+
+    return {
+        "total": len(results),
+        "ok_count": sum(1 for r in results if r.get("ok")),
+        "summary": counts,
+        # 文案由后端给出，前端直接展示，避免两边各写一套映射
+        "summary_labels": {
+            k: model_registry.QUOTA_LABELS.get(k, k) for k in counts
+        },
+        "results": results,
     }

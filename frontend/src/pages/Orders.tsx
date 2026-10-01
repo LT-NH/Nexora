@@ -34,6 +34,8 @@ import { orderService } from '@/services/ecommerce';
 import type { Order, OrderStatus, OrderStats, PaymentStatus } from '@/types/ecommerce';
 import { useSearchParams } from 'react-router-dom';
 import { usePageT, type Lang } from '@/i18n';
+import { formatDateTime as formatDate } from '@/lib/format';
+import { Pagination } from '@/components/ui/Pagination';
 
 // ============================================================
 // i18n 页面字典
@@ -374,11 +376,7 @@ const allStatuses: OrderStatus[] = ['pending', 'confirmed', 'processing', 'shipp
 const allPaymentStatuses: PaymentStatus[] = ['unpaid', 'paid', 'refunded', 'partially_refunded'];
 
 const formatPrice = (price: number) => `¥${price.toFixed(2)}`;
-const formatDate = (dateStr: string, t: T) => {
-  const d = new Date(dateStr);
-  if (isNaN(d.getTime())) return t('invalid_date');
-  return d.toLocaleDateString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
-};
+// formatDate 已统一到 lib/format（原本全站复制了 8 份，签名与行为互不一致）
 
 // ============================================================
 // 表单类型定义
@@ -462,6 +460,31 @@ const PlatformBadge: React.FC<{ platform?: string | null }> = ({ platform }) => 
     <span className={`inline-flex items-center gap-1.5 text-xs font-medium px-2 py-0.5 rounded-full border ${meta.chip}`}>
       <span className={`w-1.5 h-1.5 rounded-full ${meta.dot}`} />
       {meta.label}
+    </span>
+  );
+};
+
+/**
+ * 非真实来源的标记。
+ *
+ * 为什么必须显示：库里此前混着 simulator 造的订单（还贴了伪造的平台标签），
+ * 而界面上完全看不出来 —— 商家会把它们当成真实经营数据。标记出来是让
+ * 「这份报表能不能信」这件事在 UI 层面可判断，而不是只躺在数据库字段里。
+ * real 不显示任何标记（正常数据不需要噪音）。
+ */
+const DataSourceTag: React.FC<{ source?: string | null }> = ({ source }) => {
+  if (!source || source === 'real') return null;
+  const isSandbox = source === 'sandbox';
+  return (
+    <span
+      title={isSandbox ? '沙箱数据，非真实交易' : '模拟数据，非真实经营数据'}
+      className={`inline-flex items-center text-[10px] font-medium px-1.5 py-0.5 rounded border whitespace-nowrap ${
+        isSandbox
+          ? 'bg-sky-50 text-sky-700 border-sky-200 dark:bg-sky-900/30 dark:text-sky-300 dark:border-sky-800'
+          : 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-900/30 dark:text-amber-300 dark:border-amber-800'
+      }`}
+    >
+      {isSandbox ? '沙箱' : '演示'}
     </span>
   );
 };
@@ -935,20 +958,6 @@ export const Orders: React.FC = () => {
     }
   };
 
-  // ---------- 错误状态 ----------
-  if (error) {
-    return (
-      <div className="flex flex-col items-center justify-center min-h-[400px] text-center animate-fade-in">
-        <div className="w-12 h-12 rounded-full bg-red-100 dark:bg-red-900/30 flex items-center justify-center mb-4">
-          <AlertTriangle size={24} className="text-red-500 dark:text-red-400" />
-        </div>
-        <h3 className="text-lg font-semibold text-slate-900 dark:text-gray-100">{t('load_failed')}</h3>
-        <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">{error}</p>
-        <Button variant="outline" className="mt-4" onClick={fetchOrders}>{t('retry')}</Button>
-      </div>
-    );
-  }
-
   // ============================================================
   // 排序逻辑
   // ============================================================
@@ -974,6 +983,23 @@ export const Orders: React.FC = () => {
     });
     return sorted;
   }, [orders, sortKey, sortDirection]);
+
+  // ---------- 错误状态 ----------
+  // 必须放在所有 Hook 调用之后：若提前 return，error 由有到无时
+  // 两次渲染的 Hook 数量不一致，React 会抛
+  // "Rendered more hooks than during the previous render"。
+  if (error) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[400px] text-center animate-fade-in">
+        <div className="w-12 h-12 rounded-full bg-red-100 dark:bg-red-900/30 flex items-center justify-center mb-4">
+          <AlertTriangle size={24} className="text-red-500 dark:text-red-400" />
+        </div>
+        <h3 className="text-lg font-semibold text-slate-900 dark:text-gray-100">{t('load_failed')}</h3>
+        <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">{error}</p>
+        <Button variant="outline" className="mt-4" onClick={fetchOrders}>{t('retry')}</Button>
+      </div>
+    );
+  }
 
   // ============================================================
   // 表格列定义
@@ -1037,7 +1063,12 @@ export const Orders: React.FC = () => {
     {
       key: 'store',
       header: t('col_source'),
-      render: (o: Order) => <PlatformBadge platform={o.platform} />,
+      render: (o: Order) => (
+        <div className="flex items-center gap-1.5 flex-wrap">
+          <PlatformBadge platform={o.platform} />
+          <DataSourceTag source={o.data_source} />
+        </div>
+      ),
     },
     {
       key: 'actions',
@@ -1236,53 +1267,14 @@ export const Orders: React.FC = () => {
             />
             {/* 分页 */}
             {totalPages > 1 && !isLoading && (
-              <div className="flex items-center justify-between px-4 py-3 border-t border-gray-100 dark:border-gray-800">
-                <span className="text-sm text-gray-500">
-                  {t('total_pages')
-                    .replace('{total}', String(total))
-                    .replace('{page}', String(page))
-                    .replace('{totalPages}', String(totalPages))}
-                </span>
-                <div className="flex items-center gap-1">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    disabled={page <= 1}
-                    onClick={() => goToPage(page - 1)}
-                  >
-                    <ChevronLeft size={14} />
-                  </Button>
-                  {Array.from({ length: Math.min(totalPages, 5) }, (_, i) => {
-                    let pageNum: number;
-                    if (totalPages <= 5) {
-                      pageNum = i + 1;
-                    } else if (page <= 3) {
-                      pageNum = i + 1;
-                    } else if (page >= totalPages - 2) {
-                      pageNum = totalPages - 4 + i;
-                    } else {
-                      pageNum = page - 2 + i;
-                    }
-                    return (
-                      <Button
-                        key={pageNum}
-                        variant={pageNum === page ? 'primary' : 'outline'}
-                        size="sm"
-                        onClick={() => goToPage(pageNum)}
-                      >
-                        {pageNum}
-                      </Button>
-                    );
-                  })}
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    disabled={page >= totalPages}
-                    onClick={() => goToPage(page + 1)}
-                  >
-                    <ChevronRight size={14} />
-                  </Button>
-                </div>
+              <div className="px-4 py-3 border-t border-gray-100 dark:border-gray-800">
+                <Pagination
+                  page={page}
+                  totalPages={totalPages}
+                  total={total}
+                  onPageChange={goToPage}
+                  label={t('total_pages')}
+                />
               </div>
             )}
           </Card>

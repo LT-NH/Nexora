@@ -164,7 +164,7 @@ class AIService:
     }
 
     _PLATFORM_TIPS: dict[str, str] = {
-        "taobao": "建议在描述中加入优惠券信息和限时促销话术，提升转化率。",
+        "taobao": "建议在描述里加上优惠券信息和限时促销话术，让更多人下单。",
         "jd": "京东用户注重品质和物流，建议强调正品保障和快速配送。",
         "pdd": "拼多多用户对价格敏感，建议突出性价比和拼团优惠。",
         "douyin": "抖音商品描述需短小精悍，前3秒抓住注意力，强调视觉冲击。",
@@ -421,7 +421,7 @@ class AIService:
                 "trend": "stable",
                 "forecast": {"next_7_days": sum(daily_sales.values()), "confidence": "low"},
                 "peak_days": sorted_dates,
-                "recommendations": ["数据点较少，建议持续观察销售趋势。"],
+                "recommendations": ["样本还少，再攒几天数据才看得准趋势。"],
             }
 
         recent_dates = sorted_dates[-7:] if len(sorted_dates) >= 7 else sorted_dates
@@ -588,11 +588,11 @@ class AIService:
                 segments_count["new"] += 1
 
         segment_recommendations = {
-            "vip": "建立专属社群维护关系，提供生日特权等增值服务，提升客户终身价值",
-            "active": "继续通过个性化推荐和会员权益保持活跃度",
-            "occasional": "通过限时优惠和精准推荐提升购买频率，引导成为活跃客户",
-            "dormant": "发送唤醒优惠券或限时促销活动，重新激活购买意愿",
-            "new": "优化首次购买体验和复购引导，加速新客户向活跃客户转化",
+            "vip": "建个老客户群维护好关系，生日送点小特权，让他们一直买下去",
+            "active": "用个性化推荐和会员权益，让他们保持现在的购买频率",
+            "occasional": "用限时优惠和更准的推荐，把他们变成常来的客户",
+            "dormant": "发唤醒优惠券或限时促销，把他们重新拉回来",
+            "new": "把第一次购买的体验做顺，再送点复购券，让他们再来一次",
         }
 
         segments_list = []
@@ -871,12 +871,12 @@ class AIService:
         context = context or {}
         return (
             "您好！我是 Nexora 智能助手。\n\n"
-            f"关于您的问题「{prompt}」，由于当前未配置 AI 服务（Qwen API），"
-            "暂时无法提供深度分析。\n\n"
-            "建议您：\n"
-            "1. 在系统设置中配置 QWEN_API_KEY 以启用完整的 AI 能力；\n"
-            "2. 我可以为您提供基础的电商运营建议和数据分析。\n\n"
-            "如果您有其他问题，欢迎随时提问！"
+            f"关于您的问题「{prompt}」，AI 助手还没接通（管理员尚未配置大模型），"
+            "暂时给不了深度分析。\n\n"
+            "您可以：\n"
+            "1. 联系管理员，在「设置 → AI 模型」里接入模型后即可使用完整能力；\n"
+            "2. 先看仪表盘上的经营数据，或问我一些基础问题。\n\n"
+            "还有别的问题，随时问我！"
         )
 
     @staticmethod

@@ -21,13 +21,24 @@ from app.database import Base
 
 
 class SubscriptionStatus(str, enum.Enum):
-    """Status of a workspace subscription."""
+    """Status of a workspace subscription.
+
+    存储用枚举 name（大写），与本项目其他枚举列一致。
+    """
 
     ACTIVE = "active"
     CANCELLED = "cancelled"
     PAST_DUE = "past_due"
     TRIALING = "trialing"
     INCOMPLETE = "incomplete"
+    # 试用期或付费周期已过，且未续费。
+    #
+    # 与 PAST_DUE 的区别：PAST_DUE 是「该付款但没付成功」（有未结订单、要催收），
+    # EXPIRED 是「周期自然走完且没有续费意图」（试用结束、或付费周期结束未续）。
+    # 两者的运营动作不同，所以不能合并成一个状态。
+    #
+    # 加这个值不需要迁移：列是 VARCHAR(10)，"EXPIRED" 只有 7 个字符。
+    EXPIRED = "expired"
 
 
 class PaymentStatus(str, enum.Enum):

@@ -24,6 +24,7 @@ import { usePageTitle } from '@/hooks/usePageTitle';
 import { usePageT, type Lang } from '@/i18n';
 import api from '@/services/api';
 import type { ApiKey, ApiKeyCreatedResponse, ApiKeyScope } from '@/types';
+import { formatDate } from '@/lib/format';
 
 /** Extract items from paginated response, or return data as-is if already an array.
  *  Falls back to an empty array when the response is not an array or a valid paginated object. */
@@ -223,14 +224,7 @@ export const ApiKeys: React.FC = () => {
     addToast('success', t('copied'), t('copied_msg'));
   };
 
-  const formatDate = (dateStr: string | null) => {
-    if (!dateStr) return t('never');
-    return new Date(dateStr).toLocaleDateString('zh-CN', {
-      month: 'short',
-      day: 'numeric',
-      year: 'numeric',
-    });
-  };
+  // formatDate 已统一到 lib/format
 
   const scopeColors: Record<string, 'success' | 'primary' | 'danger'> = {
     read: 'success',

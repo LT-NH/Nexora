@@ -5,8 +5,8 @@ Endpoints for platform administration: users, workspaces, and statistics.
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends
-from sqlalchemy import delete, func, select
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
@@ -14,7 +14,6 @@ from app.middleware.auth import require_superadmin
 from app.models.user import User
 from app.models.workspace import Workspace, WorkspaceMember
 from app.models.subscription import Subscription, SubscriptionPlan, SubscriptionStatus
-from app.schemas.user import UserResponse
 from app.schemas.workspace import WorkspaceResponse
 from app.utils.pagination import PaginatedResponse, PaginationParams
 
@@ -23,28 +22,79 @@ router = APIRouter(prefix="/admin")
 
 @router.get(
     "/users",
-    response_model=PaginatedResponse[UserResponse],
+    response_model=PaginatedResponse[dict],
     summary="List all users (superadmin only)",
 )
 async def list_users(
     db: Annotated[AsyncSession, Depends(get_db)],
     _superadmin: Annotated[User, Depends(require_superadmin)],
     pagination: Annotated[PaginationParams, Depends()],
-) -> PaginatedResponse[UserResponse]:
-    """Return all registered users. Requires superadmin privileges."""
-    # Count total
-    count_result = await db.execute(select(func.count(User.id)))
-    total = count_result.scalar_one()
+    q: str | None = Query(None, description="按邮箱 / 姓名模糊搜索"),
+    status: str | None = Query(None, description="active | disabled"),
+    role: str | None = Query(None, description="superadmin | user"),
+) -> PaginatedResponse[dict]:
+    """Return all registered users. Requires superadmin privileges.
 
-    # Fetch page
-    result = await db.execute(
-        select(User)
-        .order_by(User.created_at.desc())
-        .offset(pagination.offset)
-        .limit(pagination.limit)
-    )
-    users = result.scalars().all()
-    items = [UserResponse.model_validate(u) for u in users]
+    列表要能回答「这人是谁、还在用吗、在几个空间里、最近来过吗」——
+    此前只回 UserResponse（无 last_login_at、无空间数），前端那两列永远是空的；
+    也没有筛选，超过一页就只能靠肉眼翻。
+    """
+    conds = []
+    if q and q.strip():
+        like = f"%{q.strip()}%"
+        conds.append(or_(User.email.ilike(like), User.full_name.ilike(like)))
+    if status == "active":
+        conds.append(User.is_active.is_(True))
+    elif status == "disabled":
+        conds.append(User.is_active.is_(False))
+    if role == "superadmin":
+        conds.append(User.is_superadmin.is_(True))
+    elif role == "user":
+        conds.append(User.is_superadmin.is_(False))
+
+    total = (
+        await db.execute(select(func.count(User.id)).where(*conds))
+    ).scalar_one()
+
+    users = (
+        await db.execute(
+            select(User)
+            .where(*conds)
+            .order_by(User.created_at.desc())
+            .offset(pagination.offset)
+            .limit(pagination.limit)
+        )
+    ).scalars().all()
+
+    # 本页用户的空间数：一次聚合取回，避免逐行 N+1
+    counts: dict[str, int] = {}
+    ids = [u.id for u in users]
+    if ids:
+        rows = (
+            await db.execute(
+                select(WorkspaceMember.user_id, func.count(WorkspaceMember.id))
+                .where(WorkspaceMember.user_id.in_(ids))
+                .group_by(WorkspaceMember.user_id)
+            )
+        ).all()
+        counts = {uid: n for uid, n in rows}
+
+    items = [
+        {
+            "id": u.id,
+            "email": u.email,
+            "full_name": u.full_name,
+            "avatar_url": u.avatar_url,
+            "is_active": u.is_active,
+            "is_superadmin": u.is_superadmin,
+            "email_verified": u.email_verified,
+            "totp_enabled": u.totp_enabled,
+            "last_login_at": u.last_login_at,
+            "created_at": u.created_at,
+            "workspace_count": counts.get(u.id, 0),
+        }
+        for u in users
+    ]
     return PaginatedResponse.create(items=items, total=total, params=pagination)
 
 
@@ -240,27 +290,63 @@ async def admin_user_detail(
     from app.models.audit import AuditLog
     user = await db.get(User, user_id)
     if user is None:
-        from fastapi import HTTPException
         raise HTTPException(status_code=404, detail="用户不存在")
-    members = (
-        await db.execute(select(WorkspaceMember).where(WorkspaceMember.user_id == user_id))
-    ).scalars().all()
+
+    # 一次 join 取回「空间名 + 角色 + 加入时间」。原实现在列表推导里对每个成员调了
+    # 两次 db.get（且条件表达式里重复求值），空间多时就是 N+1 套 N+1。
+    ws_rows = (
+        await db.execute(
+            select(
+                WorkspaceMember.workspace_id,
+                WorkspaceMember.role,
+                WorkspaceMember.joined_at,
+                Workspace.name,
+            )
+            .join(Workspace, Workspace.id == WorkspaceMember.workspace_id)
+            .where(WorkspaceMember.user_id == user_id)
+        )
+    ).all()
+
     audits = (
         await db.execute(
-            select(AuditLog).where(AuditLog.user_id == user_id).order_by(AuditLog.created_at.desc()).limit(10)
+            select(AuditLog)
+            .where(AuditLog.user_id == user_id)
+            .order_by(AuditLog.created_at.desc())
+            .limit(20)
         )
     ).scalars().all()
+
     return {
-        "id": user.id, "email": user.email, "full_name": user.full_name,
-        "is_active": user.is_active, "is_superadmin": user.is_superadmin,
-        "totp_enabled": user.totp_enabled, "last_login_at": user.last_login_at,
+        "id": user.id,
+        "email": user.email,
+        "full_name": user.full_name,
+        "avatar_url": getattr(user, "avatar_url", None),
+        "phone": getattr(user, "phone", None),
+        "is_active": user.is_active,
+        "is_superadmin": user.is_superadmin,
+        "email_verified": user.email_verified,
+        "totp_enabled": user.totp_enabled,
+        "last_login_at": user.last_login_at,
         "created_at": user.created_at,
+        "updated_at": getattr(user, "updated_at", None),
         "workspaces": [
-            {"workspace_id": m.workspace_id, "role": m.role, "name": (await db.get(Workspace, m.workspace_id)).name if await db.get(Workspace, m.workspace_id) else None}
-            for m in members
+            {
+                "workspace_id": wid,
+                "name": name,
+                "role": getattr(role, "value", str(role)),
+                "joined_at": joined_at,
+            }
+            for wid, role, joined_at, name in ws_rows
         ],
+        # 注意是 details（JSON），旧代码取的 a.detail 不存在 —— 弹层里的详情一直是空的
         "recent_audits": [
-            {"action": a.action, "created_at": a.created_at, "detail": a.detail}
+            {
+                "action": a.action,
+                "resource_type": a.resource_type,
+                "resource_id": a.resource_id,
+                "created_at": a.created_at,
+                "details": a.details,
+            }
             for a in audits
         ],
     }

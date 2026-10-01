@@ -40,17 +40,17 @@ interface ExperienceItem {
 const D = {
   zh: {
     title: 'AI 决策助手',
-    subtitle: '消费健康诊断 · 开处方 · 真实执行 · 经验沉淀',
-    today: '今日处方',
-    no_insight: '今日无待处理处方，经营状态良好',
+    subtitle: '看体检结论 → 告诉你今天该做什么 → 真实执行 → 沉淀经验',
+    today: '今天该做的事',
+    no_insight: '今天没有要处理的事，经营状态良好',
     execute: '执行',
     executing: '执行中…',
     executed: '已执行',
     feedback_title: '回访验证',
     improved: '已改善',
     not_improved: '未改善',
-    feedback_note: '30 天后回访该处方命中情况',
-    hit_rate: '处方命中率',
+    feedback_note: '30 天后回来看看有没有效果',
+    hit_rate: '建议有效率',
     predictions: '未来 7 天预测',
     predict_stockout: '预计缺货',
     predict_churn: '客户流失风险',
@@ -59,16 +59,16 @@ const D = {
     exec_done: '执行成功',
     exec_fail: '执行失败，请重试',
     feedback_saved: '反馈已记录，谢谢',
-    conf: '置信度',
-    diagnosis_from: '处方依据 · 健康引擎体检',
+    conf: '把握',
+    diagnosis_from: '这份建议的依据 · 经营体检',
     score_short: '综合',
     weakest_short: '最薄弱',
     view_health: '查看体检',
-    exp_title: '经验库',
-    exp_lessons: '条沉淀',
-    exp_empty: '执行处方并回访后，自动沉淀为经验资产',
-    hit_outcome: '命中',
-    miss_outcome: '未命中',
+    exp_title: '历史经验',
+    exp_lessons: '条已沉淀',
+    exp_empty: '做过并回访之后，会自动沉淀成经验',
+    hit_outcome: '有效果',
+    miss_outcome: '没效果',
   },
   en: {
     title: 'AI Decision Assistant',
@@ -177,7 +177,12 @@ export const AiDecisionPanel: React.FC<{ slug: string }> = ({ slug }) => {
 
   if (loading && insights.length === 0) {
     return (
-      <div className="rounded-2xl bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 p-5">
+      // 骨架屏也必须带同一个 id —— 否则「查看另外 N 条」在面板加载期间点击时
+      // 找不到锚点，滚动会静默失效。锚点存在性不应依赖加载状态。
+      <div
+        id="ai-decision-panel"
+        className="rounded-2xl bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 p-5 scroll-mt-20"
+      >
         <div className="animate-pulse space-y-3">
           <div className="h-5 w-40 bg-gray-200 dark:bg-gray-700 rounded" />
           <div className="h-16 bg-gray-100 dark:bg-gray-800 rounded-xl" />

@@ -34,6 +34,10 @@ def start_scheduler():
         from app.services.patrol import run_ai_patrol
         from app.api.store_agent import run_daily_store_agents
         from app.services.store_sync import run_due_store_syncs
+        from app.services.subscription import (
+            run_expire_subscriptions,
+            run_notify_expiring_subscriptions,
+        )
 
         sched = AsyncIOScheduler()
         # 每日 03:00 数据库备份
@@ -57,11 +61,24 @@ def start_scheduler():
         sched.add_job(
             run_due_store_syncs, "interval", minutes=5, id="store_autosync"
         )
+        # 每日 00:30 处理订阅到期（试用/付费周期走完 → EXPIRED；超管工作空间豁免）
+        sched.add_job(
+            run_expire_subscriptions, "cron", hour=0, minute=30, id="subscription_expiry"
+        )
+        # 每日 10:00 到期前提醒（3 天内到期 → 站内信 + 邮件；超管豁免）
+        sched.add_job(
+            run_notify_expiring_subscriptions,
+            "cron",
+            hour=10,
+            minute=0,
+            id="subscription_expiry_reminder",
+        )
         sched.start()
         _scheduler = sched
         logger.info(
             "Scheduled daily backup 03:00, weekly reports Mon 08:00, "
-            "AI patrol 09:00, store sentinel 09:30, store auto-sync every 5min."
+            "AI patrol 09:00, store sentinel 09:30, store auto-sync every 5min, "
+            "subscription expiry 00:30, expiry reminder 10:00."
         )
     except Exception as e:  # noqa: BLE001
         logger.warning("Failed to start scheduler: %s", str(e))

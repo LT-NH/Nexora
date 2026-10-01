@@ -11,6 +11,7 @@ outbound webhook behaviour while decoupling order handling from webhook
 delivery.
 """
 
+import asyncio
 import hashlib
 import hmac
 import json
@@ -23,6 +24,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.webhook import Webhook
 from app.services.events import subscribe
 from app.utils.logging import get_logger
+from app.utils.urls import UnsafeUrlError, validate_outbound_url
 
 logger = get_logger(__name__)
 
@@ -84,7 +86,19 @@ async def trigger_webhooks(
             headers["X-Nexora-Signature"] = signature
 
         try:
-            async with httpx.AsyncClient(timeout=10) as client:
+            # 出站投递同样做 SSRF 防护：库里可能还存着「加校验之前」写入的内网地址。
+            # 禁跟随重定向以阻断「公网地址 302 跳内网」，禁环境代理避免绕行。
+            try:
+                await asyncio.to_thread(validate_outbound_url, wh.url)
+            except UnsafeUrlError as unsafe_exc:
+                logger.warning(
+                    "[Webhook] Skipping unsafe target '%s': %s", wh.url, unsafe_exc
+                )
+                continue
+
+            async with httpx.AsyncClient(
+                timeout=10, follow_redirects=False, trust_env=False
+            ) as client:
                 resp = await client.post(wh.url, content=body, headers=headers)
                 if resp.status_code >= 400:
                     logger.warning(

@@ -1,6 +1,6 @@
 import React from 'react';
-import { Link } from 'react-router-dom';
 import { usePageTitle } from '@/hooks/usePageTitle';
+import { TransitionLink } from '@/components/ui/TransitionLink';
 import {
   ArrowLeft,
   Server,
@@ -36,13 +36,13 @@ const Status: React.FC = () => {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">
             <div className="flex items-center gap-3">
-              <Link
+              <TransitionLink
                 to="/"
                 className="flex items-center gap-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 transition-colors"
               >
                 <ArrowLeft size={18} />
                 <span className="text-sm font-medium">返回首页</span>
-              </Link>
+              </TransitionLink>
             </div>
             <div className="flex items-center gap-2.5">
               <img

@@ -35,7 +35,12 @@ class SubscriptionOrder(Base):
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="pending", index=True)
     # 微信 Native 下单返回的 code_url（二维码内容）；sandbox 模式为 weixin://wxpay/sandbox-*
     code_url: Mapped[str | None] = mapped_column(Text, nullable=True)
-    out_trade_no: Mapped[str | None] = mapped_column(String(40), nullable=True, index=True)
+    # 回调按 out_trade_no 反查订单，必须全局唯一；否则同一秒内的两笔订单可能
+    # 互相串号（回调取 .limit(1) 的那一条，可能激活错误租户的订单）。
+    # NULL 允许多行（sandbox 订单没有真实单号）。
+    out_trade_no: Mapped[str | None] = mapped_column(
+        String(64), nullable=True, unique=True, index=True
+    )
     provider_trade_no: Mapped[str | None] = mapped_column(String(64), nullable=True)
     sandbox: Mapped[bool] = mapped_column(nullable=False, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)

@@ -1,7 +1,7 @@
 import React from 'react';
 import { ArrowLeft, GitCommit } from 'lucide-react';
-import { Link } from 'react-router-dom';
 import { usePageTitle } from '@/hooks/usePageTitle';
+import { TransitionLink } from '@/components/ui/TransitionLink';
 
 interface ChangelogEntry {
   version: string;
@@ -10,6 +10,18 @@ interface ChangelogEntry {
 }
 
 const changelogData: ChangelogEntry[] = [
+  {
+    version: 'v5.12',
+    date: '2026年10月1日',
+    changes: [
+      '管理台「AI 模型」新增**一键检测全部模型**：此前只能逐个自检，而百炼免费额度按模型独立计算、额度状态只有被真实调用后才会更新 —— 于是「哪些模型还能用」很快退化成未知，只能一个个点。现在一次点击跑完全部模型并刷新各自状态，页面直接给出「可用 N / 总数」与分类汇总（额度耗尽 / 未开通 / 被限流…）',
+      '**实测结果（25 个模型）**：5 个可用 —— qwen-plus、qwen-omni-turbo、qwen3-omni-flash、deepseek-v4.1-flash、qwen3.8-flash；其余 20 个**免费额度已耗尽**（平台返回 Free quota exhausted）。注意这与「模型下线」是两回事：额度耗尽换一个模型即可，模型不存在才需要改配置 —— 页面已把两种状态区分显示',
+      '修复一个**隐蔽的真 bug**：`.env` 原先按**当前工作目录**解析。只要不是从 backend/ 目录启动（从仓库根启动 uvicorn、systemd 换 WorkingDirectory、或在别处跑脚本），配置文件就**静默不加载** —— AI Key 变空、base_url 回落官方默认值，表现为「所有模型全部不可用」而完全看不出原因。现已改为按 backend 目录的**绝对路径**解析',
+      '修复另一个真 bug：前端构建产物缺失时（dist 目录存在但没有 index.html，例如构建被中断），SPA 回退路由会抛 RuntimeError，客户端拿到 500 而不是干净的 404。现在只在**确实存在 index.html** 时才挂载回退，未匹配路由返回带说明的 404',
+      '**AI 功能已恢复可用**：此前激活的是免费额度已耗尽的 qwen-long，等于整个 AI 链路处于不可用状态。已切到 qwen-plus（支持 function calling，巡店 Agent 可用），并以真实调用验证：经营健康引擎 3.9 秒返回了带具体经营数据的 AI 总结',
+      '新增 4 项后端测试：额度耗尽必须归类为「额度耗尽」而非「Key 无效」（两者的处置方式完全不同）、探测成功的用量记账、批量检测的汇总口径与文案映射、以及该端点的 superadmin 守卫。测试用替身拦截 HTTP，**不消耗真实额度**',
+    ],
+  },
   {
     version: 'v5.11',
     date: '2026年9月19日',
@@ -336,13 +348,13 @@ const Changelog: React.FC = () => {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">
             <div className="flex items-center gap-3">
-              <Link
+              <TransitionLink
                 to="/"
                 className="flex items-center gap-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 transition-colors"
               >
                 <ArrowLeft size={18} />
                 <span className="text-sm font-medium">返回首页</span>
-              </Link>
+              </TransitionLink>
             </div>
             <div className="flex items-center gap-2.5">
               <img

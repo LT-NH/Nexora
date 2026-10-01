@@ -1,6 +1,6 @@
 import React from 'react';
 import { Sparkles, Briefcase, GraduationCap, Rocket, Code2, Bot, ArrowLeft } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import { TransitionLink } from '@/components/ui/TransitionLink';
 
 const translations = {
   zh: {
@@ -138,10 +138,10 @@ export const About: React.FC = () => {
       <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-12 sm:py-16 relative z-10">
         {/* 顶部导航：返回首页 */}
         <nav className="flex items-center justify-between mb-12">
-          <Link to="/" className="inline-flex items-center gap-1.5 text-sm text-[#6e6e73] hover:text-[#1d1d1f] transition-colors">
+          <TransitionLink to="/" className="inline-flex items-center gap-1.5 text-sm text-[#6e6e73] hover:text-[#1d1d1f] transition-colors">
             <ArrowLeft size={15} />
             {t.back}
-          </Link>
+          </TransitionLink>
           <span className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-white border border-gray-200 text-violet-700 text-sm font-medium shadow-sm">
             <Sparkles size={14} />
             {t.title}

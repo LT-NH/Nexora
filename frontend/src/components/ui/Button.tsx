@@ -50,8 +50,8 @@ export const Button: React.FC<ButtonProps> = ({
     <button
       className={`
         inline-flex items-center justify-center gap-2 rounded-full font-medium
-        transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2
-        active:scale-[0.97] transition-transform
+        focus:outline-none focus:ring-2 focus:ring-offset-2
+        active:scale-[0.97]
         disabled:opacity-50 disabled:cursor-not-allowed
         ${variantStyles[variant]}
         ${sizeStyles[size]}
@@ -61,15 +61,19 @@ export const Button: React.FC<ButtonProps> = ({
       aria-busy={isLoading || undefined}
       {...props}
     >
-      {isLoading ? (
-        <Spinner />
-      ) : (
-        leftIcon && <span className="flex-shrink-0">{leftIcon}</span>
-      )}
-      {children}
-      {!isLoading && rightIcon && (
-        <span className="flex-shrink-0">{rightIcon}</span>
-      )}
+      {/* loading 时保留 children 占位（仅降低不透明度），避免按钮宽度突缩 */}
+      {isLoading && <Spinner className="shrink-0" />}
+      <span
+        className={`inline-flex items-center gap-2 transition-opacity duration-fast ${
+          isLoading ? 'opacity-50' : 'opacity-100'
+        }`}
+      >
+        {!isLoading && leftIcon && <span className="flex-shrink-0">{leftIcon}</span>}
+        {children}
+        {!isLoading && rightIcon && (
+          <span className="flex-shrink-0">{rightIcon}</span>
+        )}
+      </span>
     </button>
   );
 };
