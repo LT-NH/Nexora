@@ -1059,8 +1059,37 @@ async def ai_chat(
                 )
             ).all()
             data = [{"商品": r[0] or "未知", "销售额": float(r[1] or 0)} for r in rows]
+        elif intent == "revenue":
+            # 营收问的是趋势，就给逐日序列（与前端 line 图要求的
+            # {label, value} 结构一致）。此前只声明 chart_type="line"
+            # 却不返回任何数据，折线图永远不会出现。
+            since30 = metrics.since_days(30)
+            rows = (
+                await db.execute(
+                    select(func.date(Order.created_at), func.sum(Order.total))
+                    .where(
+                        Order.workspace_id == workspace.id,
+                        Order.created_at >= since30,
+                        Order.status.notin_(metrics.EXCLUDED_STATUSES),
+                    )
+                    .group_by(func.date(Order.created_at))
+                    .order_by(func.date(Order.created_at))
+                )
+            ).all()
+            daily = {str(r[0]): float(r[1] or 0) for r in rows}
+            today = metrics.utcnow().date()
+            data = []
+            for back in range(29, -1, -1):
+                day = today - timedelta(days=back)
+                key = day.isoformat()
+                data.append({"label": f"{day.month}月{day.day}日", "value": round(daily.get(key, 0.0), 2)})
     except Exception:
         pass
+
+    # 只有**真有数据**时才声明图表类型，否则前端会拿到一条无法兑现的契约
+    # （曾经 revenue 声明 line 却给空数组 → 图表区什么都不显示，还让人以为渲染坏了）。
+    if not data:
+        chart_type = None
 
     return {
         "intent": intent,

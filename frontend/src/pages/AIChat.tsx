@@ -105,7 +105,23 @@ const getQuickPrompts = (t: T): string[] => [
   t('q_orders'),
 ];
 
+/**
+ * 意图 → 徽章文案。
+ *
+ * ⚠️ 必须与**实际调用的后端端点**对齐：本页走的是
+ * `app/api/ai.py::_detect_intent`，它返回 revenue / ranking / stock /
+ * refund / customer / general；而 `ai_agent.py::BIAgent` 用的是另一套
+ * revenue_summary / top_products… 两套名字不同，映射表只写后一套时
+ * 徽章会漏出英文原文（如直接显示 "revenue"）。两套都保留映射以兼容。
+ */
 const getIntentLabels = (t: T): Record<string, string> => ({
+  // 实际端点（ai.py::_detect_intent）的取值
+  revenue: t('intent_revenue'),
+  ranking: t('intent_top_products'),
+  stock: t('intent_low_stock'),
+  refund: t('intent_refund_rate'),
+  customer: t('intent_customer_insight'),
+  // BIAgent（ai_agent.py）的取值，保留兼容
   revenue_summary: t('intent_revenue'),
   order_count: t('intent_order_count'),
   refund_rate: t('intent_refund_rate'),
@@ -115,6 +131,9 @@ const getIntentLabels = (t: T): Record<string, string> => ({
   churn_customers: t('intent_churn'),
   default: t('intent_default'),
 });
+
+/** general 是「没识别出意图」的兜底值，展示徽章无意义 → 不显示 */
+const INTENT_BADGE_HIDDEN = new Set(['general']);
 
 const getHeaderLabels = (t: T): Record<string, string> => ({
   name: t('h_name'),
@@ -308,8 +327,8 @@ const MessageBubble: React.FC<{ message: ChatMessage }> = ({ message }) => {
               : 'bg-white/80 dark:bg-gray-800/70 border border-black/[0.04] dark:border-white/[0.06]'
           }`}
         >
-          {message.intent && !message.error && (
-            <span className="inline-block mb-1.5 text-[11px] font-medium text-primary-600 dark:text-primary-300 bg-primary-50 dark:bg-primary-900/30 rounded-full px-2 py-0.5">
+          {message.intent && !message.error && !INTENT_BADGE_HIDDEN.has(message.intent) && (
+            <span className="inline-block mb-1.5 text-[11px] font-medium text-primary-600 dark:text-primary-300 bg-primary-50 dark:bg-primary-900/30 px-2 py-0.5 rounded-full">
               {intentLabels[message.intent] || message.intent}
             </span>
           )}
@@ -349,6 +368,7 @@ export const AIChat: React.FC = () => {
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const taRef = useRef<HTMLTextAreaElement>(null);
   const msgIdRef = useRef(0);
 
   // Auto-scroll to the latest message.
@@ -356,6 +376,16 @@ export const AIChat: React.FC = () => {
     const el = scrollRef.current;
     if (el) el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
   }, [messages, loading]);
+
+  // 输入框自动增高（多行不再是内部滚动条）。
+  // 必须先归零再按 scrollHeight 赋值：否则删除文字后高度只增不减。
+  // 封顶交给 CSS 的 max-h-28，超高后再由 overflow-y-auto 接管。
+  useEffect(() => {
+    const el = taRef.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = `${el.scrollHeight}px`;
+  }, [input]);
 
   const handleSend = async (text?: string) => {
     const question = (text ?? input).trim();
@@ -467,6 +497,7 @@ export const AIChat: React.FC = () => {
         <div className="px-4 pb-4">
           <div className="flex items-end gap-2 bg-white/80 dark:bg-gray-800/70 border border-gray-200 dark:border-gray-700 rounded-xl px-3 py-2 focus-within:border-primary-400 dark:focus-within:border-primary-500 transition-colors">
             <textarea
+              ref={taRef}
               rows={1}
               value={input}
               onChange={(e) => setInput(e.target.value)}
@@ -477,7 +508,7 @@ export const AIChat: React.FC = () => {
                 }
               }}
               placeholder={t('input_placeholder')}
-              className="flex-1 resize-none bg-transparent outline-none text-sm text-slate-900 dark:text-gray-100 placeholder:text-gray-400 max-h-28"
+              className="flex-1 resize-none bg-transparent outline-none appearance-none text-sm leading-[22px] text-slate-900 dark:text-gray-100 placeholder:text-gray-400 py-2 max-h-28"
             />
             <button
               type="button"
