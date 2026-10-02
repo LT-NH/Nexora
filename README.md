@@ -1,7 +1,7 @@
 # Nexora —— 下一代电商助手平台
 
 [![CI](https://github.com/LT-NH/Nexora/actions/workflows/ci.yml/badge.svg)](https://github.com/LT-NH/Nexora/actions/workflows/ci.yml)
-![version](https://img.shields.io/badge/version-5.12.0-534AB7)
+![version](https://img.shields.io/badge/version-5.13.0-534AB7)
 ![python](https://img.shields.io/badge/python-3.13-3776AB)
 ![react](https://img.shields.io/badge/react-18-61DAFB)
 ![tests](https://img.shields.io/badge/tests-210%20passed-3B6D11)

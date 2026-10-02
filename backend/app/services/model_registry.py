@@ -757,11 +757,20 @@ async def record_quota_state(
 
 
 async def mark_ok(model_id: str) -> None:
-    """成功调用后把久留的失败标记清掉（仅当之前是失败态才写库）。"""
-    prev = _quota.get(model_id, {}).get("status")
-    _quota[model_id] = {"status": "ok", "message": None, "at": datetime.utcnow().isoformat()}
-    if prev in (None, "ok"):
-        return
+    """成功调用后标记为可用，并**落库**。
+
+    ⚠️ 曾经的 bug（2026-10-02 修复）：原先只在「**内存**里记着之前是失败态」时
+    才写库 —— 于是进程刚启动（内存缓存为空）时 `prev is None` 就直接 return，
+    成功状态**永远不会持久化**。
+
+    症状：管理台「一键检测全部」跑完后，真实可用的模型在库里仍是 `unknown`
+    （页面显示「未检测」），汇总给出「可用 1/25」这类**错误结论**；
+    而失败态因为走 `record_quota_state` 会落库，所以看起来「只有失败的被记录」。
+
+    现在改为始终落库：一次极小的 UPDATE，换状态真实可信。
+    """
+    now = datetime.utcnow()
+    _quota[model_id] = {"status": "ok", "message": None, "at": now.isoformat()}
     try:
         from app.database import async_session_factory
         from app.models.ai_model import AIModel
@@ -773,8 +782,8 @@ async def mark_ok(model_id: str) -> None:
             if row is not None:
                 row.quota_status = "ok"
                 row.quota_message = None
-                row.quota_checked_at = datetime.utcnow()
-                row.last_used_at = datetime.utcnow()
+                row.quota_checked_at = now
+                row.last_used_at = now
             await db.commit()
     except Exception as exc:  # pragma: no cover
         logger.warning("persist ok state failed for %s: %s", model_id, exc)
