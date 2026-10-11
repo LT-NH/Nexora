@@ -58,6 +58,71 @@ def _pct(a: float, b: float) -> float:
     return (a / b * 100.0) if b else 0.0
 
 
+# ----------------------------------------------------------------------
+# 评分参数（集中配置）
+#
+# 说明：数值即当前生产口径，抽取自原评分公式，**行为完全等价**（仅改变组织
+# 方式）。集中在此便于：① 答辩时逐项说明依据；② 调整权重/基准后做 A/B 对比。
+#
+# ⚠️ 改动此处需同步：
+#   - 前端 frontend/src/components/HealthScoreCard.tsx 的 DIM_DESC（逐维说明）
+#     与权重表
+#   - README 的「经营健康引擎」评分方法说明
+#   - 六维权重之和必须 = 1.0（见下方 weights）
+# ----------------------------------------------------------------------
+SCORING_CONFIG: dict = {
+    # 现金流：基准 85；退款率每 +1% 扣 4 分；营收环比每 +1% 加分，加分上下限 ±15
+    "cashflow": {
+        "base": 85.0,
+        "refund_penalty": 4.0,
+        "growth_bonus": 0.3,
+        "growth_bonus_cap": 15.0,
+    },
+    # 库存：基准 100；滞销 SKU 占比、断货风险 SKU 占比分别扣分
+    "inventory": {
+        "base": 100.0,
+        "overstock_penalty": 1.5,
+        "stockout_penalty": 2.5,
+    },
+    # 客户：复购率 × 0.9 + 45 基准；流失率每 +1% 扣 1.5 分
+    "customer": {
+        "repeat_bonus": 0.9,
+        "base": 45.0,
+        "churn_penalty": 1.5,
+    },
+    # 渠道：基准 92；单一渠道占比超过 60% 起扣；最差渠道负增长每 1% 扣 0.5 分
+    "channel": {
+        "base": 92.0,
+        "concentration_threshold": 0.6,
+        "concentration_penalty": 100.0,
+        "worst_growth_penalty": 0.5,
+    },
+    # 增长：基准 50；营收环比每 +1% 加 1 分
+    "growth": {
+        "base": 50.0,
+        "growth_bonus": 1.0,
+    },
+    # 利润：基准 60；毛利率基准线 45%（电商常见健康线），每偏离 1% 调 2 分；
+    #       退款损失每 1% 扣 1.5 分；成本归因覆盖不足时最大打折 8 分
+    "profit": {
+        "base": 60.0,
+        "margin_reference": 45.0,
+        "margin_factor": 2.0,
+        "refund_loss_penalty": 1.5,
+        "coverage_penalty": 8.0,
+    },
+    # 六维权重（总和 = 1.0）
+    "weights": {
+        "cashflow": 0.20,
+        "inventory": 0.20,
+        "customer": 0.15,
+        "channel": 0.10,
+        "growth": 0.15,
+        "profit": 0.20,
+    },
+}
+
+
 @router.get("", summary="经营健康诊断：六维评分 + AI 总结（纯诊断，不含处方）")
 async def workspace_health(
     slug: str,
@@ -240,21 +305,33 @@ async def workspace_health(
 
     # ------------------------------------------------------------------
     # 4. 维度评分（0-100，越高越健康）
+    #    参数集中在 SCORING_CONFIG，此处只做代入计算（与抽取前行为等价）
     # ------------------------------------------------------------------
-    # 现金流：基准 85，退款率每 1% 扣 4 分；营收环比上升加分
-    cashflow = 85.0 - refund_rate * 4.0 + _clamp(growth * 0.3, -15, 15)
-    cashflow = _clamp(cashflow)
+    cf = SCORING_CONFIG["cashflow"]
+    # 现金流：基准 − 退款惩罚 + 增长加分（加分上下限 ±cap）
+    cashflow = _clamp(
+        cf["base"]
+        - refund_rate * cf["refund_penalty"]
+        + _clamp(growth * cf["growth_bonus"], -cf["growth_bonus_cap"], cf["growth_bonus_cap"])
+    )
 
     # 库存：滞销 SKU 占比 / 断货 SKU 占比
+    iv = SCORING_CONFIG["inventory"]
     n = max(len(products), 1)
     overstock_pct = _pct(len(overstock), n)
     stockout_pct = _pct(len(stockout_risk), n)
-    inventory = _clamp(100.0 - overstock_pct * 1.5 - stockout_pct * 2.5)
+    inventory = _clamp(
+        iv["base"] - overstock_pct * iv["overstock_penalty"] - stockout_pct * iv["stockout_penalty"]
+    )
 
     # 客户：复购率贡献 + 流失率惩罚
-    customer = _clamp(_clamp(repeat_rate * 0.9 + 45.0) - churn_rate * 1.5)
+    cu = SCORING_CONFIG["customer"]
+    customer = _clamp(
+        _clamp(repeat_rate * cu["repeat_bonus"] + cu["base"]) - churn_rate * cu["churn_penalty"]
+    )
 
     # 渠道：集中度（最大渠道占比）与各渠道环比最差
+    ch = SCORING_CONFIG["channel"]
     ch_total = sum(platform_rev.values()) or 1.0
     max_share = max(platform_rev.values()) / ch_total if platform_rev else 0.0
     worst_growth = 0.0
@@ -262,14 +339,24 @@ async def workspace_health(
         prev = platform_prev.get(key, 0.0)
         if prev > 0:
             worst_growth = min(worst_growth, (cur - prev) / prev * 100.0)
-    channel = _clamp(92.0 - max(0.0, max_share - 0.6) * 100.0 - max(0.0, -worst_growth) * 0.5)
+    channel = _clamp(
+        ch["base"]
+        - max(0.0, max_share - ch["concentration_threshold"]) * ch["concentration_penalty"]
+        - max(0.0, -worst_growth) * ch["worst_growth_penalty"]
+    )
 
     # 增长：营收环比 + 订单量基础
-    growth_score = _clamp(50.0 + growth * 1.0)
+    gr = SCORING_CONFIG["growth"]
+    growth_score = _clamp(gr["base"] + growth * gr["growth_bonus"])
 
-    # 利润健康：毛利率基准 45%（电商 SaaS 常见健康线），每 ±1% 调 2 分；
-    # 退款损失每 1% 扣 1.5 分；行归因覆盖不足时轻微打折（数据口径警示）
-    profit = _clamp(60.0 + (gross_margin - 45.0) * 2.0 - refund_loss_rate * 1.5 - (1.0 - coverage) * 8.0)
+    # 利润健康：毛利率偏离基准线的调整 − 退款损耗 − 成本覆盖不足折扣
+    pf = SCORING_CONFIG["profit"]
+    profit = _clamp(
+        pf["base"]
+        + (gross_margin - pf["margin_reference"]) * pf["margin_factor"]
+        - refund_loss_rate * pf["refund_loss_penalty"]
+        - (1.0 - coverage) * pf["coverage_penalty"]
+    )
 
     dims = [
         {"key": "cashflow", "name": "现金流", "score": round(cashflow), "level": _level(cashflow),
@@ -285,7 +372,7 @@ async def workspace_health(
         {"key": "profit", "name": "利润", "score": round(profit), "level": _level(profit),
          "reasons": _profit_reasons(gross_margin, refund_loss_rate, item_count, coverage)},
     ]
-    weights = {"cashflow": 0.2, "inventory": 0.2, "customer": 0.15, "channel": 0.1, "growth": 0.15, "profit": 0.2}
+    weights = SCORING_CONFIG["weights"]
     score = round(sum(d["score"] * weights[d["key"]] for d in dims))
     level = _level(score)
 
@@ -360,6 +447,7 @@ async def workspace_health(
         "level": level,
         "summary": summary,
         "dimensions": dims,
+        "weights": SCORING_CONFIG["weights"],
         "anomalies": anomalies,
         "ai_generated": ai_generated,
         "cached": False,

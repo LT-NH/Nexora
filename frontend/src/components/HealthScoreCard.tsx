@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
-  Activity, AlertTriangle, ArrowRight, RefreshCw, Sparkles, Info, ShieldCheck, LineChart as LineChartIcon, Stethoscope, History,
+  Activity, AlertTriangle, ArrowRight, RefreshCw, Sparkles, Info, ShieldCheck, LineChart as LineChartIcon, Stethoscope, History, Scale,
 } from 'lucide-react';
 import api from '@/services/api';
 import { usePageT, useI18n } from '@/i18n';
@@ -27,6 +27,7 @@ interface HealthData {
   level: string;
   summary: string;
   dimensions: HealthDimension[];
+  weights?: Record<string, number>;
   anomalies?: { severity: number; tag: string; title: string; detail: string }[];
   ai_generated?: boolean;
   prev?: PrevSnapshot | null;
@@ -54,6 +55,7 @@ const D = {
     anomaly_title: '异常雷达',
     score_method: '评分方法',
     score_method_title: '六个维度 · 自动评分',
+    weight_title: '综合权重（总分 = Σ 维度分 × 权重）',
     radar_title: '六维健康画像',
     radar_hint: '凹陷处就是薄弱环节，点一下看问题出在哪',
     diagnosis_title: '诊断结论',
@@ -82,6 +84,7 @@ const D = {
     anomaly_title: 'Anomaly radar',
     score_method: 'Scoring method',
     score_method_title: '6 dimensions · auto scored',
+    weight_title: 'Overall weights (score = Σ dimension × weight)',
     radar_title: 'Health Radar',
     radar_hint: 'Dip = weak dimension, click to see root cause',
     diagnosis_title: 'Diagnosis',
@@ -379,6 +382,29 @@ export const HealthScoreCard: React.FC<{ slug: string }> = ({ slug }) => {
                   </div>
                 ))}
               </div>
+
+              {/* 综合权重：说明总分如何由六维合成（单一数据源 = 后端 SCORING_CONFIG.weights） */}
+              {data.weights && (
+                <div className="mt-3 pt-3 border-t border-gray-100 dark:border-gray-700">
+                  <div className="flex items-center gap-1.5 mb-1.5">
+                    <Scale size={12} className="text-primary-500" />
+                    <span className="text-[11px] font-bold text-gray-500 dark:text-gray-400 tracking-wide">
+                      {t('weight_title')}
+                    </span>
+                  </div>
+                  <div className="flex flex-wrap gap-x-3 gap-y-1">
+                    {data.dimensions
+                      .slice()
+                      .sort((a, b) => (data.weights?.[b.key] ?? 0) - (data.weights?.[a.key] ?? 0))
+                      .map((dim) => (
+                        <span key={dim.key} className="text-[11px] text-gray-500 dark:text-gray-400">
+                          <span className="font-semibold text-gray-600 dark:text-gray-300">{dim.name}</span>
+                          {' '}{Math.round((data.weights?.[dim.key] ?? 0) * 100)}%
+                        </span>
+                      ))}
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </div>
